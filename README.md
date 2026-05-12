@@ -19,6 +19,19 @@ Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_do
 and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
 be found at <https://hexdocs.pm/harlock>.
 
+## Running examples
+
+The `examples/` directory contains small Harlock apps you can launch
+interactively in your terminal:
+
+```sh
+./scripts/run.sh counter   # simple counter
+./scripts/run.sh sysmon    # live BEAM process monitor
+```
+
+Run with no args to see the available examples. Each app prints its key
+bindings (typically `q` or `Esc` to quit).
+
 ## Smoke tests
 
 The scripts in `priv/*_smoke.exs` exercise the runtime, focus, and sysmon
