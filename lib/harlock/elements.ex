@@ -2,9 +2,8 @@ defmodule Harlock.Elements do
   @moduledoc false
   # View-tree constructors. Imported into apps via `use Harlock.App`.
   #
-  # v0.1 primitives: text, vbox, hbox, spacer. box (with border), list,
-  # text_input, viewport, progress, spinner, table, overlay arrive in
-  # subsequent steps.
+  # v0.1 primitives: text, vbox, hbox, spacer, list, table, overlay, box.
+  # text_input, viewport, progress, spinner arrive in subsequent steps.
 
   alias Harlock.{Element, Element.Column}
 
@@ -53,6 +52,32 @@ defmodule Harlock.Elements do
   @doc "Empty cell that occupies a layout slot. Useful with constraints."
   @spec spacer() :: Element.t()
   def spacer, do: %Element{type: :spacer, opts: [], children: []}
+
+  @doc """
+  A single-child container with a border and optional inner padding.
+
+  Required options:
+    * `:child` — the element drawn inside the box
+
+  Optional:
+    * `:title` — string overlaid on the top border (truncated to fit)
+    * `:title_align` — `:left` (default) | `:center` | `:right`
+    * `:border` — `:single` (default) | `:double` | `:rounded` | `:thick` | `:none`
+    * `:border_style` — `%Style{}` or keyword applied to the border + title
+    * `:padding` — non-negative integer (uniform), `{v, h}`, or `{top, right, bottom, left}`
+    * `:focusable`, `:focus_style` — when focused, the focus style replaces
+      the border style (the child is left alone)
+
+  For multiple children, wrap them in `vbox/1` or `hbox/1` and pass the
+  result as `:child`. The box reserves one cell on each side for the border
+  (unless `:border` is `:none`); when the region is smaller than that the
+  border is skipped and the child takes the full region.
+  """
+  @spec box(keyword()) :: Element.t()
+  def box(opts) when is_list(opts) do
+    child = Keyword.fetch!(opts, :child)
+    %Element{type: :box, opts: Keyword.delete(opts, :child), children: [child]}
+  end
 
   @doc """
   Render `over` on top of `child` in a sub-rectangle anchored within the

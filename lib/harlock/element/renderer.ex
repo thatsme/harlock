@@ -8,6 +8,13 @@ defmodule Harlock.Element.Renderer do
   alias Harlock.Layout.Rect
   alias Harlock.Render.{Frame, Style}
 
+  @border_chars %{
+    single:  {"┌", "┐", "└", "┘", "─", "│"},
+    double:  {"╔", "╗", "╚", "╝", "═", "║"},
+    rounded: {"╭", "╮", "╰", "╯", "─", "│"},
+    thick:   {"┏", "┓", "┗", "┛", "━", "┃"}
+  }
+
   @spec render(Element.t(), non_neg_integer(), non_neg_integer(), any()) :: Frame.t()
   def render(%Element{} = root, rows, cols, focused \\ nil) do
     frame = Frame.new(rows, cols)
@@ -44,6 +51,44 @@ defmodule Harlock.Element.Renderer do
   end
 
   defp render_element(%Element{type: :spacer}, _region, frame, _focused), do: frame
+
+  defp render_element(%Element{type: :box, children: [child]} = el, region, frame, focused) do
+    border_kind = Keyword.get(el.opts, :border, :single)
+    {pt, pr, pb, pl} = normalize_padding(Keyword.get(el.opts, :padding, 0))
+
+    border_style =
+      el.opts
+      |> Keyword.get(:border_style, %Style{})
+      |> Style.from()
+      |> maybe_focus_style(el, focused)
+
+    fits_border? = border_kind != :none and region.w >= 2 and region.h >= 2
+    border_w = if fits_border?, do: 1, else: 0
+
+    frame =
+      if fits_border? do
+        draw_border(
+          frame,
+          region,
+          border_kind,
+          border_style,
+          Keyword.get(el.opts, :title),
+          Keyword.get(el.opts, :title_align, :left)
+        )
+      else
+        frame
+      end
+
+    inner =
+      Rect.new(
+        region.row + border_w + pt,
+        region.col + border_w + pl,
+        max(0, region.w - 2 * border_w - pl - pr),
+        max(0, region.h - 2 * border_w - pt - pb)
+      )
+
+    render_element(child, inner, frame, focused)
+  end
 
   defp render_element(%Element{type: :overlay, children: [child, over]} = el, region, frame, focused) do
     frame = render_element(child, region, frame, focused)
@@ -209,6 +254,69 @@ defmodule Harlock.Element.Renderer do
       {id, id} -> Keyword.get(opts, :focus_style, %{style | reverse: true}) |> Style.from()
       _ -> style
     end
+  end
+
+  defp normalize_padding(n) when is_integer(n) and n >= 0, do: {n, n, n, n}
+
+  defp normalize_padding({v, h}) when is_integer(v) and v >= 0 and is_integer(h) and h >= 0,
+    do: {v, h, v, h}
+
+  defp normalize_padding({t, r, b, l})
+       when is_integer(t) and t >= 0 and is_integer(r) and r >= 0 and
+              is_integer(b) and b >= 0 and is_integer(l) and l >= 0,
+       do: {t, r, b, l}
+
+  defp draw_border(frame, region, kind, style, title, title_align) do
+    {tl, tr, bl, br, h, v} = Map.fetch!(@border_chars, kind)
+
+    top = region.row
+    bot = region.row + region.h - 1
+    left = region.col
+    right = region.col + region.w - 1
+    inner_w = region.w - 2
+
+    horizontal = if inner_w > 0, do: String.duplicate(h, inner_w), else: ""
+
+    frame =
+      frame
+      |> Frame.write(top, left, tl, style)
+      |> Frame.write(top, left + 1, horizontal, style)
+      |> Frame.write(top, right, tr, style)
+      |> Frame.write(bot, left, bl, style)
+      |> Frame.write(bot, left + 1, horizontal, style)
+      |> Frame.write(bot, right, br, style)
+
+    frame =
+      Enum.reduce((top + 1)..(bot - 1)//1, frame, fn r, f ->
+        f
+        |> Frame.write(r, left, v, style)
+        |> Frame.write(r, right, v, style)
+      end)
+
+    case title do
+      nil -> frame
+      "" -> frame
+      _ when inner_w <= 0 -> frame
+      _ -> draw_title(frame, top, left + 1, inner_w, title, title_align, style)
+    end
+  end
+
+  defp draw_title(frame, row, col, available_w, title, align, style) do
+    text = " " <> title <> " "
+
+    text =
+      if String.length(text) > available_w,
+        do: String.slice(text, 0, available_w),
+        else: text
+
+    offset =
+      case align do
+        :left -> 0
+        :right -> max(0, available_w - String.length(text))
+        :center -> div(max(0, available_w - String.length(text)), 2)
+      end
+
+    Frame.write(frame, row, col + offset, text, style)
   end
 
   defp clip(text, max_cols) do

@@ -19,15 +19,21 @@ defmodule Counter do
   def update(_event, m), do: m
 
   def view(m) do
-    vbox(
-      constraints: [length: 1, length: 1, fill: 1, length: 1, length: 1],
-      children: [
-        text("Harlock Counter", style: [bold: true]),
-        text(String.duplicate("─", 30)),
-        text("count: #{m.n}", style: [fg: :cyan, bold: true]),
-        spacer(),
-        text("[+/=] inc  [-] dec  [q/Esc] quit", style: [dim: true])
-      ]
+    box(
+      title: "Harlock Counter",
+      title_align: :center,
+      border: :rounded,
+      border_style: [fg: :cyan],
+      padding: {1, 2},
+      child:
+        vbox(
+          constraints: [fill: 1, length: 1, length: 1],
+          children: [
+            text("count: #{m.n}", style: [fg: :cyan, bold: true]),
+            spacer(),
+            text("[+/=] inc  [-] dec  [q/Esc] quit", style: [dim: true])
+          ]
+        )
     )
   end
 end
