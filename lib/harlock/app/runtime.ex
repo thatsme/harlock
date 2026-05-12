@@ -1,7 +1,8 @@
 defmodule Harlock.App.Runtime do
   @moduledoc false
-  # The TEA loop. Owns the model; receives input events from Reader; ticks at
-  # ~60fps to render any pending changes via Diff → Writer.
+  # The TEA loop. Owns the model; receives input events from Reader; renders
+  # synchronously after any event or subscription message that produces a
+  # model change. No periodic polling — the only wakeups are real work.
   #
   # When the user's update/2 returns :quit (or {:quit, _cmd}), the runtime
   # signals the caller via `{:harlock_done, reason}` and exits :normal. The
@@ -17,8 +18,6 @@ defmodule Harlock.App.Runtime do
   alias Harlock.Element.{Focusables, Renderer}
   alias Harlock.Render.Diff
   alias Harlock.Terminal.{Reader, Writer}
-
-  @tick_ms 16
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -48,7 +47,6 @@ defmodule Harlock.App.Runtime do
       dirty: true,
       rows: rows,
       cols: cols,
-      tick_ref: nil,
       focused: nil,
       focusables: [],
       traps: [],
@@ -61,25 +59,15 @@ defmodule Harlock.App.Runtime do
 
   @impl true
   def handle_continue(:first_render, state) do
-    state = render(state)
-    {:noreply, schedule_tick(state)}
+    {:noreply, render(state)}
   end
 
   @impl true
   def handle_info({:harlock_event, event}, state) do
     case maybe_handle_focus(event, state) do
-      {:handled, state} -> {:noreply, state}
+      {:handled, state} -> {:noreply, render(state)}
       :pass -> apply_update(state, event)
     end
-  end
-
-  def handle_info(:tick, state) do
-    state =
-      state
-      |> render()
-      |> schedule_tick()
-
-    {:noreply, state}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -105,10 +93,10 @@ defmodule Harlock.App.Runtime do
           {:stop, :normal, state}
 
         {model, _cmd} ->
-          {:noreply, %{state | model: model, dirty: true}}
+          {:noreply, render(%{state | model: model, dirty: true})}
 
         model ->
-          {:noreply, %{state | model: model, dirty: true}}
+          {:noreply, render(%{state | model: model, dirty: true})}
       end
     after
       Focus.__clear__()
@@ -274,12 +262,6 @@ defmodule Harlock.App.Runtime do
 
   defp pop_stack([h | t], _focusables), do: {h, t}
   defp pop_stack([], focusables), do: {List.first(focusables), []}
-
-  defp schedule_tick(state) do
-    if state.tick_ref, do: Process.cancel_timer(state.tick_ref)
-    ref = Process.send_after(self(), :tick, @tick_ms)
-    %{state | tick_ref: ref}
-  end
 
   defp notify_done(%{caller: nil}, _reason), do: :ok
 

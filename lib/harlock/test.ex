@@ -144,14 +144,12 @@ defmodule Harlock.Test do
   @spec raw_writes(handle()) :: binary()
   def raw_writes(handle), do: Writer.raw_writes(handle.writer)
 
-  # Drain runtime mailbox + force a render. We do this by issuing a sync call
-  # to the runtime (any call works) — that waits until prior messages have
-  # been processed — and then sleeping for one tick to let the render fire.
+  # Drain the runtime mailbox. The runtime renders synchronously inside each
+  # event handler, so by the time :sys.get_state returns, the current frame
+  # is already on the writer — no extra sleep needed.
   defp sync(handle) do
     try do
       _ = :sys.get_state(handle.runtime)
-      # Runtime renders on the next :tick (16ms). Sleeping > 1 tick is enough.
-      Process.sleep(25)
     catch
       :exit, _ -> :ok
     end
