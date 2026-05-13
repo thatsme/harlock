@@ -9,6 +9,7 @@ defmodule Harlock.Element.Renderer do
   alias Harlock.Layout.Rect
   alias Harlock.Render.Frame
   alias Harlock.Render.Style
+  alias Harlock.Theme
   alias Harlock.Width
 
   @border_chars %{
@@ -61,7 +62,7 @@ defmodule Harlock.Element.Renderer do
 
     border_style =
       el.opts
-      |> Keyword.get(:border_style, %Style{})
+      |> Keyword.get(:border_style, Theme.get(:border))
       |> Style.from()
       |> maybe_focus_style(el, focused)
 
@@ -171,7 +172,7 @@ defmodule Harlock.Element.Renderer do
     do: Rect.new(region.row + row, region.col + col, w, h)
 
   defp render_header(frame, y, columns, col_rects) do
-    header_style = %Style{bold: true}
+    header_style = Theme.get(:header)
 
     Enum.zip(columns, col_rects)
     |> Enum.reduce(frame, fn {%Column{} = col, rect}, f ->
@@ -217,13 +218,13 @@ defmodule Harlock.Element.Renderer do
     end
   end
 
-  defp row_style(id, id, _selection, true), do: %Style{reverse: true}
-  defp row_style(id, id, _selection, false), do: %Style{bold: true}
+  defp row_style(id, id, _selection, true), do: Theme.get(:focus)
+  defp row_style(id, id, _selection, false), do: Theme.get(:focus)
 
-  defp row_style(id, _focused, {:single, id}, _), do: %Style{bg: :cyan}
+  defp row_style(id, _focused, {:single, id}, _), do: Theme.get(:selection)
 
   defp row_style(id, _focused, {:multi, %MapSet{} = set}, _) do
-    if MapSet.member?(set, id), do: %Style{bg: :cyan}, else: %Style{}
+    if MapSet.member?(set, id), do: Theme.get(:selection), else: %Style{}
   end
 
   defp row_style(_id, _focused, _selection, _), do: %Style{}
@@ -258,10 +259,18 @@ defmodule Harlock.Element.Renderer do
 
   defp maybe_focus_style(style, %Element{opts: opts}, focused) do
     case {Keyword.get(opts, :focusable), focused} do
-      {nil, _} -> style
-      {_, nil} -> style
-      {id, id} -> Keyword.get(opts, :focus_style, %{style | reverse: true}) |> Style.from()
-      _ -> style
+      {nil, _} ->
+        style
+
+      {_, nil} ->
+        style
+
+      {id, id} ->
+        Keyword.get(opts, :focus_style, Style.merge(style, Theme.get(:focus)))
+        |> Style.from()
+
+      _ ->
+        style
     end
   end
 

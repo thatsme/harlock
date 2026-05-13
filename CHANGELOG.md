@@ -40,6 +40,17 @@ changes are called out in the relevant release notes.
   combining marks, ZWJ, and variation selectors. Public surface:
   `width/1`, `string_width/1`, `slice/2`, `pad_trailing/3`,
   `pad_leading/3`. Ranges sourced from Unicode 15.1 EastAsianWidth.txt.
+- `Harlock.Theme` — minimal theme tokens (`:header`, `:focus`,
+  `:selection`, `:border`). Apps configure via `Harlock.run(MyApp,
+  arg, theme: %Theme{...})`; omitted = `Theme.default/0` which matches
+  the pre-theming hard-coded values byte-for-byte. `Theme.get/1` is
+  available inside `view/1` and `update/2` via the process dict, same
+  pattern as `Harlock.Focus`. Full token set (`:primary`, `:accent`,
+  `:muted`, `:error`) plus built-in themes and color downgrade still
+  land in v0.4.
+- `Style.merge/2` — layer one style on top of another (non-default
+  colors win, booleans OR). Used to apply theme `:focus` to user-set
+  element styles without losing fg/bg.
 
 ### Changed
 
@@ -61,6 +72,15 @@ changes are called out in the relevant release notes.
 - `IO.Test.Writer` mirrors real terminal behavior for wide chars: cursor
   advances by 2, the trailing cell is marked `:continuation`, and the
   reconstructed buffer-to-string output skips continuations.
+- Renderer no longer hard-codes `bold: true` for table headers,
+  `reverse: true` / `bold: true` for focused rows, `bg: :cyan` for
+  selection, or `reverse: true` for the focus-overlay fallback. All of
+  these now read from `Harlock.Theme`. The default theme reproduces the
+  prior visuals exactly.
+- The active-vs-inactive focus distinction in tables (was `reverse` when
+  table focused, `bold` otherwise) collapses to a single `:focus` token
+  in v0.2. v0.4 may add a separate `:focus_inactive` token if the visual
+  loss matters in practice.
 
 ## [0.1.0] — 2026-05-12
 

@@ -52,6 +52,24 @@ defmodule Harlock.Render.Style do
   def from(opts) when is_map(opts), do: struct!(__MODULE__, opts)
 
   @doc """
+  Layer `over` on top of `under`. Non-default colors in `over` win;
+  boolean attributes OR (any `true` wins). Used to apply theme tokens on
+  top of element-provided styles without losing user-set fg/bg.
+  """
+  @spec merge(t(), t()) :: t()
+  def merge(%__MODULE__{} = under, %__MODULE__{} = over) do
+    %__MODULE__{
+      fg: if(over.fg == :default, do: under.fg, else: over.fg),
+      bg: if(over.bg == :default, do: under.bg, else: over.bg),
+      bold: over.bold or under.bold,
+      italic: over.italic or under.italic,
+      underline: over.underline or under.underline,
+      dim: over.dim or under.dim,
+      reverse: over.reverse or under.reverse
+    }
+  end
+
+  @doc """
   Emit an SGR escape sequence that fully sets the cell's attributes. Starts
   with `\\e[0m` so the previous style doesn't bleed through. The diff renderer
   emits this once per style transition; we don't try to be clever about

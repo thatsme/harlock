@@ -22,6 +22,7 @@ defmodule Harlock.App.Runtime do
   alias Harlock.Sub
   alias Harlock.Terminal.Reader
   alias Harlock.Terminal.Writer
+  alias Harlock.Theme
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -36,32 +37,40 @@ defmodule Harlock.App.Runtime do
     writer = Keyword.fetch!(opts, :writer)
     reader = Keyword.fetch!(opts, :reader)
     task_sup = Keyword.fetch!(opts, :task_sup)
+    theme = Keyword.get(opts, :theme, Theme.default())
     caller = Keyword.get(opts, :caller)
 
-    {rows, cols} = detect_size(opts)
-    {model, init_cmd} = init_app(app, Keyword.get(opts, :init_arg))
-    :ok = Reader.subscribe(reader, self())
+    Theme.__set__(theme)
 
-    state = %{
-      app: app,
-      model: model,
-      writer: writer,
-      reader: reader,
-      task_sup: task_sup,
-      caller: caller,
-      prev_frame: nil,
-      dirty: true,
-      rows: rows,
-      cols: cols,
-      focused: nil,
-      focusables: [],
-      traps: [],
-      focus_stack: [],
-      subs: %{},
-      pending_cmd: init_cmd
-    }
+    try do
+      {rows, cols} = detect_size(opts)
+      {model, init_cmd} = init_app(app, Keyword.get(opts, :init_arg))
+      :ok = Reader.subscribe(reader, self())
 
-    {:ok, state, {:continue, :start}}
+      state = %{
+        app: app,
+        model: model,
+        writer: writer,
+        reader: reader,
+        task_sup: task_sup,
+        theme: theme,
+        caller: caller,
+        prev_frame: nil,
+        dirty: true,
+        rows: rows,
+        cols: cols,
+        focused: nil,
+        focusables: [],
+        traps: [],
+        focus_stack: [],
+        subs: %{},
+        pending_cmd: init_cmd
+      }
+
+      {:ok, state, {:continue, :start}}
+    after
+      Theme.__clear__()
+    end
   end
 
   @impl true
@@ -97,6 +106,7 @@ defmodule Harlock.App.Runtime do
 
   defp apply_update(state, event) do
     Focus.__set__(state.focused)
+    Theme.__set__(state.theme)
 
     try do
       case state.app.update(event, state.model) do
@@ -118,6 +128,7 @@ defmodule Harlock.App.Runtime do
           {:noreply, render(%{state | model: model, dirty: true})}
       end
     after
+      Theme.__clear__()
       Focus.__clear__()
     end
   end
@@ -179,6 +190,7 @@ defmodule Harlock.App.Runtime do
 
   defp render(state) do
     Focus.__set__(state.focused)
+    Theme.__set__(state.theme)
 
     try do
       tree = state.app.view(state.model)
@@ -196,6 +208,7 @@ defmodule Harlock.App.Runtime do
         notify_done(state, {:render_error, e})
         reraise e, __STACKTRACE__
     after
+      Theme.__clear__()
       Focus.__clear__()
     end
   end

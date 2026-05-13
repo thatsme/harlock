@@ -23,12 +23,21 @@ defmodule Harlock do
 
   The caller's process is linked to the app supervisor, so killing the caller
   tears down the supervisor cleanly — which in turn restores the terminal.
+
+  Options:
+
+    * `:theme` — a `Harlock.Theme.t()` (or keyword list / map convertible
+      via `Harlock.Theme.build/1`). Defaults to `Harlock.Theme.default/0`.
   """
-  @spec run(app(), init_arg()) :: {:ok, term()} | {:error, term()}
-  def run(app, init_arg \\ nil) do
+  @spec run(app(), init_arg(), keyword()) :: {:ok, term()} | {:error, term()}
+  def run(app, init_arg \\ nil, opts \\ []) do
     caller = self()
 
-    case Harlock.App.Supervisor.start_link(app: app, init_arg: init_arg, caller: caller) do
+    sup_opts =
+      [app: app, init_arg: init_arg, caller: caller]
+      |> maybe_put_theme(opts)
+
+    case Harlock.App.Supervisor.start_link(sup_opts) do
       {:ok, sup} ->
         ref = Process.monitor(sup)
 
@@ -53,10 +62,23 @@ defmodule Harlock do
   supervisor's lifecycle (linking, monitoring, stopping). Useful when
   embedding Harlock inside a larger OTP app — e.g. a Phoenix project with a
   dev-mode TUI dashboard.
+
+  Accepts the same options as `run/3`.
   """
-  @spec start_link(app(), init_arg()) :: Supervisor.on_start()
-  def start_link(app, init_arg \\ nil) do
-    Harlock.App.Supervisor.start_link(app: app, init_arg: init_arg, caller: self())
+  @spec start_link(app(), init_arg(), keyword()) :: Supervisor.on_start()
+  def start_link(app, init_arg \\ nil, opts \\ []) do
+    sup_opts =
+      [app: app, init_arg: init_arg, caller: self()]
+      |> maybe_put_theme(opts)
+
+    Harlock.App.Supervisor.start_link(sup_opts)
+  end
+
+  defp maybe_put_theme(sup_opts, opts) do
+    case Keyword.fetch(opts, :theme) do
+      {:ok, theme} -> Keyword.put(sup_opts, :theme, Harlock.Theme.build(theme))
+      :error -> sup_opts
+    end
   end
 
   @doc """

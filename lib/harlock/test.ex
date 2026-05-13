@@ -42,8 +42,8 @@ defmodule Harlock.Test do
     rows = Keyword.get(opts, :rows, 24)
     cols = Keyword.get(opts, :cols, 80)
 
-    {:ok, sup} =
-      AppSupervisor.start_link(
+    sup_opts =
+      [
         app: app,
         init_arg: init_arg,
         caller: self(),
@@ -51,7 +51,10 @@ defmodule Harlock.Test do
         backend: :test,
         rows: rows,
         cols: cols
-      )
+      ]
+      |> maybe_put_theme(opts)
+
+    {:ok, sup} = AppSupervisor.start_link(sup_opts)
 
     handle = %{
       sup: sup,
@@ -156,6 +159,13 @@ defmodule Harlock.Test do
   @doc "Returns the raw bytes the writer has received so far."
   @spec raw_writes(handle()) :: binary()
   def raw_writes(handle), do: Writer.raw_writes(handle.writer)
+
+  defp maybe_put_theme(sup_opts, opts) do
+    case Keyword.fetch(opts, :theme) do
+      {:ok, theme} -> Keyword.put(sup_opts, :theme, Harlock.Theme.build(theme))
+      :error -> sup_opts
+    end
+  end
 
   # Drain the runtime mailbox. The runtime renders synchronously inside each
   # event handler, so by the time :sys.get_state returns, the current frame
