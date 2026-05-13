@@ -67,9 +67,6 @@ defmodule Harlock.App.Runtime do
   @impl true
   def handle_continue(:start, state) do
     state = render(state)
-    # TaskSupervisor is started after Runtime in the supervision tree, so it
-    # isn't available during init/1 — dispatch the init cmd here, on the
-    # first continuation, when the rest of the tree is up.
     Cmd.dispatch(state.pending_cmd, self(), state.task_sup)
     {:noreply, %{state | pending_cmd: nil}}
   end
@@ -80,6 +77,13 @@ defmodule Harlock.App.Runtime do
       {:handled, state} -> {:noreply, render(state)}
       :pass -> apply_update(state, event)
     end
+  end
+
+  def handle_info({:harlock_resize, rows, cols}, state) do
+    # prev_frame is discarded because diffing against a buffer of different
+    # dimensions is meaningless — force a full redraw at the new size.
+    new_state = %{state | rows: rows, cols: cols, prev_frame: nil, dirty: true}
+    {:noreply, render(new_state)}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}

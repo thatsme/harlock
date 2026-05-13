@@ -124,6 +124,19 @@ defmodule Harlock.Test do
     send_event(handle, {:key, key, mods})
   end
 
+  @doc """
+  Inject a resize event. Stand-in for SIGWINCH in headless tests — the
+  runtime updates its dimensions, discards `prev_frame`, and re-renders.
+  The test writer's cell buffer is resized first so the new frame has
+  somewhere to land.
+  """
+  @spec resize(handle(), pos_integer(), pos_integer()) :: :ok
+  def resize(handle, rows, cols) when rows > 0 and cols > 0 do
+    :ok = Writer.set_size(handle.writer, rows, cols)
+    send(handle.runtime, {:harlock_resize, rows, cols})
+    sync(handle)
+  end
+
   @doc "Returns the rendered cell buffer as a single string (rows joined by \\n)."
   @spec render(handle()) :: String.t()
   def render(handle), do: Writer.to_string(handle.writer)

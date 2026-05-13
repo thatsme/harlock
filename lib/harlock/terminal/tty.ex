@@ -61,6 +61,38 @@ defmodule Harlock.Terminal.Tty do
     :ok
   end
 
+  @doc """
+  Query the current terminal size by shelling out to `stty size`.
+
+  One shell-out per call (~3–5ms on macOS). Intended to be called only on
+  SIGWINCH, not per-frame.
+  """
+  @spec size() :: {:ok, pos_integer(), pos_integer()} | {:error, term()}
+  def size do
+    case :os.cmd(~c"stty size </dev/tty 2>/dev/null") do
+      [] ->
+        {:error, :tty_not_available}
+
+      bytes ->
+        bytes
+        |> List.to_string()
+        |> String.trim()
+        |> parse_size()
+    end
+  end
+
+  defp parse_size(""), do: {:error, :tty_not_available}
+
+  defp parse_size(str) do
+    with [rows_str, cols_str] <- String.split(str, " ", trim: true),
+         {rows, ""} when rows > 0 <- Integer.parse(rows_str),
+         {cols, ""} when cols > 0 <- Integer.parse(cols_str) do
+      {:ok, rows, cols}
+    else
+      _ -> {:error, {:parse_error, str}}
+    end
+  end
+
   @spec open_write() :: {:ok, io_device()} | {:error, term()}
   def open_write, do: :file.open(@device, [:write, :raw, :binary])
 

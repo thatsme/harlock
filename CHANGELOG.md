@@ -25,12 +25,25 @@ changes are called out in the relevant release notes.
   returned from `init/1` are dispatched after the first render; cmds
   returned alongside `:quit` are dispatched before the runtime exits.
 
+- SIGWINCH-driven terminal resize. `Keeper` installs an `:os.set_signal`
+  handler in init/1; on signal it shells out to `stty size` and forwards
+  `{:harlock_resize, rows, cols}` to the runtime, which discards
+  `prev_frame` (full redraw at the new size) and re-renders. The handler
+  is removed on Keeper terminate so it doesn't leak past process death.
+- `Tty.size/0` — query the terminal dimensions via `stty size` (single
+  shell-out, ~3–5ms).
+- `Harlock.Test.resize/3` — synthetic resize event for headless tests.
+  Resizes the test writer's cell buffer in lockstep so the next frame
+  has somewhere to land.
+
 ### Changed
 
-- `App.Supervisor` gained a `Task.Supervisor` child positioned after
-  `Runtime` (rest_for_one, `:temporary`). A Runtime exit terminates all
-  in-flight cmd tasks for free; a TaskSupervisor crash leaves IO and
-  Runtime alive.
+- `App.Supervisor` gained a `Task.Supervisor` child positioned between
+  IO and Runtime (rest_for_one, `:temporary`). It's available when
+  Runtime's `handle_continue` dispatches the init-time cmd; a Runtime
+  exit terminates all in-flight cmd tasks for free; a TaskSupervisor
+  crash takes down Runtime cleanly while leaving IO alive long enough
+  for the terminal restore on shutdown.
 
 ## [0.1.0] — 2026-05-12
 

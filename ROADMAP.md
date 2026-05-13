@@ -98,8 +98,11 @@ The runtime currently destructures `{model, _cmd}` and throws the cmd away.
 Wire a real executor.
 
 - Add `Harlock.App.TaskSupervisor` as a child of `Harlock.App.Supervisor`,
-  positioned **after** `Runtime` so its crash doesn't take down IO.
-  Strategy: `:one_for_one`, restart `:temporary` on individual tasks.
+  positioned **between IO and Runtime** so it's already up when Runtime's
+  `handle_continue` dispatches the init-time cmd. (Earlier plan said
+  "after Runtime"; that lost the init-cmd race against the supervisor's
+  child-start loop.) Strategy: `:one_for_one`, restart `:temporary` on
+  individual tasks.
 - Implement `Cmd.from/1`: runs the 0-arity fn under `Task.Supervisor`,
   sends result back as `{:harlock_event, result}`.
 - Implement `Cmd.batch/1`: spawns each child cmd concurrently, no

@@ -4,14 +4,18 @@ defmodule Harlock.App.Supervisor do
   #
   # Children (rest_for_one):
   #
-  #   1. Terminal.Keeper      owns /dev/tty, restores on terminate
+  #   1. Terminal.Keeper      owns /dev/tty + termios + SIGWINCH
   #   2. Terminal.Writer      ANSI output, fetches tty from Keeper
   #   3. Terminal.Reader      byte input + parsing, fetches tty from Keeper
-  #   4. App.Runtime          the TEA loop
+  #   4. App.TaskSupervisor   supervises cmd tasks
+  #   5. App.Runtime          the TEA loop
   #
   # rest_for_one means a Keeper crash takes down the whole tree (correct —
   # without a tty we have nothing to do); a Reader crash leaves Keeper +
   # Writer alive long enough to restore the terminal during shutdown.
+  # TaskSupervisor sits BEFORE Runtime so it's available when Runtime
+  # dispatches its init-time cmd; a TaskSupervisor crash terminates
+  # Runtime (clean shutdown) but leaves IO alive long enough to restore.
   #
   # The Keeper is the load-bearing process for "terminal restored on crash":
   # its terminate/2 fires even when the entire app dies, because the
@@ -48,7 +52,7 @@ defmodule Harlock.App.Supervisor do
           [
             %{
               id: :keeper,
-              start: {Keeper, :start_link, [[name: keeper_name]]},
+              start: {Keeper, :start_link, [[name: keeper_name, runtime: runtime_name]]},
               shutdown: 5_000
             },
             %{
@@ -104,11 +108,11 @@ defmodule Harlock.App.Supervisor do
       shutdown: 1_000
     }
 
-    # TaskSupervisor sits AFTER Runtime in rest_for_one so a TaskSupervisor
-    # crash leaves IO + Runtime alive — and conversely a Runtime exit
-    # terminates the task supervisor (and all in-flight cmd tasks) for free.
-    # :temporary so a Runtime exit doesn't trigger a restart attempt that
-    # would trip max_restarts: 0 on normal :quit.
+    # TaskSupervisor sits BEFORE Runtime so it's already up when Runtime's
+    # handle_continue tries to dispatch an init-time cmd. A TaskSupervisor
+    # crash terminates Runtime (rest_for_one) — Runtime is :temporary so it
+    # stays dead, IO survives long enough for the supervisor's terminate
+    # cascade to restore the terminal.
     task_sup_child = %{
       id: :task_sup,
       start: {Task.Supervisor, :start_link, [[name: task_sup_name]]},
@@ -119,7 +123,7 @@ defmodule Harlock.App.Supervisor do
 
     # max_restarts: 0 means any child crash takes down the whole supervisor,
     # which in turn triggers Keeper.terminate/2 and restores the terminal.
-    Supervisor.init(io_children ++ [runtime_child, task_sup_child],
+    Supervisor.init(io_children ++ [task_sup_child, runtime_child],
       strategy: :rest_for_one,
       max_restarts: 0,
       max_seconds: 1
