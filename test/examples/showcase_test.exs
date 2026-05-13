@@ -18,8 +18,8 @@ defmodule Harlock.Examples.ShowcaseTest do
     assert out =~ "4. Keys"
   end
 
-  test "Ctrl-Right cycles to the next tab", %{h: h} do
-    Harlock.Test.send_key(h, :right, [:ctrl])
+  test "Shift-Right cycles to the next tab", %{h: h} do
+    Harlock.Test.send_key(h, :right, [:shift])
     out = Harlock.Test.render(h)
     assert out =~ "14 fields"
   end

@@ -96,8 +96,8 @@ defmodule ShowcaseApp do
     %{model | tab: tab_for_digit(c)}
   end
 
-  def update({:key, :right, [:ctrl]}, model), do: %{model | tab: cycle_tab(model.tab, +1)}
-  def update({:key, :left, [:ctrl]}, model), do: %{model | tab: cycle_tab(model.tab, -1)}
+  def update({:key, :right, [:shift]}, model), do: %{model | tab: cycle_tab(model.tab, +1)}
+  def update({:key, :left, [:shift]}, model), do: %{model | tab: cycle_tab(model.tab, -1)}
 
   # 'q' quits only when no input is focused.
   def update({:key, {:char, ?q}, []}, model) do
@@ -446,7 +446,7 @@ defmodule ShowcaseApp do
           {"↑↓", "scroll"},
           {"PgUp/PgDn", "page"},
           {"Tab", "next alert"},
-          {"Ctrl-←→", "tab"},
+          {"Shift-←→", "tab"},
           {?q, "quit"}
         ],
         separator: "  ·  "
@@ -458,7 +458,7 @@ defmodule ShowcaseApp do
         bindings: [
           {"Tab", "next field"},
           {"Shift-Tab", "prev field"},
-          {"Ctrl-←→", "switch tab"},
+          {"Shift-←→", "switch tab"},
           {"Ctrl-C", "quit"}
         ],
         separator: "  ·  "
@@ -469,7 +469,7 @@ defmodule ShowcaseApp do
       keybar(
         bindings: [
           {?\s, "pause / resume"},
-          {"Ctrl-←→", "switch tab"},
+          {"Shift-←→", "switch tab"},
           {?q, "quit"}
         ],
         separator: "  ·  "
@@ -480,7 +480,7 @@ defmodule ShowcaseApp do
       keybar(
         bindings: [
           {"any key", "captured"},
-          {"Ctrl-←→", "switch tab"},
+          {"Shift-←→", "switch tab"},
           {"Ctrl-C", "quit"}
         ],
         separator: "  ·  "
