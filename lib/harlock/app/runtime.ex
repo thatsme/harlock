@@ -20,6 +20,7 @@ defmodule Harlock.App.Runtime do
   alias Harlock.Focus
   alias Harlock.Render.Diff
   alias Harlock.Sub
+  alias Harlock.Terminal.Keeper
   alias Harlock.Terminal.Reader
   alias Harlock.Terminal.Writer
   alias Harlock.Theme
@@ -306,8 +307,22 @@ defmodule Harlock.App.Runtime do
   end
 
   defp detect_size(opts) do
-    rows = Keyword.get(opts, :rows) || parse_int(System.get_env("LINES"), 24)
-    cols = Keyword.get(opts, :cols) || parse_int(System.get_env("COLUMNS"), 80)
+    explicit_rows = Keyword.get(opts, :rows)
+    explicit_cols = Keyword.get(opts, :cols)
+    keeper = Keyword.get(opts, :keeper)
+
+    {queried_rows, queried_cols} =
+      if (explicit_rows && explicit_cols) || is_nil(keeper) do
+        {nil, nil}
+      else
+        case Keeper.size(keeper) do
+          {:ok, r, c} -> {r, c}
+          _ -> {nil, nil}
+        end
+      end
+
+    rows = explicit_rows || queried_rows || parse_int(System.get_env("LINES"), 24)
+    cols = explicit_cols || queried_cols || parse_int(System.get_env("COLUMNS"), 80)
     {rows, cols}
   end
 

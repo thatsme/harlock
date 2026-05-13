@@ -103,18 +103,28 @@ defmodule Harlock.Elements do
   @spec overlay(keyword()) :: Element.t()
   def overlay(opts) when is_list(opts) do
     child = Keyword.fetch!(opts, :child)
-    over = Keyword.fetch!(opts, :over)
+    over_raw = Keyword.fetch!(opts, :over)
+    focus_trap? = Keyword.get(opts, :focus_trap, false)
+
+    # focus_trap on overlay means "trap focus inside the OVER subtree" — so we
+    # set it on the over element directly. Putting it on the overlay element
+    # itself would include the background `child` in the trap, which would
+    # let Tab leak from a modal into the underlying widgets.
+    over = if focus_trap?, do: put_focus_trap(over_raw), else: over_raw
 
     %Element{
       type: :overlay,
       opts: [
         anchor: Keyword.get(opts, :anchor, :center),
         width: Keyword.get(opts, :width),
-        height: Keyword.get(opts, :height),
-        focus_trap: Keyword.get(opts, :focus_trap, false)
+        height: Keyword.get(opts, :height)
       ],
       children: [child, over]
     }
+  end
+
+  defp put_focus_trap(%Element{opts: opts} = el) do
+    %{el | opts: Keyword.put(opts, :focus_trap, true)}
   end
 
   @doc """

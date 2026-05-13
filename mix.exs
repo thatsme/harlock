@@ -7,6 +7,9 @@ defmodule Harlock.MixProject do
       version: "0.1.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
+      compilers: [:elixir_make] ++ Mix.compilers(),
+      make_targets: ["all"],
+      make_clean: ["clean"],
       deps: deps(),
       docs: docs(),
       dialyzer: dialyzer()
@@ -21,6 +24,7 @@ defmodule Harlock.MixProject do
 
   defp deps do
     [
+      {:elixir_make, "~> 0.8", runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}

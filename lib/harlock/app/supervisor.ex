@@ -87,6 +87,8 @@ defmodule Harlock.App.Supervisor do
           ]
       end
 
+    runtime_keeper = if backend == :terminal, do: keeper_name
+
     runtime_child = %{
       id: :runtime,
       start:
@@ -99,6 +101,7 @@ defmodule Harlock.App.Supervisor do
              writer: writer_name,
              reader: reader_name,
              task_sup: task_sup_name,
+             keeper: runtime_keeper,
              name: runtime_name,
              rows: Keyword.get(opts, :rows),
              cols: Keyword.get(opts, :cols),

@@ -69,6 +69,40 @@ changes are called out in the relevant release notes.
   where a focused widget asks for it.
 - `Harlock.Test.cursor/1` — read the current `Frame.cursor` from the
   runtime, useful for asserting text-input positioning in tests.
+- `Harlock.Terminal.Termios` — NIF wrapping `tcgetattr` / `tcsetattr` /
+  `ioctl(TIOCGWINSZ)` on `/dev/tty`. Replaces the previous `:os.cmd`-based
+  termios calls, which never worked: ERTS spawns subprocesses via
+  `erl_child_setup` with `setsid()`, detaching them from the controlling
+  terminal so `/dev/tty` returns `ENXIO` in the subshell. The NIF runs
+  in-process and retains tty access. Dirty I/O scheduler; graceful
+  fallback when `/dev/tty` is unavailable (CI, piped stdin).
+- C build via `elixir_make` and a small `Makefile` driving
+  `c_src/termios.c` → `priv/termios_nif.so`. Cross-compiles on
+  macOS (with `-undefined dynamic_lookup`) and Linux.
+- End-to-end runtime focus-traversal tests
+  (`test/harlock/app/runtime_focus_test.exs`): Tab cycles, Shift-Tab
+  reverses, focus_trap inside an overlay confines cycling to the trap,
+  trap entry/exit stashes and restores prior focus. The gap of missing
+  these tests let the focus_trap bug below ship in earlier v0.2 work.
+
+### Fixed
+
+- `overlay(focus_trap: true)` previously included the *background* child
+  in the trap (the entire overlay subtree), so Tab inside a modal could
+  leak focus into the underlying widgets and opening a modal would
+  sometimes move focus to a background id instead of the foreground.
+  The constructor now sets `focus_trap` on the over element directly.
+- Reader's spawn-based `:file.read("/dev/tty")` never delivered bytes
+  on macOS (verified empirically). Replaced with `enif_select_read` +
+  non-blocking `read(2)` through the termios NIF, with the Reader as
+  a single GenServer (no spawn child). EOF on the tty (ssh disconnect,
+  terminal close) is surfaced as `{:harlock_tty_lost, :eof}` to the
+  subscriber and the Reader terminates so the supervisor can tear
+  down cleanly. The subscribe-then-arm sequence also kills the prior
+  race where bytes arriving before `subscribe/2` were dropped.
+- Demo `examples/contacts.exs` Tab focus traversal now actually works.
+  (Tab failure was a downstream symptom of the broken spawn-read path,
+  not a demo bug.)
 
 ### Changed
 
