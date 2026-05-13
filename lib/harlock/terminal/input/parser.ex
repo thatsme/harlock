@@ -40,6 +40,10 @@ defmodule Harlock.Terminal.Input.Parser do
           | {:char, non_neg_integer()}
 
   @type mods :: [:ctrl | :shift | :alt | :meta]
+  @type mouse_button :: :left | :middle | :right | :extra4 | :extra5
+  @type mouse_action ::
+          :press | :release | :drag | :move | :wheel_up | :wheel_down
+
   @type event ::
           {:key, key(), mods()}
           | {:key_repeat, key(), mods()}
@@ -47,6 +51,7 @@ defmodule Harlock.Terminal.Input.Parser do
           | {:paste, binary()}
           | {:focus, :in | :out}
           | {:capability, :kitty_keyboard, non_neg_integer()}
+          | {:mouse, mouse_action(), mouse_button() | nil, pos_integer(), pos_integer(), mods()}
           | {:unknown_csi, binary(), byte()}
           | {:unknown_ss3, byte()}
 
@@ -220,6 +225,15 @@ defmodule Harlock.Terminal.Input.Parser do
     end
   end
 
+  # SGR mouse — CSI < <button>;<col>;<row> M (press / drag / wheel)
+  #                                          m (release)
+  defp csi_event(<<"<", params::binary>>, final) when final in [?M, ?m] do
+    case parse_sgr_mouse(params, final) do
+      {:ok, event} -> event
+      :error -> {:unknown_csi, "<" <> params, final}
+    end
+  end
+
   # Kitty keyboard protocol — detection response: CSI ? <flags> u
   defp csi_event(<<"?", flags_str::binary>>, ?u) do
     case Integer.parse(flags_str) do
@@ -355,6 +369,80 @@ defmodule Harlock.Terminal.Input.Parser do
   defp kitty_key(57_357), do: :end
   defp kitty_key(n) when n in 57_364..57_375, do: {:f, n - 57_363}
   defp kitty_key(n), do: {:char, n}
+
+  # -- SGR mouse helpers -----------------------------------------------------
+  #
+  # Button byte (b) bit layout:
+  #   bits 0-1: button index (0=left, 1=middle, 2=right, 3=no button / motion)
+  #   bit 2 (4):   shift
+  #   bit 3 (8):   alt/meta
+  #   bit 4 (16):  ctrl
+  #   bit 5 (32):  motion
+  #   bit 6 (64):  wheel (low bits then encode up/down)
+  #   bit 7 (128): extra buttons (4/5)
+  defp parse_sgr_mouse(params, final) do
+    with [b_str, c_str, r_str] <- String.split(params, ";"),
+         {b, ""} <- Integer.parse(b_str),
+         {col, ""} <- Integer.parse(c_str),
+         {row, ""} <- Integer.parse(r_str),
+         true <- b >= 0 and col >= 1 and row >= 1 do
+      {:ok, build_mouse_event(b, col, row, final)}
+    else
+      _ -> :error
+    end
+  end
+
+  defp build_mouse_event(b, col, row, final) do
+    mods = sgr_mouse_mods(b)
+
+    cond do
+      Bitwise.band(b, 64) != 0 ->
+        action =
+          case Bitwise.band(b, 3) do
+            0 -> :wheel_up
+            1 -> :wheel_down
+            _ -> :wheel_up
+          end
+
+        {:mouse, action, nil, col, row, mods}
+
+      Bitwise.band(b, 32) != 0 ->
+        case sgr_mouse_button(b) do
+          nil -> {:mouse, :move, nil, col, row, mods}
+          btn -> {:mouse, :drag, btn, col, row, mods}
+        end
+
+      final == ?m ->
+        {:mouse, :release, sgr_mouse_button(b), col, row, mods}
+
+      true ->
+        {:mouse, :press, sgr_mouse_button(b), col, row, mods}
+    end
+  end
+
+  defp sgr_mouse_mods(b) do
+    []
+    |> maybe_add(:shift, Bitwise.band(b, 4) != 0)
+    |> maybe_add(:alt, Bitwise.band(b, 8) != 0)
+    |> maybe_add(:ctrl, Bitwise.band(b, 16) != 0)
+  end
+
+  defp sgr_mouse_button(b) do
+    if Bitwise.band(b, 128) != 0 do
+      case Bitwise.band(b, 3) do
+        0 -> :extra4
+        1 -> :extra5
+        _ -> nil
+      end
+    else
+      case Bitwise.band(b, 3) do
+        0 -> :left
+        1 -> :middle
+        2 -> :right
+        3 -> nil
+      end
+    end
+  end
 
   # -- SS3 dispatch ----------------------------------------------------------
 

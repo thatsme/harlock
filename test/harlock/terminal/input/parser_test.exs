@@ -126,6 +126,68 @@ defmodule Harlock.Terminal.Input.ParserTest do
     end
   end
 
+  describe "SGR mouse" do
+    test "left press / release at (col, row)" do
+      assert events("\e[<0;10;5M") == [{:mouse, :press, :left, 10, 5, []}]
+      assert events("\e[<0;10;5m") == [{:mouse, :release, :left, 10, 5, []}]
+    end
+
+    test "middle / right buttons" do
+      assert events("\e[<1;1;1M") == [{:mouse, :press, :middle, 1, 1, []}]
+      assert events("\e[<2;80;24M") == [{:mouse, :press, :right, 80, 24, []}]
+    end
+
+    test "drag (motion + button held)" do
+      # b = 0 (left) | 32 (motion) = 32
+      assert events("\e[<32;15;8M") == [{:mouse, :drag, :left, 15, 8, []}]
+      # b = 2 (right) | 32 = 34
+      assert events("\e[<34;15;8M") == [{:mouse, :drag, :right, 15, 8, []}]
+    end
+
+    test "pure motion (no button)" do
+      # b = 3 (no button) | 32 (motion) = 35
+      assert events("\e[<35;20;10M") == [{:mouse, :move, nil, 20, 10, []}]
+    end
+
+    test "wheel up / down" do
+      # b = 64 (wheel + index 0)
+      assert events("\e[<64;1;1M") == [{:mouse, :wheel_up, nil, 1, 1, []}]
+      # b = 65 (wheel + index 1)
+      assert events("\e[<65;1;1M") == [{:mouse, :wheel_down, nil, 1, 1, []}]
+    end
+
+    test "extra buttons (4/5)" do
+      # b = 128 (extra) | 0 = 128
+      assert events("\e[<128;1;1M") == [{:mouse, :press, :extra4, 1, 1, []}]
+      # b = 128 | 1 = 129
+      assert events("\e[<129;1;1M") == [{:mouse, :press, :extra5, 1, 1, []}]
+    end
+
+    test "modifiers (shift / alt / ctrl)" do
+      # b = 0 | 4 (shift) = 4
+      assert events("\e[<4;1;1M") == [{:mouse, :press, :left, 1, 1, [:shift]}]
+      # b = 0 | 8 (alt) = 8
+      assert events("\e[<8;1;1M") == [{:mouse, :press, :left, 1, 1, [:alt]}]
+      # b = 0 | 16 (ctrl) = 16
+      assert events("\e[<16;1;1M") == [{:mouse, :press, :left, 1, 1, [:ctrl]}]
+      # b = 0 | 4 | 8 | 16 = 28 (shift+alt+ctrl)
+      assert events("\e[<28;1;1M") == [
+               {:mouse, :press, :left, 1, 1, [:shift, :alt, :ctrl]}
+             ]
+    end
+
+    test "wheel with ctrl modifier" do
+      # b = 64 (wheel up) | 16 (ctrl) = 80
+      assert events("\e[<80;5;5M") == [{:mouse, :wheel_up, nil, 5, 5, [:ctrl]}]
+    end
+
+    test "malformed mouse params → unknown_csi" do
+      assert events("\e[<0;10M") == [{:unknown_csi, "<0;10", ?M}]
+      assert events("\e[<;1;1M") == [{:unknown_csi, "<;1;1", ?M}]
+      assert events("\e[<0;0;0M") == [{:unknown_csi, "<0;0;0", ?M}]
+    end
+  end
+
   describe "kitty keyboard protocol" do
     test "detection response: CSI ? <flags> u → capability event" do
       assert events("\e[?1u") == [{:capability, :kitty_keyboard, 1}]
