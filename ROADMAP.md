@@ -121,20 +121,25 @@ quit-with-cmd ordering.
 Terminal resize must reflow. Without this we can't ship.
 
 - Use `:os.set_signal(:sigwinch, :handle)` (OTP 22+) in `Keeper` (the
-  TTY-owning process).
-- Keeper queries new size via `TIOCGWINSZ` ioctl. We need a tiny port for
-  the ioctl — `:io.columns/0` won't work because we own `/dev/tty`, not
-  stdin. Options:
-    - **Preferred**: read from `tput cols`/`tput lines` on resize (slow but
-      no native code). Cache, only re-query on SIGWINCH.
-    - Alt: a small C port (~30 LOC) that does `ioctl(fd, TIOCGWINSZ, &ws)`.
-      Decide based on tput latency benchmark.
-- Keeper broadcasts `{:harlock_resize, rows, cols}` to Runtime.
-- Runtime handles `{:harlock_resize, _, _}`: update `state.rows`/`state.cols`,
-  mark dirty, render. `prev_frame` discarded (full redraw — diff would be
-  meaningless against differently-sized buffer).
+  TTY-owning process). Signal arrives as `{:signal, :sigwinch}` in
+  Keeper's mailbox.
+- Keeper queries new size via `ioctl(TIOCGWINSZ)` through the termios
+  NIF (`Harlock.Terminal.Termios.winsize/1`). The original plan
+  considered `tput cols`/`tput lines` to avoid native code, but
+  `:os.cmd`-based shell-outs lose the controlling tty (every shell
+  spawned by ERTS is `setsid()`-detached), so a NIF was needed for
+  termios anyway — TIOCGWINSZ goes through the same one.
+- Keeper sends `{:harlock_resize, rows, cols}` to Runtime.
+- Runtime handles `{:harlock_resize, _, _}`: update `state.rows` /
+  `state.cols`, discard `prev_frame` (full redraw — diff against
+  differently-sized buffer is meaningless), mark dirty, render.
+- Initial size at Runtime startup also comes from `Keeper.size/1`
+  (synchronous `GenServer.call`, no race because Keeper starts first
+  in the supervision tree). Test backend supplies explicit rows/cols
+  via opts.
 
-Tests: simulate resize event into `IO.Test` runtime, assert reflow.
+Tests: simulate resize event into `IO.Test` runtime, assert reflow
+(`test/harlock/resize_test.exs`).
 
 ### Wide-grapheme width (prerequisite for text_input)
 

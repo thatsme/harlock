@@ -306,32 +306,33 @@ defmodule Harlock.App.Runtime do
     send(caller, {:harlock_done, reason})
   end
 
+  # Initial frame dimensions. Sources, in priority order:
+  #
+  #   1. Explicit `:rows` / `:cols` opts (the :test backend supplies these).
+  #   2. `Keeper.size/1` via TIOCGWINSZ (the :terminal backend).
+  #   3. 24×80 defaults — only reached when neither is available, i.e.
+  #      something has gone wrong upstream.
+  #
+  # We don't fall back to LINES/COLUMNS env vars: subprocesses typically
+  # don't inherit them, and the NIF path is reliable when there's a tty.
   defp detect_size(opts) do
     explicit_rows = Keyword.get(opts, :rows)
     explicit_cols = Keyword.get(opts, :cols)
-    keeper = Keyword.get(opts, :keeper)
 
     {queried_rows, queried_cols} =
-      if (explicit_rows && explicit_cols) || is_nil(keeper) do
-        {nil, nil}
-      else
-        case Keeper.size(keeper) do
-          {:ok, r, c} -> {r, c}
-          _ -> {nil, nil}
-        end
+      cond do
+        explicit_rows && explicit_cols -> {nil, nil}
+        keeper = Keyword.get(opts, :keeper) -> from_keeper(keeper)
+        true -> {nil, nil}
       end
 
-    rows = explicit_rows || queried_rows || parse_int(System.get_env("LINES"), 24)
-    cols = explicit_cols || queried_cols || parse_int(System.get_env("COLUMNS"), 80)
-    {rows, cols}
+    {explicit_rows || queried_rows || 24, explicit_cols || queried_cols || 80}
   end
 
-  defp parse_int(nil, default), do: default
-
-  defp parse_int(str, default) do
-    case Integer.parse(str) do
-      {n, ""} when n > 0 -> n
-      _ -> default
+  defp from_keeper(keeper) do
+    case Keeper.size(keeper) do
+      {:ok, r, c} -> {r, c}
+      _ -> {nil, nil}
     end
   end
 end

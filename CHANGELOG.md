@@ -25,13 +25,15 @@ changes are called out in the relevant release notes.
   returned from `init/1` are dispatched after the first render; cmds
   returned alongside `:quit` are dispatched before the runtime exits.
 
-- SIGWINCH-driven terminal resize. `Keeper` installs an `:os.set_signal`
-  handler in init/1; on signal it shells out to `stty size` and forwards
-  `{:harlock_resize, rows, cols}` to the runtime, which discards
-  `prev_frame` (full redraw at the new size) and re-renders. The handler
-  is removed on Keeper terminate so it doesn't leak past process death.
-- `Tty.size/0` — query the terminal dimensions via `stty size` (single
-  shell-out, ~3–5ms).
+- SIGWINCH-driven terminal resize. `Keeper` installs an
+  `:os.set_signal(:sigwinch, :handle)` handler in init/1; on signal it
+  queries the new size via `ioctl(TIOCGWINSZ)` through the termios NIF
+  and forwards `{:harlock_resize, rows, cols}` to the runtime, which
+  discards `prev_frame` (full redraw at the new size) and re-renders.
+  The handler is removed on Keeper terminate so it doesn't leak past
+  process death.
+- `Termios.winsize/1` — TIOCGWINSZ via the NIF, also used by
+  `Runtime.detect_size` for the initial frame dimensions.
 - `Harlock.Test.resize/3` — synthetic resize event for headless tests.
   Resizes the test writer's cell buffer in lockstep so the next frame
   has somewhere to land.
