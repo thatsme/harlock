@@ -115,11 +115,19 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh counter    # simplest possible app — count up/down
 ./scripts/run.sh sysmon     # live BEAM process monitor
 ./scripts/run.sh contacts   # contact manager: search, list, modal forms, async save
+./scripts/run.sh showcase   # v0.3 demo: tabs, viewport, widgets, modified keys
 ```
 
 `contacts` exercises most of v0.2: tab focus traversal, text_input
 fields, an overlay with focus_trap, async save via `Cmd.from`, custom
 theme, status bar with current-focus indicator.
+
+`showcase` is a four-tab tour of everything that landed in v0.3 — a
+200-row scrollable log viewer with `viewport` + scrollbar, a long form
+that uses scroll-into-view to keep the focused field visible, a
+widget gallery with animated progress/spinner/statusbar/keybar, and a
+key-event inspector you can use to try out modified arrows
+(Ctrl-Up, Shift-Right, etc.).
 
 ## Testing your app
 
