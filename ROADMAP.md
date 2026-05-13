@@ -292,22 +292,25 @@ Writer).
   supported. Falls back to legacy parsing otherwise.
 - Emit unified `{:key, key, mods}` events regardless of source protocol.
 
-### Telemetry instrumentation
+### Telemetry instrumentation ✓
 
-Emit `:telemetry` events from the runtime so apps can wire Prometheus /
-Grafana / Loki dashboards for the things that matter operationally:
+Shipped. Events:
 
-- `[:harlock, :frame, :render]` — duration in µs, dimensions, dirty
-  status. Catches render-time regressions and per-terminal weirdness.
-- `[:harlock, :cmd, :dispatch]` / `[:harlock, :cmd, :complete]` —
-  cmd execution time, success / `:cmd_error` rate.
-- `[:harlock, :input, :dispatch]` — event arrival → `update/2` return
-  duration. Surfaces input lag separately from render lag.
-- `[:harlock, :reader, :tty_lost]` — single-fire when EOF on the tty.
+- `[:harlock, :frame, :render, :start | :stop | :exception]` — span
+  wrapping `view/1` + tree walk + diff emission. Stop measurements
+  include duration; metadata includes app, dirty, rows, cols.
+- `[:harlock, :input, :dispatch, :start | :stop | :exception]` — span
+  wrapping the runtime mailbox → `update/2` return path. Metadata
+  includes app, event, focused.
+- `[:harlock, :cmd, :dispatch]` — one-shot when a cmd is handed to the
+  task supervisor. Metadata: `%{kind: :fun | :batch | :map | :none}`.
+- `[:harlock, :cmd, :complete]` — when a cmd task returns. Measurements:
+  `%{duration: native}`. Metadata: `%{status: :ok | :error}`.
+- `[:harlock, :reader, :tty_lost]` — one-shot on EOF (ssh disconnect,
+  terminal close).
 
-~50 LOC of instrumentation, optional `:telemetry` dep with
-`runtime: false` defaults to no-op handlers. Turns "weird flicker on
-xterm-256color" from anecdote into a chart.
+`Harlock.Telemetry` documents the full catalog. `:telemetry` is a
+hard dep (tiny library, no transitive deps).
 
 ---
 

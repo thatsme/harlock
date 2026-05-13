@@ -67,6 +67,7 @@ defmodule Harlock.MixProject do
 
   defp deps do
     [
+      {:telemetry, "~> 1.2"},
       {:elixir_make, "~> 0.8", runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

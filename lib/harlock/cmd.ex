@@ -51,14 +51,33 @@ defmodule Harlock.Cmd do
 
   @doc false
   @spec dispatch(t(), pid(), atom() | pid()) :: :ok
-  def dispatch(cmd, runtime, task_sup), do: dispatch_with(cmd, runtime, task_sup, [])
+  def dispatch(cmd, runtime, task_sup) do
+    :telemetry.execute([:harlock, :cmd, :dispatch], %{count: 1}, %{kind: kind(cmd)})
+    dispatch_with(cmd, runtime, task_sup, [])
+  end
+
+  defp kind(:none), do: :none
+  defp kind({:fun, _}), do: :fun
+  defp kind({:batch, _}), do: :batch
+  defp kind({:map, _, _}), do: :map
 
   defp dispatch_with(:none, _runtime, _sup, _mappers), do: :ok
 
   defp dispatch_with({:fun, fun}, runtime, sup, mappers) do
     {:ok, _pid} =
       Task.Supervisor.start_child(sup, fn ->
+        start = System.monotonic_time()
         result = run_safely(fun)
+        duration = System.monotonic_time() - start
+
+        status = if match?({:cmd_error, _}, result), do: :error, else: :ok
+
+        :telemetry.execute(
+          [:harlock, :cmd, :complete],
+          %{duration: duration},
+          %{status: status}
+        )
+
         tagged = apply_mappers(result, mappers)
         send(runtime, {:harlock_event, tagged})
       end)

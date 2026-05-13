@@ -108,29 +108,37 @@ defmodule Harlock.App.Runtime do
   defp apply_update(state, event) do
     Focus.__set__(state.focused)
     Theme.__set__(state.theme)
+    meta = %{app: state.app, event: event, focused: state.focused}
 
     try do
-      case state.app.update(event, state.model) do
-        :quit ->
-          notify_done(state, :normal)
-          {:stop, :normal, state}
-
-        {:quit, cmd} ->
-          Cmd.dispatch(cmd, self(), state.task_sup)
-          notify_done(state, :normal)
-          {:stop, :normal, state}
-
-        {model, cmd} ->
-          new_state = render(%{state | model: model, dirty: true})
-          Cmd.dispatch(cmd, self(), new_state.task_sup)
-          {:noreply, new_state}
-
-        model ->
-          {:noreply, render(%{state | model: model, dirty: true})}
-      end
+      :telemetry.span([:harlock, :input, :dispatch], meta, fn ->
+        result = dispatch_update(state, event)
+        {result, meta}
+      end)
     after
       Theme.__clear__()
       Focus.__clear__()
+    end
+  end
+
+  defp dispatch_update(state, event) do
+    case state.app.update(event, state.model) do
+      :quit ->
+        notify_done(state, :normal)
+        {:stop, :normal, state}
+
+      {:quit, cmd} ->
+        Cmd.dispatch(cmd, self(), state.task_sup)
+        notify_done(state, :normal)
+        {:stop, :normal, state}
+
+      {model, cmd} ->
+        new_state = render(%{state | model: model, dirty: true})
+        Cmd.dispatch(cmd, self(), new_state.task_sup)
+        {:noreply, new_state}
+
+      model ->
+        {:noreply, render(%{state | model: model, dirty: true})}
     end
   end
 
@@ -194,15 +202,21 @@ defmodule Harlock.App.Runtime do
     Theme.__set__(state.theme)
 
     try do
-      tree = state.app.view(state.model)
-      {focusables, traps} = Focusables.collect(tree)
-      state = update_focus_state(state, focusables, traps)
-      state = update_subs(state)
-      frame = Renderer.render(tree, state.rows, state.cols, state.focused)
-      diff = Diff.diff(state.prev_frame, frame)
-      Writer.write(state.writer, diff)
+      :telemetry.span(
+        [:harlock, :frame, :render],
+        %{app: state.app, dirty: state.dirty},
+        fn ->
+          new_state = render_unsafe(state)
 
-      %{state | prev_frame: frame, dirty: false}
+          {new_state,
+           %{
+             app: state.app,
+             dirty: state.dirty,
+             rows: new_state.rows,
+             cols: new_state.cols
+           }}
+        end
+      )
     rescue
       e ->
         Logger.error("Harlock render crashed: #{Exception.format(:error, e, __STACKTRACE__)}")
@@ -212,6 +226,18 @@ defmodule Harlock.App.Runtime do
       Theme.__clear__()
       Focus.__clear__()
     end
+  end
+
+  defp render_unsafe(state) do
+    tree = state.app.view(state.model)
+    {focusables, traps} = Focusables.collect(tree)
+    state = update_focus_state(state, focusables, traps)
+    state = update_subs(state)
+    frame = Renderer.render(tree, state.rows, state.cols, state.focused)
+    diff = Diff.diff(state.prev_frame, frame)
+    Writer.write(state.writer, diff)
+
+    %{state | prev_frame: frame, dirty: false}
   end
 
   defp update_subs(state) do

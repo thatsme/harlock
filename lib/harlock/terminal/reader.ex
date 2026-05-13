@@ -123,9 +123,12 @@ defmodule Harlock.Terminal.Reader do
     Enum.each(events, fn ev -> send(subscriber, {:harlock_event, ev}) end)
   end
 
-  defp notify_tty_lost(%{subscriber: nil}, _reason), do: :ok
+  defp notify_tty_lost(state, reason) do
+    :telemetry.execute([:harlock, :reader, :tty_lost], %{count: 1}, %{reason: reason})
 
-  defp notify_tty_lost(%{subscriber: subscriber}, reason) do
-    send(subscriber, {:harlock_event, {:harlock_tty_lost, reason}})
+    case state do
+      %{subscriber: nil} -> :ok
+      %{subscriber: subscriber} -> send(subscriber, {:harlock_event, {:harlock_tty_lost, reason}})
+    end
   end
 end

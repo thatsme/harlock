@@ -102,8 +102,8 @@ Anything `@moduledoc false` is internal and free to change.
 | SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
 | `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ (post-0.2 on main) |
+| `:telemetry` events (frame render time, cmd duration, input lag) | ✓ (post-0.2 on main) |
 | `viewport` | v0.3 |
-| `:telemetry` events (frame render time, cmd duration, input lag) | v0.3 |
 | Mouse, kitty keyboard protocol, modified arrows | v0.3 |
 | Full theme set + built-in themes + color downgrade | v0.4 |
 

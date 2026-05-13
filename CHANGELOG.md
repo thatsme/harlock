@@ -35,6 +35,16 @@ changes are called out in the relevant release notes.
 - `Harlock.Tabs.apply_key/3` — pure helper mapping Left/Right/Home/End
   key events to `{:select, id} | :noop`, mirroring the `TextBuffer`
   pattern.
+- `:telemetry` instrumentation. Events:
+  `[:harlock, :frame, :render]` (span — duration + rows/cols/app/dirty),
+  `[:harlock, :input, :dispatch]` (span — keystroke → `update/2` return
+  time + event/focused/app),
+  `[:harlock, :cmd, :dispatch]` and `[:harlock, :cmd, :complete]`
+  (cmd execution time, status `:ok`/`:error`),
+  `[:harlock, :reader, :tty_lost]` (one-shot on EOF). See
+  `Harlock.Telemetry` for the full event catalog. `:telemetry` is a
+  hard dep (tiny, no transitive); apps that don't care just don't
+  attach handlers.
 
 ### Removed
 
