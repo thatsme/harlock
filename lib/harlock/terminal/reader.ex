@@ -11,8 +11,8 @@ defmodule Harlock.Terminal.Reader do
   use GenServer
   require Logger
 
-  alias Harlock.Terminal.Tty
   alias Harlock.Terminal.Input.Parser
+  alias Harlock.Terminal.Tty
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do

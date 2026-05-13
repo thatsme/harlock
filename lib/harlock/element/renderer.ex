@@ -9,10 +9,10 @@ defmodule Harlock.Element.Renderer do
   alias Harlock.Render.{Frame, Style}
 
   @border_chars %{
-    single:  {"┌", "┐", "└", "┘", "─", "│"},
-    double:  {"╔", "╗", "╚", "╝", "═", "║"},
+    single: {"┌", "┐", "└", "┘", "─", "│"},
+    double: {"╔", "╗", "╚", "╝", "═", "║"},
     rounded: {"╭", "╮", "╰", "╯", "─", "│"},
-    thick:   {"┏", "┓", "┗", "┛", "━", "┃"}
+    thick: {"┏", "┓", "┗", "┛", "━", "┃"}
   }
 
   @spec render(Element.t(), non_neg_integer(), non_neg_integer(), any()) :: Frame.t()
@@ -90,7 +90,12 @@ defmodule Harlock.Element.Renderer do
     render_element(child, inner, frame, focused)
   end
 
-  defp render_element(%Element{type: :overlay, children: [child, over]} = el, region, frame, focused) do
+  defp render_element(
+         %Element{type: :overlay, children: [child, over]} = el,
+         region,
+         frame,
+         focused
+       ) do
     frame = render_element(child, region, frame, focused)
 
     w = min(Keyword.get(el.opts, :width) || region.w, region.w)
@@ -151,12 +156,13 @@ defmodule Harlock.Element.Renderer do
     do: Rect.new(region.row + max(0, region.h - h), region.col, w, h)
 
   defp anchor_region(region, :bottom_right, w, h),
-    do: Rect.new(
-      region.row + max(0, region.h - h),
-      region.col + max(0, region.w - w),
-      w,
-      h
-    )
+    do:
+      Rect.new(
+        region.row + max(0, region.h - h),
+        region.col + max(0, region.w - w),
+        w,
+        h
+      )
 
   defp anchor_region(region, {row, col}, w, h),
     do: Rect.new(region.row + row, region.col + col, w, h)

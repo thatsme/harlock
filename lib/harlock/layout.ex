@@ -32,7 +32,8 @@ defmodule Harlock.Layout do
           | {:fill, pos_integer()}
 
   @spec split(Rect.t(), direction(), [constraint()]) :: [Rect.t()]
-  def split(%Rect{} = region, direction, constraints) when direction in [:vertical, :horizontal] do
+  def split(%Rect{} = region, direction, constraints)
+      when direction in [:vertical, :horizontal] do
     total = total_for(direction, region)
     sizes = solve(constraints, total)
     apply_sizes(region, direction, sizes)

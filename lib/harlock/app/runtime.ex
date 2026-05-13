@@ -14,10 +14,13 @@ defmodule Harlock.App.Runtime do
   use GenServer
   require Logger
 
-  alias Harlock.{Focus, Sub}
-  alias Harlock.Element.{Focusables, Renderer}
+  alias Harlock.Element.Focusables
+  alias Harlock.Element.Renderer
+  alias Harlock.Focus
   alias Harlock.Render.Diff
-  alias Harlock.Terminal.{Reader, Writer}
+  alias Harlock.Sub
+  alias Harlock.Terminal.Reader
+  alias Harlock.Terminal.Writer
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -239,7 +242,10 @@ defmodule Harlock.App.Runtime do
         # A trap disappeared (modal closed). Pop stashed focus.
         {restored, rest} = pop_stack(state.focus_stack, focusables)
 
-        focused = if restored in active_focusable_set(focusables, traps), do: restored, else: List.first(active_focusable_set(focusables, traps))
+        focused =
+          if restored in active_focusable_set(focusables, traps),
+            do: restored,
+            else: List.first(active_focusable_set(focusables, traps))
 
         %{state | focusables: focusables, traps: traps, focused: focused, focus_stack: rest}
 
@@ -248,9 +254,10 @@ defmodule Harlock.App.Runtime do
         active = active_focusable_set(focusables, traps)
 
         focused =
-          cond do
-            state.focused in active -> state.focused
-            true -> List.first(active)
+          if state.focused in active do
+            state.focused
+          else
+            List.first(active)
           end
 
         %{state | focusables: focusables, traps: traps, focused: focused}

@@ -1,3 +1,7 @@
+# credo:disable-for-this-file Credo.Check.Warning.UnsafeExec
+# Disabled: this file deliberately uses `:os.cmd/1` to invoke `stty` with
+# static charlist arguments. The check is correct in general but the inputs
+# here are compile-time constants, not user data.
 defmodule Harlock.Terminal.Tty do
   @moduledoc false
   # /dev/tty primitives.

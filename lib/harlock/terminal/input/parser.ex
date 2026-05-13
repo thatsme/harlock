@@ -111,7 +111,8 @@ defmodule Harlock.Terminal.Input.Parser do
   defp parse(<<0x08, rest::binary>>, events), do: parse(rest, [{:key, :backspace, []} | events])
 
   # Ctrl-letter (excluding the special-cased 0x08, 0x09, 0x0A, 0x0D handled above)
-  defp parse(<<c, rest::binary>>, events) when c in 0x01..0x07 or c in 0x0B..0x0C or c in 0x0E..0x1A do
+  defp parse(<<c, rest::binary>>, events)
+       when c in 0x01..0x07 or c in 0x0B..0x0C or c in 0x0E..0x1A do
     parse(rest, [{:key, {:char, c + ?a - 1}, [:ctrl]} | events])
   end
 
