@@ -3,10 +3,13 @@ defmodule Harlock.Element.Renderer do
   # Walks an element tree, applying the layout solver to vbox/hbox, and lays
   # cells down into a Frame. Pure function — no I/O.
 
-  alias Harlock.{Element, Layout}
+  alias Harlock.Element
   alias Harlock.Element.Column
+  alias Harlock.Layout
   alias Harlock.Layout.Rect
-  alias Harlock.Render.{Frame, Style}
+  alias Harlock.Render.Frame
+  alias Harlock.Render.Style
+  alias Harlock.Width
 
   @border_chars %{
     single: {"┌", "┐", "└", "┘", "─", "│"},
@@ -191,24 +194,24 @@ defmodule Harlock.Element.Renderer do
   defp render_cell(frame, _y, _x, _width, _text, _align, _style), do: frame
 
   defp align_text(text, width, :left) do
-    if String.length(text) >= width,
-      do: String.slice(text, 0, width),
-      else: String.pad_trailing(text, width)
+    if Width.string_width(text) >= width,
+      do: Width.slice(text, width),
+      else: Width.pad_trailing(text, width)
   end
 
   defp align_text(text, width, :right) do
-    if String.length(text) >= width,
-      do: String.slice(text, 0, width),
-      else: String.pad_leading(text, width)
+    if Width.string_width(text) >= width,
+      do: Width.slice(text, width),
+      else: Width.pad_leading(text, width)
   end
 
   defp align_text(text, width, :center) do
-    len = String.length(text)
+    sw = Width.string_width(text)
 
-    if len >= width do
-      String.slice(text, 0, width)
+    if sw >= width do
+      Width.slice(text, width)
     else
-      total = width - len
+      total = width - sw
       left = div(total, 2)
       String.duplicate(" ", left) <> text <> String.duplicate(" ", total - left)
     end
@@ -311,23 +314,23 @@ defmodule Harlock.Element.Renderer do
     text = " " <> title <> " "
 
     text =
-      if String.length(text) > available_w,
-        do: String.slice(text, 0, available_w),
+      if Width.string_width(text) > available_w,
+        do: Width.slice(text, available_w),
         else: text
+
+    text_w = Width.string_width(text)
 
     offset =
       case align do
         :left -> 0
-        :right -> max(0, available_w - String.length(text))
-        :center -> div(max(0, available_w - String.length(text)), 2)
+        :right -> max(0, available_w - text_w)
+        :center -> div(max(0, available_w - text_w), 2)
       end
 
     Frame.write(frame, row, col + offset, text, style)
   end
 
   defp clip(text, max_cols) do
-    # String.slice is grapheme-aware; for v0.1 single-cell-per-codepoint this
-    # is correct. Wide grapheme support (CJK, emoji) arrives in v0.2.
-    if String.length(text) <= max_cols, do: text, else: String.slice(text, 0, max_cols)
+    if Width.string_width(text) <= max_cols, do: text, else: Width.slice(text, max_cols)
   end
 end

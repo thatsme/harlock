@@ -35,6 +35,11 @@ changes are called out in the relevant release notes.
 - `Harlock.Test.resize/3` — synthetic resize event for headless tests.
   Resizes the test writer's cell buffer in lockstep so the next frame
   has somewhere to land.
+- `Harlock.Width` — display-column width for terminal rendering. Handles
+  East Asian Wide / Fullwidth, emoji, regional-indicator flag pairs,
+  combining marks, ZWJ, and variation selectors. Public surface:
+  `width/1`, `string_width/1`, `slice/2`, `pad_trailing/3`,
+  `pad_leading/3`. Ranges sourced from Unicode 15.1 EastAsianWidth.txt.
 
 ### Changed
 
@@ -44,6 +49,18 @@ changes are called out in the relevant release notes.
   exit terminates all in-flight cmd tasks for free; a TaskSupervisor
   crash takes down Runtime cleanly while leaving IO alive long enough
   for the terminal restore on shutdown.
+- `Render.Cell.char` now accepts `String.t()` in addition to a codepoint
+  integer, so multi-codepoint graphemes (NFD diacritics, ZWJ sequences,
+  flag emoji) are stored verbatim rather than NFC-normalized lossily.
+- `Render.Frame.write/4` walks `String.graphemes/1` instead of UTF-8
+  codepoints. Width-2 graphemes occupy two cells with `:continuation`
+  in the second; the diff renderer skips continuations (no bytes emit).
+- Renderer's `clip/2`, `align_text/3`, and `draw_title/6` use
+  `Harlock.Width` for column math — CJK and emoji content now lays out
+  to the correct visual width instead of grapheme count.
+- `IO.Test.Writer` mirrors real terminal behavior for wide chars: cursor
+  advances by 2, the trailing cell is marked `:continuation`, and the
+  reconstructed buffer-to-string output skips continuations.
 
 ## [0.1.0] — 2026-05-12
 

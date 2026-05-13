@@ -4,8 +4,16 @@ defmodule Harlock.Render.Frame do
   # (layout solver, element renderers) call Frame.write/4 to lay down text;
   # the diff renderer takes a previous Frame plus a new Frame and produces
   # the ANSI bytes to transition between them.
+  #
+  # write/4 walks graphemes, not codepoints — combining marks attach to
+  # their base in a single cell, and width-2 graphemes (CJK, emoji)
+  # occupy two cells with `:continuation` in the second.
 
-  alias Harlock.Render.{Buffer, Cell, Style, StyleTable}
+  alias Harlock.Render.Buffer
+  alias Harlock.Render.Cell
+  alias Harlock.Render.Style
+  alias Harlock.Render.StyleTable
+  alias Harlock.Width
 
   defstruct [:buffer, :styles]
 
@@ -58,15 +66,62 @@ defmodule Harlock.Render.Frame do
     %{frame | buffer: buffer, styles: styles}
   end
 
-  defp put_text(buffer, _row, _col, "", _style_id), do: buffer
+  defp put_text(buffer, row, col, text, style_id) do
+    {buffer, _col} =
+      text
+      |> String.graphemes()
+      |> Enum.reduce_while({buffer, col}, fn grapheme, {buf, c} ->
+        case place_grapheme(buf, row, c, grapheme, style_id) do
+          {:ok, new_buf, new_col} -> {:cont, {new_buf, new_col}}
+          :stop -> {:halt, {buf, c}}
+        end
+      end)
 
-  defp put_text(buffer, row, col, <<cp::utf8, rest::binary>>, style_id) do
     buffer
-    |> Buffer.put(row, col, Cell.new(cp, style_id))
-    |> put_text(row, col + 1, rest, style_id)
   end
 
-  # Drop any non-utf8 trailing bytes silently — they shouldn't appear in
-  # well-formed input but we'd rather render a clipped string than crash.
-  defp put_text(buffer, _row, _col, _, _style_id), do: buffer
+  defp place_grapheme(buffer, row, col, grapheme, style_id) do
+    case Width.width(grapheme) do
+      0 ->
+        # Zero-width grapheme (combining mark / format char with no base in
+        # this position). Skip — best-effort; graphemes from String.graphemes/1
+        # normally include their base.
+        {:ok, buffer, col}
+
+      1 ->
+        if col >= buffer.cols do
+          :stop
+        else
+          {:ok, Buffer.put(buffer, row, col, Cell.new(char_for(grapheme), style_id)), col + 1}
+        end
+
+      2 ->
+        cond do
+          col >= buffer.cols ->
+            :stop
+
+          col + 1 >= buffer.cols ->
+            # Only one column left; the wide grapheme can't fit. Drop it
+            # rather than splitting.
+            :stop
+
+          true ->
+            buffer =
+              buffer
+              |> Buffer.put(row, col, Cell.new(char_for(grapheme), style_id))
+              |> Buffer.put(row, col + 1, Cell.new(:continuation, style_id))
+
+            {:ok, buffer, col + 2}
+        end
+    end
+  end
+
+  # Single-codepoint graphemes take the integer fast path; multi-codepoint
+  # graphemes stay as binaries so they render verbatim.
+  defp char_for(grapheme) do
+    case String.to_charlist(grapheme) do
+      [cp] -> cp
+      _ -> grapheme
+    end
+  end
 end

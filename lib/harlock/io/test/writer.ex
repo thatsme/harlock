@@ -13,7 +13,11 @@ defmodule Harlock.IO.Test.Writer do
 
   use GenServer
 
-  alias Harlock.Render.{Buffer, Cell, Style, StyleTable}
+  alias Harlock.Render.Buffer
+  alias Harlock.Render.Cell
+  alias Harlock.Render.Style
+  alias Harlock.Render.StyleTable
+  alias Harlock.Width
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -94,7 +98,7 @@ defmodule Harlock.IO.Test.Writer do
   end
 
   defp interpret(<<cp::utf8, rest::binary>>, state) do
-    interpret(rest, advance(put_char(state, cp)))
+    interpret(rest, put_char(state, cp))
   end
 
   defp interpret(<<_::8, rest::binary>>, state), do: interpret(rest, state)
@@ -219,14 +223,24 @@ defmodule Harlock.IO.Test.Writer do
 
     if in_bounds?(state, row, col) do
       {style_id, styles} = StyleTable.intern(state.styles, state.style)
-      buffer = Buffer.put(state.buffer, row, col, Cell.new(cp, style_id))
-      %{state | buffer: buffer, styles: styles}
+      w = Width.width(<<cp::utf8>>)
+
+      buffer =
+        state.buffer
+        |> Buffer.put(row, col, Cell.new(cp, style_id))
+        |> maybe_continuation(row, col, w, state.cols, style_id)
+
+      %{state | buffer: buffer, styles: styles, cursor: {row, col + max(1, w)}}
     else
       state
     end
   end
 
-  defp advance(%{cursor: {row, col}} = state), do: %{state | cursor: {row, col + 1}}
+  defp maybe_continuation(buffer, row, col, 2, cols, style_id) when col + 1 < cols do
+    Buffer.put(buffer, row, col + 1, Cell.new(:continuation, style_id))
+  end
+
+  defp maybe_continuation(buffer, _row, _col, _w, _cols, _style_id), do: buffer
 
   defp in_bounds?(%{rows: rows, cols: cols}, row, col),
     do: row >= 0 and row < rows and col >= 0 and col < cols
@@ -234,13 +248,16 @@ defmodule Harlock.IO.Test.Writer do
   defp buffer_to_string(%Buffer{rows: rows, cols: cols} = buf) do
     for row <- 0..(rows - 1)//1 do
       for col <- 0..(cols - 1)//1 do
-        case Buffer.get(buf, row, col).char do
-          nil -> ?\s
-          c -> c
-        end
+        cell_char(Buffer.get(buf, row, col).char)
       end
+      |> Enum.reject(&is_nil/1)
       |> :unicode.characters_to_binary()
     end
     |> Enum.join("\n")
   end
+
+  defp cell_char(nil), do: ?\s
+  defp cell_char(:continuation), do: nil
+  defp cell_char(cp) when is_integer(cp), do: cp
+  defp cell_char(bin) when is_binary(bin), do: bin
 end

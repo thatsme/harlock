@@ -103,13 +103,16 @@ defmodule Harlock.Render.Diff do
   defp render_char(nil), do: " "
   defp render_char(:continuation), do: []
   defp render_char(cp) when is_integer(cp), do: <<cp::utf8>>
+  defp render_char(bin) when is_binary(bin), do: bin
 
   defp same_render?(%Cell{char: c1}, s1, %Cell{char: c2}, s2) do
     normalize_char(c1) == normalize_char(c2) and s1 == s2
   end
 
-  defp normalize_char(nil), do: ?\s
-  defp normalize_char(cp), do: cp
+  defp normalize_char(nil), do: " "
+  defp normalize_char(:continuation), do: :continuation
+  defp normalize_char(cp) when is_integer(cp), do: <<cp::utf8>>
+  defp normalize_char(bin) when is_binary(bin), do: bin
 
   defp positions(%Buffer{rows: rows, cols: cols}) do
     for r <- 0..(rows - 1)//1, c <- 0..(cols - 1)//1, do: {r, c}
