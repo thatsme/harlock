@@ -14,6 +14,7 @@ defmodule Harlock.App.Runtime do
   use GenServer
   require Logger
 
+  alias Harlock.Cmd
   alias Harlock.Element.Focusables
   alias Harlock.Element.Renderer
   alias Harlock.Focus
@@ -34,10 +35,11 @@ defmodule Harlock.App.Runtime do
     app = Keyword.fetch!(opts, :app)
     writer = Keyword.fetch!(opts, :writer)
     reader = Keyword.fetch!(opts, :reader)
+    task_sup = Keyword.fetch!(opts, :task_sup)
     caller = Keyword.get(opts, :caller)
 
     {rows, cols} = detect_size(opts)
-    model = init_app(app, Keyword.get(opts, :init_arg))
+    {model, init_cmd} = init_app(app, Keyword.get(opts, :init_arg))
     :ok = Reader.subscribe(reader, self())
 
     state = %{
@@ -45,6 +47,7 @@ defmodule Harlock.App.Runtime do
       model: model,
       writer: writer,
       reader: reader,
+      task_sup: task_sup,
       caller: caller,
       prev_frame: nil,
       dirty: true,
@@ -54,15 +57,21 @@ defmodule Harlock.App.Runtime do
       focusables: [],
       traps: [],
       focus_stack: [],
-      subs: %{}
+      subs: %{},
+      pending_cmd: init_cmd
     }
 
-    {:ok, state, {:continue, :first_render}}
+    {:ok, state, {:continue, :start}}
   end
 
   @impl true
-  def handle_continue(:first_render, state) do
-    {:noreply, render(state)}
+  def handle_continue(:start, state) do
+    state = render(state)
+    # TaskSupervisor is started after Runtime in the supervision tree, so it
+    # isn't available during init/1 — dispatch the init cmd here, on the
+    # first continuation, when the rest of the tree is up.
+    Cmd.dispatch(state.pending_cmd, self(), state.task_sup)
+    {:noreply, %{state | pending_cmd: nil}}
   end
 
   @impl true
@@ -77,8 +86,8 @@ defmodule Harlock.App.Runtime do
 
   defp init_app(app, init_arg) do
     case app.init(init_arg) do
-      {model, _cmd} -> model
-      model -> model
+      {model, cmd} -> {model, cmd}
+      model -> {model, Cmd.none()}
     end
   end
 
@@ -91,12 +100,15 @@ defmodule Harlock.App.Runtime do
           notify_done(state, :normal)
           {:stop, :normal, state}
 
-        {:quit, _cmd} ->
+        {:quit, cmd} ->
+          Cmd.dispatch(cmd, self(), state.task_sup)
           notify_done(state, :normal)
           {:stop, :normal, state}
 
-        {model, _cmd} ->
-          {:noreply, render(%{state | model: model, dirty: true})}
+        {model, cmd} ->
+          new_state = render(%{state | model: model, dirty: true})
+          Cmd.dispatch(cmd, self(), new_state.task_sup)
+          {:noreply, new_state}
 
         model ->
           {:noreply, render(%{state | model: model, dirty: true})}

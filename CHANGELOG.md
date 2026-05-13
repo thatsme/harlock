@@ -16,6 +16,21 @@ changes are called out in the relevant release notes.
   `mix docs` config; `.credo.exs` tuned green; Dialyzer baseline clean;
   GitHub Actions CI running format check, warnings-as-errors compile,
   tests, Credo, and Dialyzer.
+- `Harlock.Cmd` executor. `Cmd.from/1` runs a 0-arity function under a
+  per-app `Task.Supervisor` and delivers its return value as a
+  `{:harlock_event, _}` message; `Cmd.batch/1` dispatches a list
+  concurrently; `Cmd.map/2` transforms results before delivery, with
+  nested maps applying inner-first. Task crashes are caught and surfaced
+  as `{:cmd_error, reason}` events without taking down the runtime. Cmds
+  returned from `init/1` are dispatched after the first render; cmds
+  returned alongside `:quit` are dispatched before the runtime exits.
+
+### Changed
+
+- `App.Supervisor` gained a `Task.Supervisor` child positioned after
+  `Runtime` (rest_for_one, `:temporary`). A Runtime exit terminates all
+  in-flight cmd tasks for free; a TaskSupervisor crash leaves IO and
+  Runtime alive.
 
 ## [0.1.0] — 2026-05-12
 

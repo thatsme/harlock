@@ -20,7 +20,10 @@ defmodule Harlock.App.Supervisor do
 
   use Supervisor
 
-  alias Harlock.Terminal.{Caps, Keeper, Reader, Writer}
+  alias Harlock.Terminal.Caps
+  alias Harlock.Terminal.Keeper
+  alias Harlock.Terminal.Reader
+  alias Harlock.Terminal.Writer
 
   @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts) do
@@ -35,6 +38,7 @@ defmodule Harlock.App.Supervisor do
     writer_name = :"#{name}.Writer"
     reader_name = :"#{name}.Reader"
     runtime_name = :"#{name}.Runtime"
+    task_sup_name = :"#{name}.TaskSupervisor"
 
     caps = Caps.detect()
 
@@ -90,6 +94,7 @@ defmodule Harlock.App.Supervisor do
              caller: Keyword.get(opts, :caller),
              writer: writer_name,
              reader: reader_name,
+             task_sup: task_sup_name,
              name: runtime_name,
              rows: Keyword.get(opts, :rows),
              cols: Keyword.get(opts, :cols)
@@ -99,9 +104,22 @@ defmodule Harlock.App.Supervisor do
       shutdown: 1_000
     }
 
+    # TaskSupervisor sits AFTER Runtime in rest_for_one so a TaskSupervisor
+    # crash leaves IO + Runtime alive — and conversely a Runtime exit
+    # terminates the task supervisor (and all in-flight cmd tasks) for free.
+    # :temporary so a Runtime exit doesn't trigger a restart attempt that
+    # would trip max_restarts: 0 on normal :quit.
+    task_sup_child = %{
+      id: :task_sup,
+      start: {Task.Supervisor, :start_link, [[name: task_sup_name]]},
+      type: :supervisor,
+      restart: :temporary,
+      shutdown: 5_000
+    }
+
     # max_restarts: 0 means any child crash takes down the whole supervisor,
     # which in turn triggers Keeper.terminate/2 and restores the terminal.
-    Supervisor.init(io_children ++ [runtime_child],
+    Supervisor.init(io_children ++ [runtime_child, task_sup_child],
       strategy: :rest_for_one,
       max_restarts: 0,
       max_seconds: 1
