@@ -187,7 +187,81 @@ defmodule Harlock.Terminal.Input.Parser do
   defp csi_event("23", ?~), do: {:key, {:f, 11}, []}
   defp csi_event("24", ?~), do: {:key, {:f, 12}, []}
 
+  # Modified arrows / Home / End — CSI 1;<mod><letter>
+  #
+  # Modifier byte encoding (xterm): n-1 is a bitfield where bit 0 = Shift,
+  # bit 1 = Alt, bit 2 = Ctrl, bit 3 = Meta. So 2 = Shift, 5 = Ctrl,
+  # 6 = Ctrl+Shift, 8 = Ctrl+Alt+Shift, etc.
+  defp csi_event("1;" <> mod_str, letter) when letter in [?A, ?B, ?C, ?D, ?H, ?F] do
+    case parse_modifier(mod_str) do
+      {:ok, mods} -> {:key, arrow_key(letter), mods}
+      :error -> {:unknown_csi, "1;" <> mod_str, letter}
+    end
+  end
+
+  # Modified tilde-keys: CSI <n>;<mod>~ for PageUp/PageDown/Insert/Delete/Fn.
+  defp csi_event(params, ?~) do
+    case String.split(params, ";") do
+      [n, mod_str] ->
+        with {:ok, key} <- tilde_key(n),
+             {:ok, mods} <- parse_modifier(mod_str) do
+          {:key, key, mods}
+        else
+          _ -> {:unknown_csi, params, ?~}
+        end
+
+      _ ->
+        {:unknown_csi, params, ?~}
+    end
+  end
+
   defp csi_event(params, final), do: {:unknown_csi, params, final}
+
+  defp arrow_key(?A), do: :up
+  defp arrow_key(?B), do: :down
+  defp arrow_key(?C), do: :right
+  defp arrow_key(?D), do: :left
+  defp arrow_key(?H), do: :home
+  defp arrow_key(?F), do: :end
+
+  defp tilde_key("2"), do: {:ok, :insert}
+  defp tilde_key("3"), do: {:ok, :delete}
+  defp tilde_key("5"), do: {:ok, :page_up}
+  defp tilde_key("6"), do: {:ok, :page_down}
+  defp tilde_key("11"), do: {:ok, {:f, 1}}
+  defp tilde_key("12"), do: {:ok, {:f, 2}}
+  defp tilde_key("13"), do: {:ok, {:f, 3}}
+  defp tilde_key("14"), do: {:ok, {:f, 4}}
+  defp tilde_key("15"), do: {:ok, {:f, 5}}
+  defp tilde_key("17"), do: {:ok, {:f, 6}}
+  defp tilde_key("18"), do: {:ok, {:f, 7}}
+  defp tilde_key("19"), do: {:ok, {:f, 8}}
+  defp tilde_key("20"), do: {:ok, {:f, 9}}
+  defp tilde_key("21"), do: {:ok, {:f, 10}}
+  defp tilde_key("23"), do: {:ok, {:f, 11}}
+  defp tilde_key("24"), do: {:ok, {:f, 12}}
+  defp tilde_key(_), do: :error
+
+  defp parse_modifier(s) do
+    case Integer.parse(s) do
+      {n, ""} when n >= 2 and n <= 16 -> {:ok, decode_mod_byte(n)}
+      _ -> :error
+    end
+  end
+
+  # xterm modifier encoding: (n - 1) is a bitfield.
+  defp decode_mod_byte(n) do
+    bits = n - 1
+
+    []
+    |> maybe_add(:shift, Bitwise.band(bits, 1) != 0)
+    |> maybe_add(:alt, Bitwise.band(bits, 2) != 0)
+    |> maybe_add(:ctrl, Bitwise.band(bits, 4) != 0)
+    |> maybe_add(:meta, Bitwise.band(bits, 8) != 0)
+  end
+
+  defp maybe_add(mods, atom, true), do: mods ++ [atom]
+  defp maybe_add(mods, _atom, false), do: mods
 
   # -- SS3 dispatch ----------------------------------------------------------
 

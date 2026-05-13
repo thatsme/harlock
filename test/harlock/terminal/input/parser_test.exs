@@ -76,6 +76,88 @@ defmodule Harlock.Terminal.Input.ParserTest do
     end
   end
 
+  describe "modified arrows / nav (CSI 1;mod<letter>)" do
+    test "shift modifier (mod=2)" do
+      assert events("\e[1;2A") == [{:key, :up, [:shift]}]
+      assert events("\e[1;2B") == [{:key, :down, [:shift]}]
+      assert events("\e[1;2C") == [{:key, :right, [:shift]}]
+      assert events("\e[1;2D") == [{:key, :left, [:shift]}]
+      assert events("\e[1;2H") == [{:key, :home, [:shift]}]
+      assert events("\e[1;2F") == [{:key, :end, [:shift]}]
+    end
+
+    test "alt modifier (mod=3)" do
+      assert events("\e[1;3A") == [{:key, :up, [:alt]}]
+      assert events("\e[1;3D") == [{:key, :left, [:alt]}]
+    end
+
+    test "ctrl modifier (mod=5)" do
+      assert events("\e[1;5A") == [{:key, :up, [:ctrl]}]
+      assert events("\e[1;5C") == [{:key, :right, [:ctrl]}]
+      assert events("\e[1;5D") == [{:key, :left, [:ctrl]}]
+    end
+
+    test "combined modifiers" do
+      # shift+alt (mod=4)
+      assert events("\e[1;4A") == [{:key, :up, [:shift, :alt]}]
+      # shift+ctrl (mod=6)
+      assert events("\e[1;6C") == [{:key, :right, [:shift, :ctrl]}]
+      # alt+ctrl (mod=7)
+      assert events("\e[1;7D") == [{:key, :left, [:alt, :ctrl]}]
+      # shift+alt+ctrl (mod=8)
+      assert events("\e[1;8B") == [{:key, :down, [:shift, :alt, :ctrl]}]
+    end
+
+    test "meta modifier (mod=9 → bits=8)" do
+      assert events("\e[1;9A") == [{:key, :up, [:meta]}]
+      # shift+meta (mod=10 → bits=9)
+      assert events("\e[1;10A") == [{:key, :up, [:shift, :meta]}]
+      # shift+alt+ctrl+meta (mod=16 → bits=15)
+      assert events("\e[1;16A") == [{:key, :up, [:shift, :alt, :ctrl, :meta]}]
+    end
+
+    test "out-of-range modifier reported as unknown_csi" do
+      assert events("\e[1;1A") == [{:unknown_csi, "1;1", ?A}]
+      assert events("\e[1;17A") == [{:unknown_csi, "1;17", ?A}]
+      assert events("\e[1;A") == [{:unknown_csi, "1;", ?A}]
+    end
+  end
+
+  describe "modified tilde keys (CSI n;mod~)" do
+    test "shift-PageUp / shift-PageDown" do
+      assert events("\e[5;2~") == [{:key, :page_up, [:shift]}]
+      assert events("\e[6;2~") == [{:key, :page_down, [:shift]}]
+    end
+
+    test "ctrl-PageUp / ctrl-PageDown" do
+      assert events("\e[5;5~") == [{:key, :page_up, [:ctrl]}]
+      assert events("\e[6;5~") == [{:key, :page_down, [:ctrl]}]
+    end
+
+    test "ctrl-Delete / shift-Insert" do
+      assert events("\e[3;5~") == [{:key, :delete, [:ctrl]}]
+      assert events("\e[2;2~") == [{:key, :insert, [:shift]}]
+    end
+
+    test "modified F-keys" do
+      # Shift-F5
+      assert events("\e[15;2~") == [{:key, {:f, 5}, [:shift]}]
+      # Ctrl-F12
+      assert events("\e[24;5~") == [{:key, {:f, 12}, [:ctrl]}]
+      # Shift+Ctrl+Alt F1
+      assert events("\e[11;8~") == [{:key, {:f, 1}, [:shift, :alt, :ctrl]}]
+    end
+
+    test "unknown tilde code reported as unknown_csi" do
+      assert events("\e[99;2~") == [{:unknown_csi, "99;2", ?~}]
+    end
+
+    test "malformed mod reported as unknown_csi" do
+      assert events("\e[5;~") == [{:unknown_csi, "5;", ?~}]
+      assert events("\e[5;99~") == [{:unknown_csi, "5;99", ?~}]
+    end
+  end
+
   describe "SS3 (application-mode arrows / F1-F4)" do
     test "arrows" do
       assert events("\eOA") == [{:key, :up, []}]
