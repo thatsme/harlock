@@ -5,10 +5,14 @@ defmodule Harlock.Layout do
   Splits a region along a direction (`:vertical` splits height into rows,
   `:horizontal` splits width into cols) according to a list of constraints:
 
-    * `{:length, n}` — exact `n` cells
+    * `{:length, n}` — exactly `n` cells
     * `{:percentage, p}` — `p`% of the available space (rounded down)
-    * `{:min, n}` — at least `n` cells (v0.2: behaves as `:length`)
-    * `{:max, n}` — at most `n` cells (v0.2: behaves as `:length`)
+    * `{:min, n}` — at least `n` cells; grows like a `{:fill, 1}` if there's
+      room. Pair with `:fill` or other `:min` / `:max` slots to set a floor
+      under what would otherwise be flexible.
+    * `{:max, n}` — at most `n` cells; behaves like a `{:fill, 1}` capped at
+      `n`. Combine with other fills to share remaining space without
+      overflowing.
     * `{:fill, weight}` — distributes remaining space proportional to weight
 
   Apps typically don't call this directly — `vbox/1` and `hbox/1` from
@@ -16,13 +20,32 @@ defmodule Harlock.Layout do
   the solver internally. This module exists in the public surface so
   the constraint shapes are documented and stable.
 
-  When the constraints exceed the available space, sizes are truncated
-  from the tail-most non-fill constraints first, and a warning is
-  logged. The solver never crashes on over-constrained layouts.
+  ## Solver
+
+  1. Compute each slot's *lower bound* (`:length` and `:percentage` get
+     their full size; `:min(n)` gets `n`; `:fill` and `:max` get 0).
+     If the lower bounds already exceed the available space, truncate
+     from the tail and log a warning — the over-constrained behavior is
+     identical to v0.2.
+
+  2. Distribute the remainder across flexible slots. `:fill(weight)`,
+     `:min`, and `:max` all participate; `:fill` carries its declared
+     weight, `:min` and `:max` carry weight 1. (Override by writing
+     `{:fill, w}` if you want explicit weighting.)
+
+  3. Check `:max` caps. Any slot exceeding its cap is clamped to the cap
+     and frozen; the excess goes back into the remainder. Iterate until
+     no new freezes happen or until we hit `length(constraints)` passes
+     (which is the absolute upper bound — each pass either freezes ≥1
+     slot or terminates).
+
+  4. If `:max` caps leave space unallocated (e.g. `[{:max, 10}, {:max, 10}]`
+     in a 30-cell region), the trailing region is simply not used —
+     children don't overflow their caps to fill the space.
 
   Round-off from percentages and fill divisions is absorbed by the last
-  fill constraint (or by the last constraint if there are no fills), so
-  the returned sizes always sum exactly to the requested total.
+  flexible slot, so for over-fill-saturating layouts the returned sizes
+  sum exactly to the requested total.
   """
 
   require Logger
@@ -40,35 +63,9 @@ defmodule Harlock.Layout do
   @spec split(Rect.t(), direction(), [constraint()]) :: [Rect.t()]
   def split(%Rect{} = region, direction, constraints)
       when direction in [:vertical, :horizontal] do
-    :ok = validate_constraints!(constraints)
     total = total_for(direction, region)
     sizes = solve(constraints, total)
     apply_sizes(region, direction, sizes)
-  end
-
-  # :min and :max are reserved in the type but not implemented yet. Raise
-  # at use rather than silently fall through as :length, so callers get a
-  # clear error instead of a subtly-wrong layout. Real flexible-with-bounds
-  # solving lands in v0.3.
-  defp validate_constraints!(constraints) do
-    Enum.each(constraints, fn
-      {:min, _} ->
-        raise ArgumentError,
-              "Harlock.Layout: :min is reserved but not implemented in v0.2. " <>
-                "Use {:length, n} for a fixed size, or {:fill, weight} for flexible. " <>
-                "Tracked for v0.3 — see ROADMAP.md."
-
-      {:max, _} ->
-        raise ArgumentError,
-              "Harlock.Layout: :max is reserved but not implemented in v0.2. " <>
-                "Use {:length, n} for a fixed size, or {:fill, weight} for flexible. " <>
-                "Tracked for v0.3 — see ROADMAP.md."
-
-      _ ->
-        :ok
-    end)
-
-    :ok
   end
 
   defp total_for(:vertical, %Rect{h: h}), do: h
@@ -77,77 +74,147 @@ defmodule Harlock.Layout do
   defp solve([], _total), do: []
 
   defp solve(constraints, total) do
-    natural = Enum.map(constraints, &natural_size(&1, total))
-    natural_sum = Enum.sum(natural)
-    fill_weights = Enum.map(constraints, &fill_weight/1)
-    fill_total = Enum.sum(fill_weights)
+    lower = Enum.map(constraints, &lower_bound(&1, total))
+    lower_sum = Enum.sum(lower)
 
     cond do
-      natural_sum > total ->
-        warn_overflow(constraints, natural_sum, total)
-        truncate(natural, natural_sum - total)
+      lower_sum > total ->
+        warn_overflow(constraints, lower_sum, total)
+        truncate(lower, lower_sum - total)
 
-      natural_sum < total and fill_total > 0 ->
-        distribute(natural, fill_weights, total - natural_sum, fill_total)
-
-      natural_sum < total ->
-        absorb_remainder(natural, total - natural_sum)
+      lower_sum == total ->
+        lower
 
       true ->
-        natural
+        weights = Enum.map(constraints, &fill_weight/1)
+        remaining = total - lower_sum
+
+        if Enum.sum(weights) == 0 do
+          # No flexible slots. Backward-compat: absorb leftover onto the
+          # last slot so the layout still consumes the full region.
+          absorb_remainder(lower, remaining)
+        else
+          caps = Enum.map(constraints, &cap/1)
+          distribute_with_caps(lower, weights, caps, remaining, length(constraints))
+        end
     end
   end
 
-  defp natural_size({:length, n}, _total), do: n
-  defp natural_size({:min, n}, _total), do: n
-  defp natural_size({:max, n}, _total), do: n
-  defp natural_size({:percentage, p}, total), do: div(total * p, 100)
-  defp natural_size({:fill, _w}, _total), do: 0
+  defp lower_bound({:length, n}, _), do: n
+  defp lower_bound({:percentage, p}, total), do: div(total * p, 100)
+  defp lower_bound({:min, n}, _), do: n
+  defp lower_bound({:max, _}, _), do: 0
+  defp lower_bound({:fill, _}, _), do: 0
 
   defp fill_weight({:fill, w}), do: w
+  defp fill_weight({:min, _}), do: 1
+  defp fill_weight({:max, _}), do: 1
   defp fill_weight(_), do: 0
 
-  defp distribute(natural, weights, remaining, fill_total) do
-    # First pass: integer share for each fill constraint.
-    initial_shares =
+  defp cap({:max, n}), do: n
+  defp cap(_), do: :infinity
+
+  # Iterate distribution → cap-check → redistribute until converged.
+  # `passes_left` upper-bounds at `length(constraints)`; each pass either
+  # freezes ≥1 slot (reducing the active set) or terminates.
+
+  defp distribute_with_caps(sizes, _weights, _caps, 0, _passes), do: sizes
+
+  defp distribute_with_caps(sizes, weights, caps, remaining, passes_left) do
+    active_total = Enum.sum(weights)
+
+    cond do
+      active_total == 0 ->
+        # All flexible slots have hit a cap or were never flexible. Leave the
+        # remainder unallocated by design — pushing past a cap would defeat
+        # the purpose of `:max`. The trailing region simply isn't used.
+        sizes
+
+      passes_left == 0 ->
+        # Genuine non-convergence (cap redistribution would have continued
+        # but we exhausted our pass budget). Shouldn't be reachable in
+        # practice — each pass freezes ≥1 slot or terminates, so the bound
+        # is `length(constraints)`.
+        Logger.warning(fn ->
+          "Harlock.Layout: cap redistribution didn't converge; #{remaining} cells unallocated."
+        end)
+
+        sizes
+
+      true ->
+        shares = compute_shares(weights, remaining, active_total)
+        {new_sizes, new_weights, clamp_excess} = apply_with_caps(sizes, shares, weights, caps)
+
+        if clamp_excess == 0 do
+          new_sizes
+        else
+          distribute_with_caps(new_sizes, new_weights, caps, clamp_excess, passes_left - 1)
+        end
+    end
+  end
+
+  defp compute_shares(weights, remaining, active_total) do
+    raw =
       Enum.map(weights, fn
         0 -> 0
-        w -> div(remaining * w, fill_total)
+        w -> div(remaining * w, active_total)
       end)
 
-    distributed_sum = Enum.sum(initial_shares)
-    leftover = remaining - distributed_sum
-
-    # Place the leftover on the last constraint with a weight (will be a fill
-    # by construction). Guaranteed to exist because fill_total > 0.
-    shares = add_leftover_to_last_fill(initial_shares, weights, leftover)
-
-    Enum.zip_with(natural, shares, &(&1 + &2))
+    distributed = Enum.sum(raw)
+    roundoff = remaining - distributed
+    add_roundoff_to_last_active(raw, weights, roundoff)
   end
 
-  defp add_leftover_to_last_fill(shares, weights, leftover) do
+  defp add_roundoff_to_last_active(shares, _weights, 0), do: shares
+
+  defp add_roundoff_to_last_active(shares, weights, roundoff) do
+    case last_active_index(weights) do
+      nil -> shares
+      idx -> List.update_at(shares, idx, &(&1 + roundoff))
+    end
+  end
+
+  defp last_active_index(weights) do
+    weights
+    |> Enum.with_index()
+    |> Enum.reverse()
+    |> Enum.find_value(fn
+      {w, idx} when w > 0 -> idx
+      _ -> nil
+    end)
+  end
+
+  # Apply each slot's share to its size, clamping at `:max`. Frozen slots
+  # (cap-hitters) drop their weight to 0 for subsequent passes.
+  defp apply_with_caps(sizes, shares, weights, caps) do
+    [sizes, shares, weights, caps]
+    |> Enum.zip()
+    |> Enum.reduce({[], [], 0}, fn {size, share, weight, cap}, {ss, ws, excess} ->
+      new = size + share
+
+      case cap do
+        :infinity ->
+          {[new | ss], [weight | ws], excess}
+
+        max_n when new > max_n ->
+          {[max_n | ss], [0 | ws], excess + (new - max_n)}
+
+        _ ->
+          {[new | ss], [weight | ws], excess}
+      end
+    end)
+    |> then(fn {ss, ws, excess} -> {Enum.reverse(ss), Enum.reverse(ws), excess} end)
+  end
+
+  defp absorb_remainder(sizes, 0), do: sizes
+
+  defp absorb_remainder(sizes, leftover) do
+    List.update_at(sizes, -1, &(&1 + leftover))
+  end
+
+  defp truncate(sizes, deficit) do
     {result, _} =
-      Enum.zip(shares, weights)
-      |> Enum.reverse()
-      |> Enum.map_reduce(leftover, fn
-        {s, 0}, lo -> {s, lo}
-        {s, _w}, lo when lo > 0 -> {s + lo, 0}
-        {s, _w}, lo -> {s, lo}
-      end)
-
-    Enum.reverse(result)
-  end
-
-  defp absorb_remainder(natural, leftover) do
-    # No fill constraints — pad the last entry. Avoids losing cells silently.
-    List.update_at(natural, -1, &(&1 + leftover))
-  end
-
-  defp truncate(natural, deficit) do
-    # Walk from the tail, subtract from each non-zero size until deficit
-    # vanishes. Sizes can't go below zero.
-    {result, _} =
-      natural
+      sizes
       |> Enum.reverse()
       |> Enum.map_reduce(deficit, fn
         size, 0 -> {size, 0}

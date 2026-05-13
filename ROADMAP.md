@@ -236,19 +236,22 @@ external-facing surface that gates adoption:
 
 ## v0.3 — "shows well in demos" (~3 weeks after v0.2)
 
-### Layout: real :min and :max
+### Layout: real :min and :max ✓
 
-Two-pass solver:
+Shipped. The solver:
 
-1. Sum all `:min` and `:length`. If > total, behave as today (truncate
-   from tail, warn).
-2. Distribute remainder across `:fill` constraints proportional to weight.
-3. Apply `:max` caps: any fill exceeding its `:max` gets clamped, the
-   excess redistributed to non-capped fills. Iterate to fixpoint
-   (max 3 passes, bail with warning otherwise).
-
-Tests: percentage + min + fill + max combinations; over-constraint;
-unsatisfiable max.
+1. Computes a lower bound per slot: `:length(n)→n`, `:percentage(p)→p%`,
+   `:min(n)→n`, `:fill(_)→0`, `:max(_)→0`.
+2. If lower bounds exceed total → truncate from tail and warn (unchanged
+   over-constraint behavior).
+3. Distributes the remainder across flexible slots. `:fill(weight)`
+   carries its weight; `:min` and `:max` each carry weight 1.
+4. Clamps `:max` violators to their cap, returns excess to remaining,
+   iterates. Convergence is bounded by `length(constraints)` — each
+   pass either freezes ≥1 slot or terminates.
+5. If `:max` caps leave space unallocated (`[max: 10, max: 10]` in a
+   30-cell region), the trailing region is simply not used — children
+   don't overflow caps to fill space.
 
 ### Standard widgets
 

@@ -10,6 +10,21 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Added
+
+- Real `:min` and `:max` layout constraints. `{:min, n}` reserves at
+  least `n` cells and grows like a fill (weight 1) if there's room.
+  `{:max, n}` behaves like a fill (weight 1) capped at `n` — the
+  excess from a hit cap redistributes to other flexible slots until
+  the solver converges. If `:max` caps leave space unallocated
+  (e.g. `[max: 10, max: 10]` in a 30-cell region), the trailing
+  region is simply unused rather than overflowing a cap.
+
+### Removed
+
+- The v0.2 `validate_constraints!` that raised on `:min`/`:max` — those
+  constraints now work, so the guard isn't needed.
+
 ## [0.2.0] — 2026-05-13
 
 First Hex release. Adds the Cmd executor, SIGWINCH-driven resize, wide-

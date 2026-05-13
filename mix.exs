@@ -87,7 +87,7 @@ defmodule Harlock.MixProject do
         "c_src/README.md": [filename: "termios_nif", title: "Termios NIF"]
       ],
       groups_for_modules: [
-        "Apps": [
+        Apps: [
           Harlock,
           Harlock.App,
           Harlock.Cmd,
@@ -98,10 +98,10 @@ defmodule Harlock.MixProject do
           Harlock.Elements,
           Harlock.Element.Column
         ],
-        "Testing": [
+        Testing: [
           Harlock.Test
         ],
-        "Rendering": [
+        Rendering: [
           Harlock.Render.Style,
           Harlock.Width
         ]

@@ -95,27 +95,18 @@ Anything `@moduledoc false` is internal and free to change.
 | TEA runtime (init/update/view/subs) | ✓ |
 | OTP supervision + terminal restoration | ✓ |
 | Cmd executor (`Cmd.from`, `Cmd.batch`, `Cmd.map`) | ✓ |
-| Layout constraints (`:length`, `:percentage`, `:fill`) | ✓ |
+| Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ (`:min`/`:max` landed post-0.2 on main) |
 | Focus traversal + focus_trap overlays | ✓ |
 | Wide-grapheme width (CJK, emoji, ZWJ, flags) | ✓ |
 | Theme tokens (`:header`, `:focus`, `:selection`, `:border`) | ✓ |
 | SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
 | `viewport`, `progress`, `tabs`, `spinner`, `statusbar`, `keybar` | v0.3 |
-| Real `:min` / `:max` layout constraints (raise as unsupported on 0.2 — see below) | v0.3 |
 | `:telemetry` events (frame render time, cmd duration, input lag) | v0.3 |
 | Mouse, kitty keyboard protocol, modified arrows | v0.3 |
 | Full theme set + built-in themes + color downgrade | v0.4 |
 
 See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
-
-### `:min` / `:max` are not implemented yet
-
-`{:min, n}` and `{:max, n}` constraints are reserved in the layout
-solver but **not implemented in v0.2** — passing them currently raises
-at render time so you don't get silent fallback behavior. Use
-`{:length, n}` if you mean a fixed size. Flexible-with-bounds layout
-arrives in v0.3.
 
 ## Examples
 
