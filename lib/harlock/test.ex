@@ -156,6 +156,15 @@ defmodule Harlock.Test do
   @spec model(handle()) :: any()
   def model(handle), do: :sys.get_state(handle.runtime).model
 
+  @doc "Returns the current Frame.cursor — {row, col} or nil if hidden."
+  @spec cursor(handle()) :: {non_neg_integer(), non_neg_integer()} | nil
+  def cursor(handle) do
+    case :sys.get_state(handle.runtime).prev_frame do
+      nil -> nil
+      frame -> frame.cursor
+    end
+  end
+
   @doc "Returns the raw bytes the writer has received so far."
   @spec raw_writes(handle()) :: binary()
   def raw_writes(handle), do: Writer.raw_writes(handle.writer)

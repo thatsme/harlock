@@ -183,5 +183,43 @@ defmodule Harlock.Elements do
     table(Keyword.merge(base, Keyword.drop(opts, [:render])))
   end
 
+  @doc """
+  Single-line text input.
+
+  Required options:
+    * `:value`     — the current string contents (caller-owned)
+    * `:cursor`    — grapheme index of the cursor (0..length)
+    * `:focusable` — id for focus traversal
+
+  Optional:
+    * `:placeholder`      — shown when value is empty and the input isn't focused
+    * `:max_length`       — soft hint; the element doesn't enforce it, but
+      `Harlock.TextBuffer.apply_key/3` respects it if you wire it in your app
+    * `:style`            — `%Style{}` for the value text
+    * `:placeholder_style`— `%Style{}` for the placeholder
+    * `:password`         — when true, render each grapheme as `•`
+
+  The element is a dumb renderer. The app's `update/2` owns the value and
+  cursor; call `Harlock.TextBuffer.apply_key/3` to react to key events
+  when this input is focused. When focused, the renderer positions the
+  terminal cursor at the visual column matching `:cursor`.
+  """
+  @spec text_input(keyword()) :: Element.t()
+  def text_input(opts) when is_list(opts) do
+    unless Keyword.has_key?(opts, :value) do
+      raise ArgumentError, "text_input/1 requires :value"
+    end
+
+    unless Keyword.has_key?(opts, :cursor) do
+      raise ArgumentError, "text_input/1 requires :cursor"
+    end
+
+    unless Keyword.has_key?(opts, :focusable) do
+      raise ArgumentError, "text_input/1 requires :focusable"
+    end
+
+    %Element{type: :text_input, opts: opts, children: []}
+  end
+
   defp default_constraints(children), do: Enum.map(children, fn _ -> {:fill, 1} end)
 end

@@ -9,6 +9,7 @@ defmodule Harlock.Element.Renderer do
   alias Harlock.Layout.Rect
   alias Harlock.Render.Frame
   alias Harlock.Render.Style
+  alias Harlock.TextBuffer
   alias Harlock.Theme
   alias Harlock.Width
 
@@ -40,6 +41,46 @@ defmodule Harlock.Element.Renderer do
 
     text = clip(content, region.w)
     Frame.write(frame, region.row, region.col, text, style)
+  end
+
+  defp render_element(%Element{type: :text_input} = el, region, frame, focused) do
+    value = Keyword.fetch!(el.opts, :value)
+    cursor = Keyword.fetch!(el.opts, :cursor)
+    id = Keyword.fetch!(el.opts, :focusable)
+    placeholder = Keyword.get(el.opts, :placeholder, "")
+    password? = Keyword.get(el.opts, :password, false)
+
+    is_focused? = id == focused
+    show_placeholder? = value == "" and not is_focused?
+
+    {text, text_style} =
+      if show_placeholder? do
+        ph_style =
+          el.opts
+          |> Keyword.get(:placeholder_style, %Style{dim: true})
+          |> Style.from()
+
+        {placeholder, ph_style}
+      else
+        rendered = if password?, do: mask(value), else: value
+
+        v_style =
+          el.opts
+          |> Keyword.get(:style, %Style{})
+          |> Style.from()
+
+        {rendered, v_style}
+      end
+
+    text = clip(text, region.w)
+    frame = Frame.write(frame, region.row, region.col, text, text_style)
+
+    if is_focused? do
+      cursor_col = region.col + min(TextBuffer.cursor_column(value, cursor), region.w - 1)
+      Frame.set_cursor(frame, {region.row, cursor_col})
+    else
+      frame
+    end
   end
 
   defp render_element(%Element{type: :vbox} = el, region, frame, focused) do
@@ -186,6 +227,12 @@ defmodule Harlock.Element.Renderer do
       text = Column.render_value(col, row)
       render_cell(f, y, rect.col, rect.w, text, col.align, style)
     end)
+  end
+
+  defp mask(value) do
+    value
+    |> String.graphemes()
+    |> Enum.map_join(fn _g -> "•" end)
   end
 
   defp render_cell(frame, y, x, width, text, align, style) when width > 0 do

@@ -31,17 +31,36 @@ defmodule Harlock.Render.Diff do
   frame.
   """
   @spec diff(Frame.t() | nil, Frame.t()) :: iodata()
-  def diff(nil, %Frame{} = curr) do
+  def diff(prev, %Frame{} = curr) do
+    body = compute_body(prev, curr)
+    prev_cursor = prev_cursor(prev)
+
+    if body == [] and prev_cursor == nil and curr.cursor == nil do
+      []
+    else
+      [AnsiTerm.cursor_hide(), body, cursor_trailer(curr.cursor)]
+    end
+  end
+
+  defp compute_body(nil, %Frame{} = curr) do
     diff_buffer(blank_like(curr), curr.buffer, curr.styles)
   end
 
-  def diff(%Frame{} = prev, %Frame{} = curr) do
+  defp compute_body(%Frame{} = prev, %Frame{} = curr) do
     if prev.buffer.rows == curr.buffer.rows and prev.buffer.cols == curr.buffer.cols do
       diff_with_prev(prev, curr)
     else
-      # Dimensions changed (resize) — bail to full redraw.
       [AnsiTerm.clear_screen(), diff_buffer(blank_like(curr), curr.buffer, curr.styles)]
     end
+  end
+
+  defp prev_cursor(nil), do: nil
+  defp prev_cursor(%Frame{cursor: c}), do: c
+
+  defp cursor_trailer(nil), do: []
+
+  defp cursor_trailer({row, col}) do
+    [AnsiTerm.move(row, col), AnsiTerm.cursor_show()]
   end
 
   defp diff_with_prev(prev, curr) do

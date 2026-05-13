@@ -15,14 +15,22 @@ defmodule Harlock.Render.Frame do
   alias Harlock.Render.StyleTable
   alias Harlock.Width
 
-  defstruct [:buffer, :styles]
+  defstruct buffer: nil, styles: nil, cursor: nil
 
-  @type t :: %__MODULE__{buffer: Buffer.t(), styles: StyleTable.t()}
+  @type t :: %__MODULE__{
+          buffer: Buffer.t(),
+          styles: StyleTable.t(),
+          cursor: {non_neg_integer(), non_neg_integer()} | nil
+        }
 
   @spec new(non_neg_integer(), non_neg_integer()) :: t()
   def new(rows, cols) do
-    %__MODULE__{buffer: Buffer.new(rows, cols), styles: StyleTable.new()}
+    %__MODULE__{buffer: Buffer.new(rows, cols), styles: StyleTable.new(), cursor: nil}
   end
+
+  @doc "Position the terminal cursor at (row, col), or hide it with nil."
+  @spec set_cursor(t(), {non_neg_integer(), non_neg_integer()} | nil) :: t()
+  def set_cursor(%__MODULE__{} = frame, cursor), do: %{frame | cursor: cursor}
 
   @doc """
   Write `text` into the frame starting at (row, col), one codepoint per cell,

@@ -34,6 +34,10 @@ defmodule Harlock.Terminal.Ansi do
   def home, do: @csi <> "H"
   def reset_sgr, do: @csi <> "0m"
 
+  @doc "Show / hide the terminal cursor (DECTCEM)."
+  def cursor_show, do: @csi <> "?25h"
+  def cursor_hide, do: @csi <> "?25l"
+
   @doc "DA (primary device attributes) probe. Response begins with ESC [ ? ... c"
   def da, do: @csi <> "c"
 

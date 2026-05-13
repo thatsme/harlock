@@ -51,6 +51,24 @@ changes are called out in the relevant release notes.
 - `Style.merge/2` — layer one style on top of another (non-default
   colors win, booleans OR). Used to apply theme `:focus` to user-set
   element styles without losing fg/bg.
+- `Harlock.TextBuffer` — pure helpers for editing a `(value, cursor)`
+  pair: `insert/3`, `delete_backward/2`, `delete_forward/2`, cursor
+  movement, plus `apply_key/3` mapping a key event to
+  `{:edit, value, cursor} | :submit | :noop`. Cursor is a grapheme
+  index; `cursor_column/2` translates to display columns via
+  `Harlock.Width` (CJK and combining-mark aware).
+- `text_input` element — single-line input with `:value`, `:cursor`
+  (grapheme index), `:focusable`, `:placeholder`, `:placeholder_style`,
+  `:style`, `:password`. Dumb renderer: the app owns the buffer in its
+  model and calls `Harlock.TextBuffer.apply_key/3` in `update/2`. When
+  focused, the renderer positions the terminal cursor at the correct
+  visual column (wide-grapheme aware).
+- `Frame.cursor` (`{row, col} | nil`) plus `Frame.set_cursor/2`. The
+  diff renderer wraps each frame with cursor-hide before the body and
+  cursor-position + show after, so the terminal cursor only appears
+  where a focused widget asks for it.
+- `Harlock.Test.cursor/1` — read the current `Frame.cursor` from the
+  runtime, useful for asserting text-input positioning in tests.
 
 ### Changed
 
