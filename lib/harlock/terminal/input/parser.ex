@@ -12,10 +12,12 @@ defmodule Harlock.Terminal.Input.Parser do
   #   {:paste, binary}         bracketed paste content
   #   {:focus, :in | :out}     XTerm focus reporting
   #
-  # Deferred to v0.2: mouse events, kitty keyboard protocol, modified arrows
-  # (CSI 1;<mod><letter>), Esc-alone vs Esc-prefix timing disambiguation.
-  # In v0.1, lone ESC at end of a chunk → :escape; ESC followed by another
-  # byte in the same chunk → either CSI/SS3 (if [, O) or Alt-prefixed key.
+  # Lone ESC at end of a chunk → :escape; ESC followed by another byte in the
+  # same chunk → either CSI/SS3 (if [, O) or Alt-prefixed key.
+  #
+  # Kitty keyboard protocol events (`u`-terminated CSI) are parsed but
+  # require the application to push the enable flags via the Writer; the
+  # runtime does not enable them by default in v0.3.
 
   defstruct buffer: <<>>
 
@@ -37,11 +39,14 @@ defmodule Harlock.Terminal.Input.Parser do
           | {:f, 1..12}
           | {:char, non_neg_integer()}
 
-  @type mods :: [:ctrl | :shift | :alt]
+  @type mods :: [:ctrl | :shift | :alt | :meta]
   @type event ::
           {:key, key(), mods()}
+          | {:key_repeat, key(), mods()}
+          | {:key_release, key(), mods()}
           | {:paste, binary()}
           | {:focus, :in | :out}
+          | {:capability, :kitty_keyboard, non_neg_integer()}
           | {:unknown_csi, binary(), byte()}
           | {:unknown_ss3, byte()}
 
@@ -215,6 +220,28 @@ defmodule Harlock.Terminal.Input.Parser do
     end
   end
 
+  # Kitty keyboard protocol — detection response: CSI ? <flags> u
+  defp csi_event(<<"?", flags_str::binary>>, ?u) do
+    case Integer.parse(flags_str) do
+      {flags, ""} when flags >= 0 -> {:capability, :kitty_keyboard, flags}
+      _ -> {:unknown_csi, "?" <> flags_str, ?u}
+    end
+  end
+
+  # Kitty keyboard protocol — key event:
+  #
+  #   CSI <code>[:<shifted>[:<base>]][;<mods>[:<event>]] u
+  #
+  # `code` is the unicode codepoint of the unmodified key (or a kitty
+  # private-range value for functional keys). `event` is 1=press (default),
+  # 2=repeat, 3=release. Shifted/base alternate-key info is ignored.
+  defp csi_event(params, ?u) do
+    case parse_kitty_event(params) do
+      {:ok, key, mods, event_type} -> kitty_event_tuple(event_type, key, mods)
+      :error -> {:unknown_csi, params, ?u}
+    end
+  end
+
   defp csi_event(params, final), do: {:unknown_csi, params, final}
 
   defp arrow_key(?A), do: :up
@@ -244,7 +271,7 @@ defmodule Harlock.Terminal.Input.Parser do
 
   defp parse_modifier(s) do
     case Integer.parse(s) do
-      {n, ""} when n >= 2 and n <= 16 -> {:ok, decode_mod_byte(n)}
+      {n, ""} when n >= 1 and n <= 16 -> {:ok, decode_mod_byte(n)}
       _ -> :error
     end
   end
@@ -262,6 +289,72 @@ defmodule Harlock.Terminal.Input.Parser do
 
   defp maybe_add(mods, atom, true), do: mods ++ [atom]
   defp maybe_add(mods, _atom, false), do: mods
+
+  # -- Kitty keyboard helpers ------------------------------------------------
+
+  defp parse_kitty_event(params) do
+    {code_section, mods_section} =
+      case String.split(params, ";", parts: 2) do
+        [c] -> {c, nil}
+        [c, m] -> {c, m}
+      end
+
+    with {:ok, code} <- parse_kitty_code(code_section),
+         {:ok, mods, event_type} <- parse_kitty_mods(mods_section) do
+      {:ok, kitty_key(code), mods, event_type}
+    end
+  end
+
+  defp parse_kitty_code(section) do
+    primary = section |> String.split(":", parts: 2) |> List.first()
+
+    case Integer.parse(primary) do
+      {n, ""} when n >= 0 -> {:ok, n}
+      _ -> :error
+    end
+  end
+
+  defp parse_kitty_mods(nil), do: {:ok, [], :press}
+
+  defp parse_kitty_mods(section) do
+    case String.split(section, ":", parts: 2) do
+      [mod_str] ->
+        with {:ok, mods} <- parse_modifier(mod_str), do: {:ok, mods, :press}
+
+      [mod_str, ev_str] ->
+        with {:ok, mods} <- parse_modifier(mod_str),
+             {:ok, event_type} <- parse_kitty_event_type(ev_str) do
+          {:ok, mods, event_type}
+        end
+    end
+  end
+
+  defp parse_kitty_event_type("1"), do: {:ok, :press}
+  defp parse_kitty_event_type("2"), do: {:ok, :repeat}
+  defp parse_kitty_event_type("3"), do: {:ok, :release}
+  defp parse_kitty_event_type(_), do: :error
+
+  defp kitty_event_tuple(:press, key, mods), do: {:key, key, mods}
+  defp kitty_event_tuple(:repeat, key, mods), do: {:key_repeat, key, mods}
+  defp kitty_event_tuple(:release, key, mods), do: {:key_release, key, mods}
+
+  # Kitty private-range functional-key codepoints.
+  defp kitty_key(57344), do: :escape
+  defp kitty_key(57345), do: :enter
+  defp kitty_key(57346), do: :tab
+  defp kitty_key(57347), do: :backspace
+  defp kitty_key(57348), do: :insert
+  defp kitty_key(57349), do: :delete
+  defp kitty_key(57350), do: :left
+  defp kitty_key(57351), do: :right
+  defp kitty_key(57352), do: :up
+  defp kitty_key(57353), do: :down
+  defp kitty_key(57354), do: :page_up
+  defp kitty_key(57355), do: :page_down
+  defp kitty_key(57356), do: :home
+  defp kitty_key(57357), do: :end
+  defp kitty_key(n) when n in 57364..57375, do: {:f, n - 57363}
+  defp kitty_key(n), do: {:char, n}
 
   # -- SS3 dispatch ----------------------------------------------------------
 

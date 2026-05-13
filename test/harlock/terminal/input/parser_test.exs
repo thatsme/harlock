@@ -116,10 +116,74 @@ defmodule Harlock.Terminal.Input.ParserTest do
       assert events("\e[1;16A") == [{:key, :up, [:shift, :alt, :ctrl, :meta]}]
     end
 
+    test "mod=1 means no modifiers (per spec)" do
+      assert events("\e[1;1A") == [{:key, :up, []}]
+    end
+
     test "out-of-range modifier reported as unknown_csi" do
-      assert events("\e[1;1A") == [{:unknown_csi, "1;1", ?A}]
       assert events("\e[1;17A") == [{:unknown_csi, "1;17", ?A}]
       assert events("\e[1;A") == [{:unknown_csi, "1;", ?A}]
+    end
+  end
+
+  describe "kitty keyboard protocol" do
+    test "detection response: CSI ? <flags> u → capability event" do
+      assert events("\e[?1u") == [{:capability, :kitty_keyboard, 1}]
+      assert events("\e[?15u") == [{:capability, :kitty_keyboard, 15}]
+      assert events("\e[?0u") == [{:capability, :kitty_keyboard, 0}]
+    end
+
+    test "press of printable ASCII codepoint" do
+      # 'a' = 97
+      assert events("\e[97u") == [{:key, {:char, ?a}, []}]
+      # 'A' = 65
+      assert events("\e[65u") == [{:key, {:char, ?A}, []}]
+    end
+
+    test "press with modifier (CSI code;mod u)" do
+      # ctrl-a (mod=5)
+      assert events("\e[97;5u") == [{:key, {:char, ?a}, [:ctrl]}]
+      # shift+alt 'b' (mod=4)
+      assert events("\e[98;4u") == [{:key, {:char, ?b}, [:shift, :alt]}]
+    end
+
+    test "functional keys via private-range codepoints" do
+      # 57344=Escape, 57352=Up, 57364=F1, 57375=F12
+      assert events("\e[57344u") == [{:key, :escape, []}]
+      assert events("\e[57346u") == [{:key, :tab, []}]
+      assert events("\e[57352u") == [{:key, :up, []}]
+      assert events("\e[57364u") == [{:key, {:f, 1}, []}]
+      assert events("\e[57375u") == [{:key, {:f, 12}, []}]
+    end
+
+    test "press event type (explicit :1)" do
+      assert events("\e[97;5:1u") == [{:key, {:char, ?a}, [:ctrl]}]
+    end
+
+    test "repeat event (event type 2) → :key_repeat tuple" do
+      assert events("\e[97;1:2u") == [{:key_repeat, {:char, ?a}, []}]
+      assert events("\e[57352;5:2u") == [{:key_repeat, :up, [:ctrl]}]
+    end
+
+    test "release event (event type 3) → :key_release tuple" do
+      assert events("\e[97;1:3u") == [{:key_release, {:char, ?a}, []}]
+      assert events("\e[57346;1:3u") == [{:key_release, :tab, []}]
+    end
+
+    test "alternate keys (<code>:<shifted>:<base>) — alternates are ignored" do
+      # Shift-a where shifted form is 'A' (65); we take primary 97 = 'a'.
+      assert events("\e[97:65;2u") == [{:key, {:char, ?a}, [:shift]}]
+    end
+
+    test "unknown event type → unknown_csi" do
+      assert events("\e[97;1:9u") == [{:unknown_csi, "97;1:9", ?u}]
+    end
+
+    test "malformed kitty params → unknown_csi" do
+      # Empty params with `u` final byte (e.g. xterm "restore cursor" echoed).
+      assert events("\e[u") == [{:unknown_csi, "", ?u}]
+      # Out-of-range event type.
+      assert events("\e[97;1:99u") == [{:unknown_csi, "97;1:99", ?u}]
     end
   end
 
