@@ -67,8 +67,9 @@ What's stubbed / missing — the honest list:
 - **0.x** — API may break. We document breaking changes in CHANGELOG.
 - **1.0** — locked public API for `Harlock`, `Harlock.App`, `Harlock.Elements`,
   `Harlock.Cmd`, `Harlock.Sub`, `Harlock.Render.Style`, `Harlock.Layout`.
-  Internal modules (`Harlock.App.Runtime`, `Harlock.Terminal.*`,
-  `Harlock.Element.Renderer`) remain `@moduledoc false` and free to change.
+  Internal modules — Harlock.App.Runtime, the rest of Harlock.Terminal.\*,
+  Harlock.Element.Renderer — stay `@moduledoc false` and remain free
+  to change without notice.
 
 ---
 
@@ -97,8 +98,8 @@ The minimum set that lets someone build a real internal tool. Ship together.
 The runtime currently destructures `{model, _cmd}` and throws the cmd away.
 Wire a real executor.
 
-- Add `Harlock.App.TaskSupervisor` as a child of `Harlock.App.Supervisor`,
-  positioned **between IO and Runtime** so it's already up when Runtime's
+- Add a Task.Supervisor child to the app supervisor, positioned
+  **between IO and Runtime** so it's already up when Runtime's
   `handle_continue` dispatches the init-time cmd. (Earlier plan said
   "after Runtime"; that lost the init-cmd race against the supervisor's
   child-start loop.) Strategy: `:one_for_one`, restart `:temporary` on

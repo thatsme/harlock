@@ -1,23 +1,29 @@
 defmodule Harlock.Layout do
-  @moduledoc false
-  # Ratatui-style constraint layout solver.
-  #
-  # Splits a Rect along a direction (:vertical splits height into rows,
-  # :horizontal splits width into cols) according to a list of constraints:
-  #
-  #   {:length, n}       exact n cells
-  #   {:percentage, p}   p% of the available space (rounded down)
-  #   {:min, n}          at least n cells (v0.1: behaves as :length)
-  #   {:max, n}          at most n cells (v0.1: behaves as :length)
-  #   {:fill, weight}    distributes remaining space proportional to weight
-  #
-  # When the constraints exceed the available space, sizes are truncated from
-  # the tail-most non-fill constraints first, and a warning is logged. We
-  # never crash on over-constrained layouts.
-  #
-  # Round-off from percentages and fill divisions is absorbed by the last
-  # fill constraint (or by the last constraint if there are no fills), so
-  # the returned sizes always sum exactly to the requested total.
+  @moduledoc """
+  Ratatui-style constraint layout solver.
+
+  Splits a region along a direction (`:vertical` splits height into rows,
+  `:horizontal` splits width into cols) according to a list of constraints:
+
+    * `{:length, n}` — exact `n` cells
+    * `{:percentage, p}` — `p`% of the available space (rounded down)
+    * `{:min, n}` — at least `n` cells (v0.2: behaves as `:length`)
+    * `{:max, n}` — at most `n` cells (v0.2: behaves as `:length`)
+    * `{:fill, weight}` — distributes remaining space proportional to weight
+
+  Apps typically don't call this directly — `vbox/1` and `hbox/1` from
+  `Harlock.Elements` take a `:constraints` opt and the renderer invokes
+  the solver internally. This module exists in the public surface so
+  the constraint shapes are documented and stable.
+
+  When the constraints exceed the available space, sizes are truncated
+  from the tail-most non-fill constraints first, and a warning is
+  logged. The solver never crashes on over-constrained layouts.
+
+  Round-off from percentages and fill divisions is absorbed by the last
+  fill constraint (or by the last constraint if there are no fills), so
+  the returned sizes always sum exactly to the requested total.
+  """
 
   require Logger
 

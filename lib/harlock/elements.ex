@@ -1,9 +1,32 @@
 defmodule Harlock.Elements do
-  @moduledoc false
-  # View-tree constructors. Imported into apps via `use Harlock.App`.
-  #
-  # v0.1 primitives: text, vbox, hbox, spacer, list, table, overlay, box.
-  # text_input, viewport, progress, spinner arrive in subsequent steps.
+  @moduledoc """
+  View-tree constructors. Auto-imported into apps via `use Harlock.App`,
+  so most apps use `text(...)`, `vbox(...)`, `box(...)` etc. directly
+  without qualification.
+
+  An element is a plain struct (`Harlock.Element`); building a view is
+  just calling these functions to assemble a tree. The renderer walks
+  the tree once per dirty frame and produces a `Frame` ready for the
+  diff renderer.
+
+  ## Primitives
+
+    * `text/2` — single-line text content
+    * `text_input/1` — single-line editable input (paired with
+      `Harlock.TextBuffer`)
+    * `vbox/1` / `hbox/1` — vertical / horizontal stacks with layout
+      constraints (`:length`, `:percentage`, `:fill`)
+    * `box/1` — single-child container with border + title + padding
+    * `spacer/0` — empty element that occupies a layout slot
+    * `overlay/1` — render a foreground element on top of a background
+      with optional `focus_trap`
+    * `table/1` / `list/2` — row-based primitives with selection and
+      focus highlighting
+    * `column/1` — column spec for `table/1`
+
+  All elements that accept focus take a `:focusable` opt — the runtime
+  walks the tree to collect focusable ids for Tab traversal.
+  """
 
   alias Harlock.{Element, Element.Column}
 

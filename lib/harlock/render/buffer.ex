@@ -1,9 +1,15 @@
 defmodule Harlock.Render.Buffer do
-  @moduledoc false
-  # A 2D grid of cells of fixed dimensions. Cells are stored in a Map keyed by
-  # {row, col}; missing keys behave as blanks. Map representation keeps
-  # construction cheap (no need to pre-fill every cell) and survives sparse
-  # frames where most cells are blank.
+  @moduledoc """
+  A 2D grid of cells of fixed dimensions, returned by `Harlock.Test.cells/1`.
+
+  Cells are stored in a map keyed by `{row, col}`; missing keys behave
+  as blanks. The map representation keeps construction cheap (no need
+  to pre-fill every cell) and survives sparse frames where most cells
+  are blank.
+
+  In tests you'll typically pull this from `Harlock.Test.cells/1` to
+  inspect individual cell contents and styles after a render.
+  """
 
   alias Harlock.Render.Cell
 

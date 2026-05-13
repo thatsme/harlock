@@ -1,19 +1,20 @@
 defmodule Harlock.Render.Cell do
-  @moduledoc false
-  # A single terminal cell. `char` is a codepoint, a grapheme binary, nil
-  # (blank), or `:continuation` (the second cell of a wide grapheme).
-  # `style_id` is an integer pointing into the frame's StyleTable.
-  #
-  # Single-codepoint graphemes (the common case — ASCII, Latin-1 NFC) take
-  # the integer fast path. Multi-codepoint graphemes (NFD diacritics, ZWJ
-  # sequences, regional-indicator flags) are stored as binaries so the
-  # grapheme is rendered verbatim. The diff renderer dispatches on the
-  # type and emits utf-8 bytes for ints, the binary directly for binaries.
-  #
-  # Wide graphemes occupy two cells: the grapheme itself at (row, col)
-  # and `:continuation` at (row, col + 1). The diff renderer skips
-  # continuation cells (their visual is contributed by the wide grapheme
-  # one column to the left).
+  @moduledoc """
+  A single terminal cell.
+
+    * `:char` — a codepoint integer, a grapheme binary, `nil` (blank),
+      or `:continuation` (the second cell of a wide grapheme).
+    * `:style_id` — integer index into the frame's internal style table.
+
+  Single-codepoint graphemes (the common case — ASCII, Latin-1 NFC)
+  take the integer fast path. Multi-codepoint graphemes (NFD
+  diacritics, ZWJ sequences, regional-indicator flags) are stored as
+  binaries so the grapheme is rendered verbatim. Wide graphemes
+  occupy two cells: the grapheme at `(row, col)` and `:continuation`
+  at `(row, col + 1)`.
+
+  You'll see cells when inspecting a render via `Harlock.Test.cells/1`.
+  """
 
   defstruct char: nil, style_id: 0
 

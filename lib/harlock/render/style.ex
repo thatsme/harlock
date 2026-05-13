@@ -1,8 +1,28 @@
 defmodule Harlock.Render.Style do
-  @moduledoc false
-  # Visual attributes for a cell. Compared by value, hashed by value — used as
-  # a key into StyleTable. Keep the shape stable: adding fields is a breaking
-  # change for any consumer that pattern-matches.
+  @moduledoc """
+  Visual attributes for a rendered cell.
+
+      %Harlock.Render.Style{fg: :cyan, bold: true}
+      %Harlock.Render.Style{reverse: true}
+      %Harlock.Render.Style{bg: {:rgb, 30, 30, 40}}
+
+  Fields:
+
+    * `:fg` / `:bg` — foreground / background colour. Atoms for the 16
+      standard colours (`:red`, `:bright_blue`, …), `{:color256, n}` for
+      256-color, `{:rgb, r, g, b}` for truecolor, or `:default` for
+      "no override."
+    * `:bold` / `:dim` / `:italic` / `:underline` / `:reverse` — boolean
+      attributes, all `false` by default.
+
+  Construct with the struct directly, or with `from/1` for keyword/map
+  input. `merge/2` layers one style on top of another — useful for
+  applying a theme `:focus` token to a user-set element style without
+  losing fg/bg.
+
+  Compared by value, hashed by value — used as a key into the renderer's
+  internal style table.
+  """
 
   defstruct fg: :default,
             bg: :default,

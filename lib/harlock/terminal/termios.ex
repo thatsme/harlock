@@ -1,18 +1,20 @@
 defmodule Harlock.Terminal.Termios do
-  @moduledoc false
-  # POSIX termios access via NIF.
-  #
-  # Calls `tcgetattr` / `tcsetattr` / `ioctl(TIOCGWINSZ)` directly on a
-  # /dev/tty fd opened from inside the BEAM. We can't use `:os.cmd` for
-  # this because `:os.cmd` (and `Port.open`) route through ERTS's
-  # `erl_child_setup`, which `setsid()`s the child and detaches it from
-  # the controlling terminal — `/dev/tty` then returns ENXIO in the
-  # subprocess. Doing it in-process via NIF sidesteps that entirely.
-  #
-  # All NIFs are dirty I/O. If the NIF fails to load (e.g. the build
-  # didn't happen, or we're on an unsupported platform), the module still
-  # compiles; the public functions return `{:error, :nif_not_loaded}` at
-  # runtime so callers can degrade.
+  @moduledoc """
+  POSIX termios access for `/dev/tty` via a small NIF.
+
+  Most Harlock apps don't touch this directly — the runtime owns one
+  control fd for the app's lifecycle (snapshot on init, restore on
+  terminate) and input is delivered via `arm_select/1` + `read_nonblock/2`.
+  The module is documented so you can drive termios from your own
+  code if you need raw mode outside the Harlock runtime.
+
+  See `c_src/README.md` for the design rationale — in particular, why
+  `tcgetattr` / `tcsetattr` / `ioctl(TIOCGWINSZ)` go through a NIF
+  instead of `:os.cmd("stty ...")` (the subshell loses the controlling
+  terminal) and why reads use `enif_select_read` + non-blocking
+  `read(2)` instead of `:file.read/2` (the latter doesn't deliver
+  bytes from a spawned process on macOS).
+  """
 
   require Logger
 

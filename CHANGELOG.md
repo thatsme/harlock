@@ -10,6 +10,13 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-05-13
+
+First Hex release. Adds the Cmd executor, SIGWINCH-driven resize, wide-
+grapheme width, minimal theme tokens, `text_input`, and a termios NIF
+for direct `/dev/tty` control. The library is ready to depend on as
+`{:harlock, "~> 0.2"}`.
+
 ### Added
 
 - v0.2-prep tooling baseline: `ex_doc`, `dialyxir`, `credo` dev deps;
@@ -108,12 +115,12 @@ changes are called out in the relevant release notes.
 
 ### Changed
 
-- `App.Supervisor` gained a `Task.Supervisor` child positioned between
-  IO and Runtime (rest_for_one, `:temporary`). It's available when
-  Runtime's `handle_continue` dispatches the init-time cmd; a Runtime
-  exit terminates all in-flight cmd tasks for free; a TaskSupervisor
-  crash takes down Runtime cleanly while leaving IO alive long enough
-  for the terminal restore on shutdown.
+- The app supervisor gained a `Task.Supervisor` child positioned between
+  IO and the runtime (rest_for_one, `:temporary`). It's available when
+  the runtime's `handle_continue` dispatches the init-time cmd; a
+  runtime exit terminates all in-flight cmd tasks for free; a
+  TaskSupervisor crash takes down the runtime cleanly while leaving
+  IO alive long enough for the terminal restore on shutdown.
 - `Render.Cell.char` now accepts `String.t()` in addition to a codepoint
   integer, so multi-codepoint graphemes (NFD diacritics, ZWJ sequences,
   flag emoji) are stored verbatim rather than NFC-normalized lossily.
@@ -164,5 +171,6 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/thatsme/harlock/releases/tag/v0.2.0
 [0.1.0]: https://github.com/thatsme/harlock/releases/tag/v0.1.0

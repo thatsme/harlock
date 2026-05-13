@@ -1,14 +1,22 @@
 defmodule Harlock.Element.Column do
-  @moduledoc false
-  # A single column spec for the `table` element.
-  #
-  #   * `:title` — header label (used only when `show_header: true`)
-  #   * `:width` — a layout constraint: {:length, n} | {:percentage, p} |
-  #     {:fill, w} | {:min, n} | {:max, n}
-  #   * `:align` — :left | :right | :center
-  #   * `:render` — fn(row) -> String.t() | iodata(). Defaults to
-  #     `to_string/1` of the row itself, which is what makes `list`
-  #     (a degenerate single-column table) ergonomic.
+  @moduledoc """
+  Column spec for `Harlock.Elements.table/1`, built via
+  `Harlock.Elements.column/1`:
+
+      column(title: "Name", width: {:fill, 1}, render: & &1.name)
+      column(title: "ID",   width: {:length, 4}, align: :right, render: & &1.id)
+
+  Fields:
+
+    * `:title`  — header label (shown when the table has `show_header: true`)
+    * `:width`  — layout constraint: `{:length, n}` | `{:percentage, p}` |
+      `{:fill, w}` | `{:min, n}` | `{:max, n}`
+    * `:align`  — `:left` (default) | `:right` | `:center`
+    * `:render` — `fn row -> String.t() | iodata()`. Defaults to
+      `to_string/1` of the row itself, which is what makes
+      `Harlock.Elements.list/2` ergonomic (no render fn needed for
+      simple lists).
+  """
 
   defstruct title: "", width: {:fill, 1}, align: :left, render: nil
 
