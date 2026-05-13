@@ -1,7 +1,7 @@
 defmodule Harlock.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/thatsme/harlock"
 
   def project do
@@ -98,6 +98,13 @@ defmodule Harlock.MixProject do
           Harlock.TextBuffer,
           Harlock.Elements,
           Harlock.Element.Column
+        ],
+        Widgets: [
+          Harlock.Tabs,
+          Harlock.Viewport
+        ],
+        Instrumentation: [
+          Harlock.Telemetry
         ],
         Testing: [
           Harlock.Test

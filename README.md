@@ -10,16 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-<!--
-To record the contacts demo as an asciinema cast and embed it here:
-
-  asciinema rec --command './scripts/run.sh contacts' demo.cast
-  asciinema upload demo.cast
-
-Then replace this comment with:
-
-  [![asciicast](https://asciinema.org/a/<CAST_ID>.svg)](https://asciinema.org/a/<CAST_ID>)
--->
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/main/screenshots/showcase.png)
 
 ```elixir
 defmodule Counter do
@@ -48,7 +39,7 @@ Harlock.run(Counter)
 
 ```elixir
 def deps do
-  [{:harlock, "~> 0.2"}]
+  [{:harlock, "~> 0.3"}]
 end
 ```
 
@@ -86,26 +77,30 @@ Compared to alternatives:
 
 ## Status
 
-Harlock is `v0.2`. The API is intentionally narrow and stable for the
+Harlock is `v0.3`. The API is intentionally narrow and stable for the
 primitives it ships; widgets and ergonomics are still landing.
 Anything `@moduledoc false` is internal and free to change.
 
-| Area | v0.2 |
+| Area | v0.3 |
 |---|---|
-| TEA runtime (init/update/view/subs) | ✓ |
+| TEA runtime (`init` / `update` / `view` / `subs`) | ✓ |
 | OTP supervision + terminal restoration | ✓ |
 | Cmd executor (`Cmd.from`, `Cmd.batch`, `Cmd.map`) | ✓ |
-| Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ (`:min`/`:max` landed post-0.2 on main) |
+| Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ |
 | Focus traversal + focus_trap overlays | ✓ |
 | Wide-grapheme width (CJK, emoji, ZWJ, flags) | ✓ |
 | Theme tokens (`:header`, `:focus`, `:selection`, `:border`) | ✓ |
 | SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
-| `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ (post-0.2 on main) |
-| `:telemetry` events (frame render time, cmd duration, input lag) | ✓ (post-0.2 on main) |
-| `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ (post-0.2 on main) |
-| Mouse, kitty keyboard protocol, modified arrows | v0.3 |
+| `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ |
+| `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ |
+| `:telemetry` events (frame render, input dispatch, cmd, reader) | ✓ |
+| Modified arrows / Home / End / F-keys (parser) | ✓ |
+| Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
+| Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | Full theme set + built-in themes + color downgrade | v0.4 |
+| `tree` / `menu` / `select` widgets | v0.4 |
+| Multi-line `text_area` | v0.4 |
 
 See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 
@@ -115,7 +110,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh counter    # simplest possible app — count up/down
 ./scripts/run.sh sysmon     # live BEAM process monitor
 ./scripts/run.sh contacts   # contact manager: search, list, modal forms, async save
-./scripts/run.sh showcase   # v0.3 demo: tabs, viewport, widgets, modified keys
+./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys
 ```
 
 `contacts` exercises most of v0.2: tab focus traversal, text_input

@@ -10,46 +10,119 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-13
+
+Demo-quality release. Adds the viewport, the standard widget set
+(progress / spinner / statusbar / keybar / tabs), real `:min` / `:max`
+layout constraints, telemetry instrumentation, and parser support for
+SGR mouse events, modified arrows, and the kitty keyboard protocol.
+
 ### Added
 
+- **Viewport element.** `viewport(child:, offset:, content_height:,
+  scrollbar:)` renders a child taller than its allocated region and
+  blits the visible slice. App owns the offset (same TEA discipline as
+  `text_input`). Render pipeline:
+  - Allocates a `width × content_height` temporary frame, renders the
+    child into it, blits the window. Cost is O(content × width) per
+    frame — fine for hundreds of rows. A pull-based windowed source
+    for 10k-row content is a v0.5 candidate.
+  - Scroll-into-view is a render-pipeline phase: focusable elements
+    record their bounds via `Frame.set_focus_rect/2`; the viewport
+    snaps the effective offset so the focused element stays visible.
+    Model offset is untouched (render-time adjustment only).
+  - Cursor positions set by `text_input` are remapped from tall-frame
+    coords to dst coords when the cursor falls in the visible window;
+    hidden otherwise. Focused inputs inside a scrolled viewport
+    position the terminal cursor correctly.
+  - Optional cosmetic scrollbar via `:scrollbar` opt — single column
+    on the right edge, thumb proportional to `visible_h / content_h`.
+- `Harlock.Viewport.apply_key/4` — pure helper translating
+  `:up | :down | :page_up | :page_down | :home | :end` into a new
+  clamped offset. `:page_up` / `:page_down` move `viewport_h - 1`
+  rows to preserve one row of context. Other keys return offset
+  unchanged.
 - Real `:min` and `:max` layout constraints. `{:min, n}` reserves at
   least `n` cells and grows like a fill (weight 1) if there's room.
-  `{:max, n}` behaves like a fill (weight 1) capped at `n` — the
-  excess from a hit cap redistributes to other flexible slots until
-  the solver converges. If `:max` caps leave space unallocated
+  `{:max, n}` behaves like a fill (weight 1) capped at `n` — excess
+  from a hit cap redistributes to other flexible slots until the
+  solver converges. If `:max` caps leave space unallocated
   (e.g. `[max: 10, max: 10]` in a 30-cell region), the trailing
-  region is simply unused rather than overflowing a cap.
-- Standard widgets (composable from existing primitives, dumb
-  renderers with app-owned state):
-  - `progress(value:, max:, width:, style:, fill_style:)` — single-line
-    bar, integer cell fill.
+  region is unused rather than overflowing.
+- Standard widgets — composable from existing primitives, dumb
+  renderers with app-owned state:
+  - `progress(value:, max:, width:, style:, fill_style:)` — single-
+    line bar, integer cell fill.
   - `spinner(tick:, frames:, style:)` — single cell, frame cycled by
-    caller's tick counter (typically driven by `Sub.interval`).
-  - `statusbar(left:, right:, style:)` — pinned-row helper with left /
-    right alignment and middle padding.
+    the caller's tick counter (typically driven by `Sub.interval`).
+  - `statusbar(left:, right:, style:)` — pinned-row helper with left
+    / right alignment and middle padding.
   - `keybar(bindings:, separator:, right:, style:)` — formats
     `[k] label  [k] label` from a list of `{key, label}` tuples.
-  - `tabs(items:, active:, focusable:, style:, active_style:, separator:)` —
-    single-line tab bar; active tab gets `Theme.get(:focus)` when the
-    widget is focused, `Theme.get(:header)` when not.
-- `Harlock.Tabs.apply_key/3` — pure helper mapping Left/Right/Home/End
-  key events to `{:select, id} | :noop`, mirroring the `TextBuffer`
-  pattern.
-- `:telemetry` instrumentation. Events:
-  `[:harlock, :frame, :render]` (span — duration + rows/cols/app/dirty),
-  `[:harlock, :input, :dispatch]` (span — keystroke → `update/2` return
-  time + event/focused/app),
-  `[:harlock, :cmd, :dispatch]` and `[:harlock, :cmd, :complete]`
-  (cmd execution time, status `:ok`/`:error`),
-  `[:harlock, :reader, :tty_lost]` (one-shot on EOF). See
-  `Harlock.Telemetry` for the full event catalog. `:telemetry` is a
-  hard dep (tiny, no transitive); apps that don't care just don't
-  attach handlers.
+  - `tabs(items:, active:, focusable:, style:, active_style:,
+    separator:)` — single-line tab bar; active tab gets
+    `Theme.get(:focus)` when the widget is focused,
+    `Theme.get(:header)` when not.
+- `Harlock.Tabs.apply_key/3` — pure helper mapping
+  `:left | :right | :home | :end` to `{:select, id} | :noop`,
+  mirroring the `TextBuffer` pattern.
+- **Mouse event parser.** SGR encoding only
+  (`CSI < button;col;row M|m`). Emits
+  `{:mouse, action, button | nil, col, row, mods}`. Actions:
+  `:press | :release | :drag | :move | :wheel_up | :wheel_down`.
+  Buttons: `:left | :middle | :right | :extra4 | :extra5`. Runtime
+  enabling (writing `\e[?1006h`) and hit-test routing are deferred
+  — apps that need mouse input can write the enable sequence
+  themselves and match on raw `(col, row)` in `update/2`.
+- **Modified arrow / navigation keys.** `CSI 1;<mod><letter>` for
+  arrows + Home/End, `CSI <n>;<mod>~` for PageUp/PageDown/Insert/
+  Delete and F1-F12. Modifier set is `:shift | :alt | :ctrl | :meta`
+  in any combination — encoded as the XTerm modifier byte minus 1,
+  with each bit mapped to one modifier.
+- **Kitty keyboard protocol parser.** Capability detection response
+  `CSI ? <flags> u` emits `{:capability, :kitty_keyboard, flags}`.
+  Key events `CSI <code>[:<shifted>:<base>][;<mod>[:<type>]] u`
+  with event-type 1 (press) → `{:key, ...}`, 2 (repeat) →
+  `{:key_repeat, ...}`, 3 (release) → `{:key_release, ...}`. Kitty
+  private-range codepoints (57344-57375) map to functional-key
+  atoms. Enabling the protocol (writing `CSI > <flags> u`) is
+  deferred.
+- `:telemetry` instrumentation. Hard dep on `:telemetry ~> 1.2`
+  (tiny, no transitive deps). Events:
+  - `[:harlock, :frame, :render, :start | :stop | :exception]` —
+    span wrapping `view/1` + tree traversal + diff emission.
+    Metadata: `app`, `dirty`, `rows`, `cols`.
+  - `[:harlock, :input, :dispatch, :start | :stop | :exception]` —
+    span wrapping keystroke → `update/2` return. Metadata: `app`,
+    `event`, `focused`.
+  - `[:harlock, :cmd, :dispatch]` — one-shot when a cmd is handed
+    to the task supervisor. Metadata:
+    `%{kind: :fun | :batch | :map | :none}`.
+  - `[:harlock, :cmd, :complete]` — when a cmd task returns.
+    Measurements: `%{duration: native}`. Metadata:
+    `%{status: :ok | :error}`.
+  - `[:harlock, :reader, :tty_lost]` — one-shot on EOF (ssh
+    disconnect, terminal close).
+
+  See `Harlock.Telemetry` for the full catalog.
+- `examples/showcase.exs` — four-tab tour of v0.3: 200-row
+  scrollable log viewer with viewport + scrollbar, a long form using
+  scroll-into-view, a widget gallery with animated
+  progress/spinner/statusbar/keybar, and a key-event inspector for
+  modified arrows.
+
+### Changed
+
+- `:min` / `:max` constraints now solve distinctly from `:length`.
+  In v0.2 these atoms were documented to "behave as `:length`"; code
+  written against that stub behavior will produce different layouts
+  in v0.3. Replace `{:min, n}` with `{:length, n}` if you wanted the
+  v0.2 behavior. `:length`, `:percentage`, and `:fill` are unchanged.
 
 ### Removed
 
-- The v0.2 `validate_constraints!` that raised on `:min`/`:max` — those
-  constraints now work, so the guard isn't needed.
+- The v0.2 `validate_constraints!` guard that raised on `:min`/`:max`
+  — those constraints now work.
 
 ## [0.2.0] — 2026-05-13
 
@@ -212,6 +285,7 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/thatsme/harlock/releases/tag/v0.3.0
 [0.2.0]: https://github.com/thatsme/harlock/releases/tag/v0.2.0
 [0.1.0]: https://github.com/thatsme/harlock/releases/tag/v0.1.0
