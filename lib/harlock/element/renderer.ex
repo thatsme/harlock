@@ -7,8 +7,10 @@ defmodule Harlock.Element.Renderer do
   alias Harlock.Element.Column
   alias Harlock.Layout
   alias Harlock.Layout.Rect
+  alias Harlock.Render.Buffer
   alias Harlock.Render.Frame
   alias Harlock.Render.Style
+  alias Harlock.Render.StyleTable
   alias Harlock.TextBuffer
   alias Harlock.Theme
   alias Harlock.Width
@@ -75,12 +77,18 @@ defmodule Harlock.Element.Renderer do
     text = clip(text, region.w)
     frame = Frame.write(frame, region.row, region.col, text, text_style)
 
-    if is_focused? do
-      cursor_col = region.col + min(TextBuffer.cursor_column(value, cursor), region.w - 1)
-      Frame.set_cursor(frame, {region.row, cursor_col})
-    else
-      frame
-    end
+    frame =
+      if is_focused? do
+        frame
+        |> Frame.set_focus_rect(rect_of(region))
+        |> Frame.set_cursor(
+          {region.row, region.col + min(TextBuffer.cursor_column(value, cursor), region.w - 1)}
+        )
+      else
+        frame
+      end
+
+    frame
   end
 
   defp render_element(%Element{type: :progress} = el, region, frame, _focused) do
@@ -211,6 +219,75 @@ defmodule Harlock.Element.Renderer do
     over_region = anchor_region(region, anchor, w, h)
 
     render_element(over, over_region, frame, focused)
+  end
+
+  defp render_element(%Element{type: :viewport, children: [child]} = el, region, frame, focused) do
+    declared_offset = Keyword.fetch!(el.opts, :offset)
+    content_height = Keyword.fetch!(el.opts, :content_height)
+    scrollbar? = Keyword.get(el.opts, :scrollbar, false)
+
+    sb_col = if scrollbar?, do: 1, else: 0
+    child_w = region.w - sb_col
+
+    cond do
+      child_w <= 0 ->
+        frame
+
+      content_height <= 0 ->
+        frame
+
+      true ->
+        tall_frame = Frame.new(content_height, child_w)
+        tall_region = %Rect{row: 0, col: 0, w: child_w, h: content_height}
+        tall_frame = render_element(child, tall_region, tall_frame, focused)
+
+        # Scroll-into-view: if the focused element is in our child's subtree
+        # and outside the visible window, snap to bring it in. Model offset
+        # is untouched — this is a render-time-only adjustment.
+        effective_offset =
+          scroll_into_view(declared_offset, region.h, content_height, tall_frame.focus_rect)
+
+        frame =
+          blit_viewport(
+            tall_frame,
+            frame,
+            effective_offset,
+            region.row,
+            region.col,
+            child_w,
+            region.h
+          )
+
+        frame =
+          remap_cursor(
+            tall_frame.cursor,
+            frame,
+            effective_offset,
+            region.row,
+            region.col,
+            child_w,
+            region.h
+          )
+
+        if scrollbar? do
+          sb_style =
+            el.opts
+            |> Keyword.get(:scrollbar_style, %Style{dim: true})
+            |> Style.from()
+
+          render_scrollbar(
+            frame,
+            region.row,
+            region.col + child_w,
+            region.h,
+            effective_offset,
+            content_height,
+            sb_style
+          )
+        else
+          frame
+        end
+    end
   end
 
   defp render_element(%Element{type: :table} = el, region, frame, focused) do
@@ -531,5 +608,89 @@ defmodule Harlock.Element.Renderer do
 
   defp clip(text, max_cols) do
     if Width.string_width(text) <= max_cols, do: text, else: Width.slice(text, max_cols)
+  end
+
+  # -- Viewport helpers ------------------------------------------------------
+
+  defp rect_of(%Rect{row: r, col: c, w: w, h: h}), do: %{row: r, col: c, w: w, h: h}
+
+  defp scroll_into_view(offset, _vh, _ch, nil), do: offset
+
+  defp scroll_into_view(offset, vh, ch, %{row: fr, h: fh}) do
+    max_offset = max(0, ch - vh)
+
+    adjusted =
+      cond do
+        # Focused element above viewport — snap top to focus row.
+        fr < offset -> fr
+        # Focused element below viewport — snap bottom to focus row + h.
+        fr + fh > offset + vh -> fr + fh - vh
+        true -> offset
+      end
+
+    adjusted |> max(0) |> min(max_offset)
+  end
+
+  defp remap_cursor(nil, frame, _off, _dr, _dc, _w, _h), do: frame
+
+  defp remap_cursor({cr, cc}, frame, offset, dst_row, dst_col, w, h) do
+    new_row = cr - offset + dst_row
+
+    if cr - offset >= 0 and cr - offset < h and cc >= 0 and cc < w do
+      Frame.set_cursor(frame, {new_row, dst_col + cc})
+    else
+      frame
+    end
+  end
+
+  defp blit_viewport(src, dst, offset, dst_row, dst_col, w, h) do
+    src_rows = src.buffer.rows
+
+    Enum.reduce(0..(h - 1)//1, dst, fn dr, acc ->
+      src_row = offset + dr
+
+      if src_row < 0 or src_row >= src_rows do
+        acc
+      else
+        blit_row(src, acc, src_row, dst_row + dr, dst_col, w)
+      end
+    end)
+  end
+
+  defp blit_row(src, dst, src_row, dst_row, dst_col, w) do
+    Enum.reduce(0..(w - 1)//1, dst, fn dc, acc ->
+      cell = Map.get(src.buffer.cells, {src_row, dc})
+
+      if is_nil(cell) do
+        acc
+      else
+        style = StyleTable.get(src.styles, cell.style_id)
+        {new_id, new_styles} = StyleTable.intern(acc.styles, style)
+        new_cell = %{cell | style_id: new_id}
+        new_buffer = Buffer.put(acc.buffer, dst_row, dst_col + dc, new_cell)
+        %{acc | buffer: new_buffer, styles: new_styles}
+      end
+    end)
+  end
+
+  defp render_scrollbar(frame, row, col, height, offset, content_height, style) do
+    # Track background (single column of dim vertical bars).
+    frame =
+      Enum.reduce(0..(height - 1)//1, frame, fn dr, acc ->
+        Frame.write(acc, row + dr, col, "│", style)
+      end)
+
+    # Thumb proportional to visible window.
+    if content_height <= height do
+      frame
+    else
+      thumb_h = max(1, div(height * height, content_height))
+      max_off = max(1, content_height - height)
+      thumb_top = div(offset * (height - thumb_h), max_off)
+
+      Enum.reduce(0..(thumb_h - 1)//1, frame, fn dr, acc ->
+        Frame.write(acc, row + thumb_top + dr, col, "█", style)
+      end)
+    end
   end
 end

@@ -21,6 +21,7 @@ defmodule Harlock.Element do
           | :box
           | :overlay
           | :table
+          | :viewport
           | :progress
           | :spinner
           | :statusbar

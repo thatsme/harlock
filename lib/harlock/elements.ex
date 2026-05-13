@@ -217,6 +217,48 @@ defmodule Harlock.Elements do
   end
 
   @doc """
+  Scrollable container.
+
+  Required options:
+    * `:child`          — the element to scroll
+    * `:offset`         — top-row offset into the child (0-indexed, app-owned)
+    * `:content_height` — total rows the child occupies
+
+  Optional:
+    * `:scrollbar` — render a single-column cosmetic scrollbar on the
+      right edge (default `false`). The scrollbar consumes one column
+      from the child's available width.
+    * `:scrollbar_style` — `%Style{}` for the scrollbar track + thumb
+
+  The viewport renders the child into a temporary frame of
+  `width × content_height`, then blits rows `offset..offset+visible_height`
+  into the real region. The app owns the scroll offset; pair with
+  `Harlock.Viewport.apply_key/4` in `update/2` to translate scroll-key
+  events into new offsets.
+
+  Vertical-only for now. The child is given full width (minus scrollbar
+  column if enabled) so horizontal layout proceeds normally.
+  """
+  @spec viewport(keyword()) :: Element.t()
+  def viewport(opts) when is_list(opts) do
+    child = Keyword.fetch!(opts, :child)
+
+    unless Keyword.has_key?(opts, :offset) do
+      raise ArgumentError, "viewport/1 requires :offset"
+    end
+
+    unless Keyword.has_key?(opts, :content_height) do
+      raise ArgumentError, "viewport/1 requires :content_height"
+    end
+
+    %Element{
+      type: :viewport,
+      opts: Keyword.delete(opts, :child),
+      children: [child]
+    }
+  end
+
+  @doc """
   Single-line text input.
 
   Required options:

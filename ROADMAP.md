@@ -272,6 +272,31 @@ app-owned state:
   `[?q, "quit"]` → `[q] quit`, with arbitrary separators and an
   optional right-aligned addendum.
 
+### Viewport element ✓
+
+Shipped. App-owned scroll state, render-then-clip pipeline:
+
+- `viewport(child:, offset:, content_height:, scrollbar:)` — required
+  `:offset` and `:content_height` (app knows what it's scrolling).
+- Renderer allocates a `width × content_height` temporary frame,
+  renders the child into it, blits the visible slice. Cost is
+  O(content × width) per frame — fine for hundreds of rows. Day-one
+  perf test (`viewport_perf_test.exs`) holds the budget.
+- Scroll-into-view is a render-pipeline phase: focusable elements
+  record their bounds via `Frame.set_focus_rect/2`; the viewport
+  reads its child's `tall_frame.focus_rect` and snaps the effective
+  offset so the focused element stays visible. Model offset is
+  untouched — this is render-time-only adjustment.
+- Cursor positions (set by `text_input`) are remapped from
+  tall-frame coords to dst coords when the cursor falls in the
+  visible window; hidden otherwise.
+- Optional cosmetic scrollbar: single column on the right edge,
+  thumb proportional to `visible_h / content_h`.
+- `Harlock.Viewport.apply_key/4` translates scroll keys
+  (`:up | :down | :page_up | :page_down | :home | :end`) into a
+  new clamped offset. Scroll keys are explicit — app calls the
+  helper from `update/2`, no runtime interception.
+
 ### Mouse events (parser) ✓
 
 Parser landed. Emits

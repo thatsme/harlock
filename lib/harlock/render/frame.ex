@@ -15,12 +15,20 @@ defmodule Harlock.Render.Frame do
   alias Harlock.Render.StyleTable
   alias Harlock.Width
 
-  defstruct buffer: nil, styles: nil, cursor: nil
+  defstruct buffer: nil, styles: nil, cursor: nil, focus_rect: nil
 
   @type t :: %__MODULE__{
           buffer: Buffer.t(),
           styles: StyleTable.t(),
-          cursor: {non_neg_integer(), non_neg_integer()} | nil
+          cursor: {non_neg_integer(), non_neg_integer()} | nil,
+          focus_rect:
+            %{
+              row: non_neg_integer(),
+              col: non_neg_integer(),
+              w: non_neg_integer(),
+              h: non_neg_integer()
+            }
+            | nil
         }
 
   @spec new(non_neg_integer(), non_neg_integer()) :: t()
@@ -31,6 +39,14 @@ defmodule Harlock.Render.Frame do
   @doc "Position the terminal cursor at (row, col), or hide it with nil."
   @spec set_cursor(t(), {non_neg_integer(), non_neg_integer()} | nil) :: t()
   def set_cursor(%__MODULE__{} = frame, cursor), do: %{frame | cursor: cursor}
+
+  @doc """
+  Record the bounding rectangle of the currently-focused element. Used by
+  `viewport` to scroll the focused element into view at render time.
+  Overwritten on each call so the innermost match wins when nested.
+  """
+  @spec set_focus_rect(t(), map() | nil) :: t()
+  def set_focus_rect(%__MODULE__{} = frame, rect), do: %{frame | focus_rect: rect}
 
   @doc """
   Write `text` into the frame starting at (row, col), one codepoint per cell,
