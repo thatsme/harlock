@@ -339,21 +339,21 @@ defmodule Harlock.Terminal.Input.Parser do
   defp kitty_event_tuple(:release, key, mods), do: {:key_release, key, mods}
 
   # Kitty private-range functional-key codepoints.
-  defp kitty_key(57344), do: :escape
-  defp kitty_key(57345), do: :enter
-  defp kitty_key(57346), do: :tab
-  defp kitty_key(57347), do: :backspace
-  defp kitty_key(57348), do: :insert
-  defp kitty_key(57349), do: :delete
-  defp kitty_key(57350), do: :left
-  defp kitty_key(57351), do: :right
-  defp kitty_key(57352), do: :up
-  defp kitty_key(57353), do: :down
-  defp kitty_key(57354), do: :page_up
-  defp kitty_key(57355), do: :page_down
-  defp kitty_key(57356), do: :home
-  defp kitty_key(57357), do: :end
-  defp kitty_key(n) when n in 57364..57375, do: {:f, n - 57363}
+  defp kitty_key(57_344), do: :escape
+  defp kitty_key(57_345), do: :enter
+  defp kitty_key(57_346), do: :tab
+  defp kitty_key(57_347), do: :backspace
+  defp kitty_key(57_348), do: :insert
+  defp kitty_key(57_349), do: :delete
+  defp kitty_key(57_350), do: :left
+  defp kitty_key(57_351), do: :right
+  defp kitty_key(57_352), do: :up
+  defp kitty_key(57_353), do: :down
+  defp kitty_key(57_354), do: :page_up
+  defp kitty_key(57_355), do: :page_down
+  defp kitty_key(57_356), do: :home
+  defp kitty_key(57_357), do: :end
+  defp kitty_key(n) when n in 57_364..57_375, do: {:f, n - 57_363}
   defp kitty_key(n), do: {:char, n}
 
   # -- SS3 dispatch ----------------------------------------------------------
