@@ -1,13 +1,29 @@
 # Harlock
 
+[![Hex.pm](https://img.shields.io/hexpm/v/harlock.svg)](https://hex.pm/packages/harlock)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/harlock)
+[![CI](https://github.com/thatsme/harlock/actions/workflows/ci.yml/badge.svg)](https://github.com/thatsme/harlock/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A pure-Elixir TUI framework for Unix terminals. TEA-style
 model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
+<!--
+To record the contacts demo as an asciinema cast and embed it here:
+
+  asciinema rec --command './scripts/run.sh contacts' demo.cast
+  asciinema upload demo.cast
+
+Then replace this comment with:
+
+  [![asciicast](https://asciinema.org/a/<CAST_ID>.svg)](https://asciinema.org/a/<CAST_ID>)
+-->
+
 ```elixir
 defmodule Counter do
-  use Harlock.App
+  use Harlock.App     # imports the view DSL (box/1, text/2, vbox/1, …)
 
   def init(_), do: %{n: 0}
 
@@ -61,9 +77,12 @@ Compared to alternatives:
   in-process NIF only for termios — closer to "Elixir all the way
   down" if that matters to you.
 - **ratatui-via-port** approaches (Rust binary speaking a wire
-  protocol to BEAM) are reliable but you give up the testability and
-  composability of pure-Elixir element trees. Harlock keeps the view
-  tree as ordinary data structures.
+  protocol to BEAM) ship as two artifacts: your Elixir release plus a
+  separately-compiled Rust binary that has to be on `PATH` at runtime.
+  Harlock ships as one mix release — no extra binary, no version-skew
+  between BEAM and renderer. The element tree is also ordinary Elixir
+  data, which makes testing and composition easier than a wire-protocol
+  boundary.
 
 ## Status
 
@@ -83,11 +102,20 @@ Anything `@moduledoc false` is internal and free to change.
 | SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
 | `viewport`, `progress`, `tabs`, `spinner`, `statusbar`, `keybar` | v0.3 |
-| `:min` / `:max` layout constraints (currently behave as `:length`) | v0.3 |
+| Real `:min` / `:max` layout constraints (raise as unsupported on 0.2 — see below) | v0.3 |
+| `:telemetry` events (frame render time, cmd duration, input lag) | v0.3 |
 | Mouse, kitty keyboard protocol, modified arrows | v0.3 |
 | Full theme set + built-in themes + color downgrade | v0.4 |
 
 See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
+
+### `:min` / `:max` are not implemented yet
+
+`{:min, n}` and `{:max, n}` constraints are reserved in the layout
+solver but **not implemented in v0.2** — passing them currently raises
+at render time so you don't get silent fallback behavior. Use
+`{:length, n}` if you mean a fixed size. Flexible-with-bounds layout
+arrives in v0.3.
 
 ## Examples
 
@@ -100,18 +128,6 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 `contacts` exercises most of v0.2: tab focus traversal, text_input
 fields, an overlay with focus_trap, async save via `Cmd.from`, custom
 theme, status bar with current-focus indicator.
-
-<!--
-To record an asciinema demo of the contacts app:
-
-  asciinema rec --command './scripts/run.sh contacts' demo.cast
-  asciinema upload demo.cast
-
-Then replace this comment with the embed:
-
-  [![asciicast](https://asciinema.org/a/<CAST_ID>.svg)](https://asciinema.org/a/<CAST_ID>)
--->
-
 
 ## Testing your app
 

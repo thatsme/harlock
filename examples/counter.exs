@@ -1,10 +1,10 @@
 # Run with:
-#   docker compose run --rm dev iex -S mix
+#   ./scripts/run.sh counter
+#
+# Or from iex:
+#   iex -S mix
 #   iex> c "examples/counter.exs"
 #   iex> Harlock.run(Counter)
-#
-# Or, in an interactive PowerShell with this image:
-#   docker compose run --rm dev sh -c "elixir -S mix run examples/counter.exs"
 
 defmodule Counter do
   use Harlock.App

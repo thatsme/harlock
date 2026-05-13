@@ -1,10 +1,10 @@
 # Sysmon — a live BEAM process monitor built on Harlock.
 #
 # Run with:
-#   docker compose run --rm dev sh -c "elixir -r examples/sysmon.exs -S mix run -e 'Harlock.run(Sysmon)'"
+#   ./scripts/run.sh sysmon
 #
-# Or in IEx:
-#   docker compose run --rm dev iex -S mix
+# Or from iex:
+#   iex -S mix
 #   iex> c "examples/sysmon.exs"
 #   iex> Harlock.run(Sysmon)
 #

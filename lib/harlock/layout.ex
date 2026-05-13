@@ -40,9 +40,35 @@ defmodule Harlock.Layout do
   @spec split(Rect.t(), direction(), [constraint()]) :: [Rect.t()]
   def split(%Rect{} = region, direction, constraints)
       when direction in [:vertical, :horizontal] do
+    :ok = validate_constraints!(constraints)
     total = total_for(direction, region)
     sizes = solve(constraints, total)
     apply_sizes(region, direction, sizes)
+  end
+
+  # :min and :max are reserved in the type but not implemented yet. Raise
+  # at use rather than silently fall through as :length, so callers get a
+  # clear error instead of a subtly-wrong layout. Real flexible-with-bounds
+  # solving lands in v0.3.
+  defp validate_constraints!(constraints) do
+    Enum.each(constraints, fn
+      {:min, _} ->
+        raise ArgumentError,
+              "Harlock.Layout: :min is reserved but not implemented in v0.2. " <>
+                "Use {:length, n} for a fixed size, or {:fill, weight} for flexible. " <>
+                "Tracked for v0.3 — see ROADMAP.md."
+
+      {:max, _} ->
+        raise ArgumentError,
+              "Harlock.Layout: :max is reserved but not implemented in v0.2. " <>
+                "Use {:length, n} for a fixed size, or {:fill, weight} for flexible. " <>
+                "Tracked for v0.3 — see ROADMAP.md."
+
+      _ ->
+        :ok
+    end)
+
+    :ok
   end
 
   defp total_for(:vertical, %Rect{h: h}), do: h

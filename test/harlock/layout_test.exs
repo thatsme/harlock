@@ -92,13 +92,17 @@ defmodule Harlock.LayoutTest do
     end
   end
 
-  describe "min and max (v0.1 behaves as length)" do
-    test "min(n) takes exactly n" do
-      assert sizes(:vertical, Rect.new(0, 0, 80, 10), min: 4, fill: 1) == [4, 6]
+  describe ":min and :max raise — not implemented in v0.2" do
+    test ":min raises ArgumentError" do
+      assert_raise ArgumentError, ~r/:min is reserved but not implemented/, fn ->
+        sizes(:vertical, Rect.new(0, 0, 80, 10), min: 4, fill: 1)
+      end
     end
 
-    test "max(n) takes exactly n" do
-      assert sizes(:vertical, Rect.new(0, 0, 80, 10), max: 4, fill: 1) == [4, 6]
+    test ":max raises ArgumentError" do
+      assert_raise ArgumentError, ~r/:max is reserved but not implemented/, fn ->
+        sizes(:vertical, Rect.new(0, 0, 80, 10), max: 4, fill: 1)
+      end
     end
   end
 end
