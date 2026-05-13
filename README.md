@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/main/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.3.0/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -113,9 +113,14 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys
 ```
 
-`contacts` exercises most of v0.2: tab focus traversal, text_input
-fields, an overlay with focus_trap, async save via `Cmd.from`, custom
-theme, status bar with current-focus indicator.
+The `scripts/run.sh` wrapper is in the GitHub repo — clone the repo to
+run the examples. The hex package itself is the library; apps depend
+on `:harlock` and build their own runtime entry point (see the Counter
+snippet above).
+
+`contacts` exercises most of the core primitives: tab focus traversal,
+text_input fields, an overlay with focus_trap, async save via
+`Cmd.from`, custom theme, status bar with current-focus indicator.
 
 `showcase` is a four-tab tour of everything that landed in v0.3 — a
 200-row scrollable log viewer with `viewport` + scrollbar, a long form
