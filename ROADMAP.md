@@ -272,25 +272,39 @@ app-owned state:
   `[?q, "quit"]` → `[q] quit`, with arbitrary separators and an
   optional right-aligned addendum.
 
-### Mouse events
+### Mouse events (parser) ✓
 
-SGR mouse mode `\e[?1006h` on init, `\e[?1006l` on teardown (via Caps +
-Writer).
+Parser landed. Emits
+`{:mouse, action, button | nil, col, row, mods}` for SGR encoding
+(`CSI < button;col;row M|m`). Actions: `:press | :release | :drag |
+:move | :wheel_up | :wheel_down`. Buttons: `:left | :middle | :right |
+:extra4 | :extra5`.
 
-- Parser emits `{:mouse, action, {row, col}, mods}` where action is
-  `:press | :release | :drag | :wheel_up | :wheel_down` and button is
-  `:left | :middle | :right` for press/release/drag.
-- Runtime does a hit-test against the last `Frame` (frames carry
-  element-id metadata for hit-testable cells — new infra) and routes to
-  the right element.
-- Defer global mouse-down dragging across regions to v0.4.
+**Runtime enabling + hit-test routing — deferred.** The runtime does
+not write `\e[?1006h` by default and does not route events to elements.
+Apps that need mouse input can write the enable sequence themselves and
+match on raw `(col, row)` in `update/2`. Hit-test infra (frames carry
+element bounds, runtime resolves cursor → element) waits on a real use
+case shaping the API.
 
-### Modified arrows + kitty keyboard protocol
+### Modified arrows ✓
 
-- `CSI 1;<mod><letter>` for `Ctrl/Alt/Shift + arrows/home/end`.
-- Detect kitty support via `\e[?u` query at startup, set protocol level if
-  supported. Falls back to legacy parsing otherwise.
-- Emit unified `{:key, key, mods}` events regardless of source protocol.
+`CSI 1;<mod><letter>` for arrows + Home/End with shift/alt/ctrl/meta.
+`CSI <n>;<mod>~` for modified PageUp/PageDown/Insert/Delete and F1-F12.
+
+### Kitty keyboard protocol (parser) ✓
+
+Parser landed:
+
+- Detection response `CSI ? <flags> u` → `{:capability,
+  :kitty_keyboard, flags}`.
+- Key events `CSI <code>[:<shifted>:<base>][;<mod>[:<type>]] u`.
+  Event-type 1=press → `{:key, ...}`, 2=repeat → `{:key_repeat, ...}`,
+  3=release → `{:key_release, ...}`. Kitty private-range codepoints
+  (57344-57375) map to functional-key atoms.
+
+Enabling the protocol (writing `CSI > <flags> u` to push state) is a
+runtime decision deferred until a real use case appears.
 
 ### Telemetry instrumentation ✓
 
