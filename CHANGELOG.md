@@ -19,6 +19,22 @@ changes are called out in the relevant release notes.
   the solver converges. If `:max` caps leave space unallocated
   (e.g. `[max: 10, max: 10]` in a 30-cell region), the trailing
   region is simply unused rather than overflowing a cap.
+- Standard widgets (composable from existing primitives, dumb
+  renderers with app-owned state):
+  - `progress(value:, max:, width:, style:, fill_style:)` — single-line
+    bar, integer cell fill.
+  - `spinner(tick:, frames:, style:)` — single cell, frame cycled by
+    caller's tick counter (typically driven by `Sub.interval`).
+  - `statusbar(left:, right:, style:)` — pinned-row helper with left /
+    right alignment and middle padding.
+  - `keybar(bindings:, separator:, right:, style:)` — formats
+    `[k] label  [k] label` from a list of `{key, label}` tuples.
+  - `tabs(items:, active:, focusable:, style:, active_style:, separator:)` —
+    single-line tab bar; active tab gets `Theme.get(:focus)` when the
+    widget is focused, `Theme.get(:header)` when not.
+- `Harlock.Tabs.apply_key/3` — pure helper mapping Left/Right/Home/End
+  key events to `{:select, id} | :noop`, mirroring the `TextBuffer`
+  pattern.
 
 ### Removed
 

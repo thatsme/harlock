@@ -254,5 +254,125 @@ defmodule Harlock.Elements do
     %Element{type: :text_input, opts: opts, children: []}
   end
 
+  @doc """
+  Single-line horizontal progress bar.
+
+  Required options:
+    * `:value` — current value (non-negative)
+    * `:max`   — denominator (positive)
+
+  Optional:
+    * `:width`      — explicit bar width in cells (default: full region width)
+    * `:style`      — `%Style{}` for the unfilled portion
+    * `:fill_style` — `%Style{}` for the filled portion
+
+  `value` is clamped to `[0, max]`. The bar fills
+  `round(value / max * width)` cells with `█` in `fill_style` and the
+  rest with space in `style`.
+  """
+  @spec progress(keyword()) :: Element.t()
+  def progress(opts) when is_list(opts) do
+    unless Keyword.has_key?(opts, :value), do: raise(ArgumentError, "progress/1 requires :value")
+    unless Keyword.has_key?(opts, :max), do: raise(ArgumentError, "progress/1 requires :max")
+    %Element{type: :progress, opts: opts, children: []}
+  end
+
+  @doc """
+  Single-cell animated spinner.
+
+  Required options:
+    * `:tick` — integer; the current animation frame counter (caller-owned
+      in the app's model). Pair with a subscription that increments
+      this on a timer.
+
+  Optional:
+    * `:frames` — list of grapheme strings to cycle through
+      (default: braille spinner `["⠋", "⠙", …]`)
+    * `:style` — `%Style{}` applied to the rendered frame
+
+  Renders `Enum.at(frames, rem(tick, length(frames)))`. The widget
+  doesn't subscribe to anything itself — wire `Harlock.Sub.interval/2`
+  in your app's `subs/1` and increment `tick` in `update/2`.
+  """
+  @spec spinner(keyword()) :: Element.t()
+  def spinner(opts) when is_list(opts) do
+    unless Keyword.has_key?(opts, :tick), do: raise(ArgumentError, "spinner/1 requires :tick")
+    %Element{type: :spinner, opts: opts, children: []}
+  end
+
+  @doc """
+  Single-line bar with left- and right-aligned text. Useful as the
+  pinned-bottom row of a screen.
+
+  Options:
+    * `:left`  — string (default `""`)
+    * `:right` — string (default `""`)
+    * `:style` — `%Style{}` (default `%Style{reverse: true}`)
+
+  If `left` and `right` together exceed the region width, `right` is
+  truncated first.
+  """
+  @spec statusbar(keyword()) :: Element.t()
+  def statusbar(opts \\ []) when is_list(opts) do
+    %Element{type: :statusbar, opts: opts, children: []}
+  end
+
+  @doc """
+  Single-line bar showing key bindings as `[k] label  [k] label`.
+
+  Required:
+    * `:bindings` — list of `{key, label}` tuples. `key` may be a char
+      like `?q` or any atom (`:tab`, `:enter`); it's rendered via
+      `to_string/1`.
+
+  Optional:
+    * `:style` — `%Style{}` (default `%Style{reverse: true}`)
+    * `:separator` — string between bindings (default `"  "`)
+    * `:right` — extra right-aligned text (e.g. clock, status)
+  """
+  @spec keybar(keyword()) :: Element.t()
+  def keybar(opts) when is_list(opts) do
+    unless Keyword.has_key?(opts, :bindings) do
+      raise ArgumentError, "keybar/1 requires :bindings"
+    end
+
+    %Element{type: :keybar, opts: opts, children: []}
+  end
+
+  @doc """
+  Single-line horizontal tab bar.
+
+  Required:
+    * `:items`  — list of `{id, label}` tuples
+    * `:active` — id of the currently active tab
+
+  Optional:
+    * `:focusable` — focus id; when focused, Left/Right cycle tabs (use
+      `Harlock.Tabs.apply_key/3` in `update/2`)
+    * `:style`         — `%Style{}` for inactive tabs (default `Theme.get(:header)`)
+    * `:active_style`  — `%Style{}` for the active tab (default `Theme.get(:focus)`)
+    * `:separator`     — string between tabs (default `" │ "`)
+
+  Renders only the tab bar — the body for the active tab is rendered
+  separately by the app. Typical pattern:
+
+      vbox(
+        constraints: [length: 1, fill: 1],
+        children: [
+          tabs(items: [{:a, "Alpha"}, {:b, "Beta"}], active: m.tab, focusable: :tabs),
+          case m.tab do
+            :a -> alpha_body(m)
+            :b -> beta_body(m)
+          end
+        ]
+      )
+  """
+  @spec tabs(keyword()) :: Element.t()
+  def tabs(opts) when is_list(opts) do
+    unless Keyword.has_key?(opts, :items), do: raise(ArgumentError, "tabs/1 requires :items")
+    unless Keyword.has_key?(opts, :active), do: raise(ArgumentError, "tabs/1 requires :active")
+    %Element{type: :tabs, opts: opts, children: []}
+  end
+
   defp default_constraints(children), do: Enum.map(children, fn _ -> {:fill, 1} end)
 end

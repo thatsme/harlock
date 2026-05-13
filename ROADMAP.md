@@ -253,20 +253,24 @@ Shipped. The solver:
    30-cell region), the trailing region is simply not used — children
    don't overflow caps to fill space.
 
-### Standard widgets
+### Standard widgets ✓
 
-All composable from existing primitives; ship as named modules for
-ergonomics and consistency.
+Shipped — all composable from existing primitives, dumb renderers with
+app-owned state:
 
-- `progress(:value, :max, :width, :style, :fill_style)` — single-line bar.
-- `spinner(:frames, :interval, :style)` — uses `Sub.interval` internally.
-  Caller passes a model field for the tick counter (TEA discipline).
-- `tabs(:items, :active, :on_select, :focusable)` — horizontal bar +
-  region underneath, focus integrates with traversal.
-- `statusbar(:left, :right, :style)` — pinned-bottom helper, often paired
-  with `vbox` and `{:length, 1}`.
-- `keybar(:bindings, :style)` — `[{?q, "quit"}, {?n, "new"}]` → rendered
-  `[q] quit  [n] new`.
+- `progress(:value, :max, :width, :style, :fill_style)` — single-line
+  bar with `█` for the filled portion.
+- `spinner(:tick, :frames, :style)` — single cell. Caller increments
+  `:tick` from a `Sub.interval` subscription.
+- `tabs(:items, :active, :focusable, :style, :active_style)` —
+  horizontal tab bar; the body for the active tab is rendered
+  separately by the app. Pair with `Harlock.Tabs.apply_key/3` in
+  `update/2` for Left/Right/Home/End navigation.
+- `statusbar(:left, :right, :style)` — pinned-row helper, left/right
+  alignment with style-filled middle.
+- `keybar(:bindings, :style, :separator, :right)` — formats
+  `[?q, "quit"]` → `[q] quit`, with arbitrary separators and an
+  optional right-aligned addendum.
 
 ### Mouse events
 

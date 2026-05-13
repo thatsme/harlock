@@ -83,6 +83,68 @@ defmodule Harlock.Element.Renderer do
     end
   end
 
+  defp render_element(%Element{type: :progress} = el, region, frame, _focused) do
+    value = max(0, Keyword.fetch!(el.opts, :value))
+    max_val = Keyword.fetch!(el.opts, :max)
+    width = Keyword.get(el.opts, :width, region.w) |> min(region.w) |> max(0)
+    style = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
+    fill_style = el.opts |> Keyword.get(:fill_style, %Style{fg: :cyan}) |> Style.from()
+
+    clamped = min(value, max_val)
+    filled = if max_val > 0, do: round(clamped / max_val * width), else: 0
+    filled = filled |> min(width) |> max(0)
+    empty = width - filled
+
+    frame
+    |> Frame.write(region.row, region.col, String.duplicate("█", filled), fill_style)
+    |> Frame.write(region.row, region.col + filled, String.duplicate(" ", empty), style)
+  end
+
+  defp render_element(%Element{type: :spinner} = el, region, frame, _focused) do
+    tick = Keyword.fetch!(el.opts, :tick)
+    frames = Keyword.get(el.opts, :frames, ~w(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏))
+    style = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
+
+    glyph = Enum.at(frames, rem(max(tick, 0), length(frames)))
+    Frame.write(frame, region.row, region.col, glyph, style)
+  end
+
+  defp render_element(%Element{type: :statusbar} = el, region, frame, _focused) do
+    left = Keyword.get(el.opts, :left, "")
+    right = Keyword.get(el.opts, :right, "")
+    style = el.opts |> Keyword.get(:style, %Style{reverse: true}) |> Style.from()
+
+    render_lr_bar(frame, region, left, right, style)
+  end
+
+  defp render_element(%Element{type: :keybar} = el, region, frame, _focused) do
+    bindings = Keyword.fetch!(el.opts, :bindings)
+    separator = Keyword.get(el.opts, :separator, "  ")
+    right = Keyword.get(el.opts, :right, "")
+    style = el.opts |> Keyword.get(:style, %Style{reverse: true}) |> Style.from()
+
+    left = bindings |> Enum.map_join(separator, &format_binding/1)
+    render_lr_bar(frame, region, left, right, style)
+  end
+
+  defp render_element(%Element{type: :tabs} = el, region, frame, focused) do
+    items = Keyword.fetch!(el.opts, :items)
+    active = Keyword.fetch!(el.opts, :active)
+    separator = Keyword.get(el.opts, :separator, " │ ")
+    is_focused? = Keyword.get(el.opts, :focusable) == focused
+
+    inactive_style = el.opts |> Keyword.get(:style, Theme.get(:header)) |> Style.from()
+
+    active_style =
+      el.opts
+      |> Keyword.get(:active_style, default_tabs_active_style(is_focused?))
+      |> Style.from()
+
+    sep_style = %Style{dim: true}
+
+    render_tabs(frame, region, items, active, separator, inactive_style, active_style, sep_style)
+  end
+
   defp render_element(%Element{type: :vbox} = el, region, frame, focused) do
     constraints = Keyword.fetch!(el.opts, :constraints)
     rects = Layout.split(region, :vertical, constraints)
@@ -228,6 +290,87 @@ defmodule Harlock.Element.Renderer do
       render_cell(f, y, rect.col, rect.w, text, col.align, style)
     end)
   end
+
+  # Render `left` at the leftmost cells of `region`, `right` at the rightmost,
+  # background-fill the middle with `style`. Used by statusbar / keybar.
+  defp render_lr_bar(frame, region, left, right, style) do
+    left_w = Width.string_width(left)
+    right_w = Width.string_width(right)
+
+    {left_text, middle_pad, right_text} =
+      cond do
+        # Right doesn't fit at all
+        right_w >= region.w ->
+          {Width.slice(right, region.w), 0, ""}
+
+        # Left + right overflow; truncate left
+        left_w + right_w > region.w ->
+          left_max = region.w - right_w
+          {Width.slice(left, left_max), 0, right}
+
+        true ->
+          pad = region.w - left_w - right_w
+          {left, pad, right}
+      end
+
+    frame
+    |> Frame.write(region.row, region.col, left_text, style)
+    |> Frame.write(
+      region.row,
+      region.col + Width.string_width(left_text),
+      String.duplicate(" ", middle_pad),
+      style
+    )
+    |> Frame.write(
+      region.row,
+      region.col + Width.string_width(left_text) + middle_pad,
+      right_text,
+      style
+    )
+  end
+
+  defp format_binding({key, label}) do
+    "[#{format_key(key)}] #{label}"
+  end
+
+  defp format_key(key) when is_integer(key), do: <<key::utf8>>
+  defp format_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp format_key(key), do: to_string(key)
+
+  defp render_tabs(
+         frame,
+         region,
+         items,
+         active,
+         separator,
+         inactive_style,
+         active_style,
+         sep_style
+       ) do
+    {_, _, frame} =
+      Enum.reduce(items, {region.col, true, frame}, fn {id, label}, {col, first?, f} ->
+        # Separator before each non-first tab
+        f =
+          if first? do
+            f
+          else
+            Frame.write(f, region.row, col, separator, sep_style)
+          end
+
+        col = if first?, do: col, else: col + Width.string_width(separator)
+        label_text = " #{label} "
+        style = if id == active, do: active_style, else: inactive_style
+
+        f = Frame.write(f, region.row, col, label_text, style)
+        new_col = col + Width.string_width(label_text)
+        {new_col, false, f}
+      end)
+
+    frame
+  end
+
+  defp default_tabs_active_style(true), do: Theme.get(:focus)
+  defp default_tabs_active_style(false), do: Theme.get(:header)
 
   defp mask(value) do
     value

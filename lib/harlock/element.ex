@@ -12,7 +12,20 @@ defmodule Harlock.Element do
 
   defstruct [:type, :opts, :children]
 
-  @type type :: :text | :text_input | :vbox | :hbox | :spacer | :box | :overlay | :table
+  @type type ::
+          :text
+          | :text_input
+          | :vbox
+          | :hbox
+          | :spacer
+          | :box
+          | :overlay
+          | :table
+          | :progress
+          | :spinner
+          | :statusbar
+          | :keybar
+          | :tabs
   @type t :: %__MODULE__{
           type: type(),
           opts: keyword(),
