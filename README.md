@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/main/screenshots/showcase.png)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/main/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
