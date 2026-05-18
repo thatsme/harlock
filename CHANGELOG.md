@@ -18,6 +18,8 @@ press through `apply_key` helpers. The runtime now routes navigation
 keys directly to focused widgets, the theme grows beyond the four
 renderer-only tokens it had, and `:default`-theme rendered output is
 verified byte-for-byte against v0.3.0 by a pinned golden-frame test.
+There is one breaking change to how key events reach `update/2` — see
+Changed.
 
 ### Added
 
@@ -108,8 +110,8 @@ verified byte-for-byte against v0.3.0 by a pinned golden-frame test.
 
 ### Changed
 
-- **R2 default-on auto-routing changes how navigation keys reach
-  `update/2`.** If you have a `viewport`, `tabs`, or `text_input`
+- **BREAKING: R2 default-on auto-routing changes how navigation keys
+  reach `update/2`.** If you have a `viewport`, `tabs`, or `text_input`
   widget that carries a `:focusable` id and your `update/2` binds the
   keys that widget handles (`:up`/`:down`/`:page_up`/`:page_down`/
   `:home`/`:end` for viewport; `:left`/`:right`/`:home`/`:end` for
