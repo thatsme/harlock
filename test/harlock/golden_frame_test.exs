@@ -66,18 +66,34 @@ defmodule Harlock.GoldenFrameTest do
     # (commit prep; theme defaults match v0.3 byte-for-byte). If you
     # are intentionally changing default rendered output, update this
     # hash in the same commit and explain why.
+    # Provenance: this hash was independently captured by running the
+    # same CanonicalApp under a git worktree at tag v0.3.0 — NOT by
+    # observing the v0.4-Phase-3 implementation and copying what it
+    # emitted. The reproduction recipe (run once if you ever doubt the
+    # baseline):
+    #
+    #   git worktree add /tmp/harlock-v0.3-baseline v0.3.0
+    #   cd /tmp/harlock-v0.3-baseline
+    #   # copy the CanonicalApp + Harlock.Test.start_app/raw_writes
+    #   # boilerplate above into a script, hash with :crypto.hash/2
+    #   mix deps.get && mix run that-script.exs
+    #   git worktree remove /tmp/harlock-v0.3-baseline
+    #
+    # The v0.4 implementation must reproduce the same hash; any drift
+    # means a default-theme regression slipped in.
     expected_hash = "20ded7e3f1ad2b828f58ef77715e5e69ff8da2b3d8245bba7ded0008cc27a1e9"
 
     assert hash == expected_hash, """
-    :default theme rendered output drifted!
+    :default theme rendered output drifted from the v0.3.0 baseline!
 
-    Expected: #{expected_hash}
-    Actual:   #{hash}
+    Expected (v0.3.0): #{expected_hash}
+    Actual   (HEAD):   #{hash}
 
-    If this drift is intentional, update expected_hash in
-    test/harlock/golden_frame_test.exs and explain why in the commit
-    message. Otherwise something in the render path silently changed
-    what apps without a custom theme produce.
+    If this drift is intentional (e.g. an explicit visual change with
+    a CHANGELOG note), update expected_hash in
+    test/harlock/golden_frame_test.exs and explain in the commit
+    message. Otherwise the render path silently changed what apps
+    without a custom theme produce — investigate before merging.
     """
   end
 end

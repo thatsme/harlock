@@ -39,9 +39,12 @@ changes are called out in the relevant release notes.
 - **Golden-frame test** (`test/harlock/golden_frame_test.exs`). A
   small canonical app exercising every theme-driven render path is
   rendered under `Theme.default()`; the raw byte stream is hashed and
-  pinned in-tree. Any future change that silently alters default
-  output fails CI with a message instructing how to intentionally
-  re-pin if the drift is wanted.
+  pinned in-tree. The pinned hash was independently captured by
+  running the same app under a git worktree at tag `v0.3.0`, so the
+  test proves byte-for-byte parity with v0.3 rather than just locking
+  Phase 3's output to itself. Future changes that silently alter
+  default output fail CI with a message instructing how to
+  intentionally re-pin if the drift is wanted.
 
 - **Focus-aware widget key routing (R2).** A focused widget that
   carries a `:focusable` id and whose type is one of `:viewport`,
