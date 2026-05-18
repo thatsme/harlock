@@ -180,6 +180,15 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
       assert [{:key, :home, []}] = Harlock.Test.model(h).raw_keys
     end
 
+    test "End on the last tab is a no-op and falls through to the app", %{h: h} do
+      Harlock.Test.send_key(h, :end)
+      assert Harlock.Test.model(h).tab == :c
+      # Now press End again — already on the last; should pass through raw.
+      Harlock.Test.send_key(h, :end)
+      assert Harlock.Test.model(h).tab == :c
+      assert [{:key, :end, []}] = Harlock.Test.model(h).raw_keys
+    end
+
     test "an unrelated key flows through unchanged", %{h: h} do
       Harlock.Test.send_key(h, {:char, ?q})
       assert [{:key, {:char, ?q}, []}] = Harlock.Test.model(h).raw_keys
@@ -239,6 +248,35 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
       Harlock.Test.send_key(h, {:char, ?x}, [:ctrl])
       assert Harlock.Test.model(h).value == ""
       assert [{:key, {:char, ?x}, [:ctrl]}] = Harlock.Test.model(h).raw_keys
+    end
+
+    test "Left at cursor 0 is a no-op edit and falls through as raw :key", %{h: h} do
+      # Cursor starts at 0; :left clamps to 0 in TextBuffer, so {:edit, ^value, ^cursor}
+      # → :pass, and the raw key reaches the app's catch-all clause. This is the
+      # scenario the maintainer cares about: an app that puts a text_input next to
+      # another widget can rely on no-op cursor keys flowing through.
+      assert Harlock.Test.model(h).cursor == 0
+      Harlock.Test.send_key(h, :left)
+      assert Harlock.Test.model(h).cursor == 0
+      assert [{:key, :left, []}] = Harlock.Test.model(h).raw_keys
+    end
+
+    test "Right at end-of-value is a no-op edit and falls through as raw :key", %{h: h} do
+      for c <- ~c"hi", do: Harlock.Test.send_key(h, {:char, c})
+      # Drain any routed-edit raw_keys (there shouldn't be any) and re-baseline.
+      assert Harlock.Test.model(h).raw_keys == []
+      assert Harlock.Test.model(h).cursor == 2
+
+      Harlock.Test.send_key(h, :right)
+      assert Harlock.Test.model(h).cursor == 2
+      assert [{:key, :right, []}] = Harlock.Test.model(h).raw_keys
+    end
+
+    test "Backspace on empty value is a no-op edit and falls through as raw :key", %{h: h} do
+      assert Harlock.Test.model(h).value == ""
+      Harlock.Test.send_key(h, :backspace)
+      assert Harlock.Test.model(h).value == ""
+      assert [{:key, :backspace, []}] = Harlock.Test.model(h).raw_keys
     end
   end
 end

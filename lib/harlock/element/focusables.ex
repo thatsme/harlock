@@ -3,7 +3,7 @@ defmodule Harlock.Element.Focusables do
   # DFS traversal collecting everything the runtime needs from an element
   # tree for focus and R2 widget-key auto-routing. Returns:
   #
-  #   {ids, traps, widget_index}
+  #   {ids, traps, routed_widgets}
   #
   # * `ids` — every focusable id in render order (top-to-bottom,
   #   left-to-right within siblings).
@@ -12,13 +12,13 @@ defmodule Harlock.Element.Focusables do
   #   any ids inside nested traps). Innermost traps are listed last in
   #   tree order so the runtime can pick the deepest active trap by
   #   walking the list backward.
-  # * `widget_index` — `%{focus_id => element}` for focusable elements
-  #   whose type opts in to R2 auto-routing (currently `:viewport`) and
-  #   that have not explicitly set `handle_keys: false`. Used by
-  #   `Harlock.App.Runtime` to look up the focused widget at
-  #   key-dispatch time without re-walking the tree.
+  # * `routed_widgets` — `%{focus_id => element}` for focusable elements
+  #   whose type opts in to R2 auto-routing (currently `:viewport`,
+  #   `:tabs`, `:text_input`) and that have not explicitly set
+  #   `handle_keys: false`. Used by `Harlock.App.Runtime` to look up the
+  #   focused widget at key-dispatch time without re-walking the tree.
   #
-  # The id and widget-index collection are folded into one walk
+  # The id and routed-widget collection are folded into one walk
   # (`collect_ids_and_widgets/2`); traps remain a separate walk because
   # their semantics (each trap captures the *whole* subtree, including
   # nested traps' ids) make folding harder than it's worth.

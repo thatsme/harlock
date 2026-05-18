@@ -66,7 +66,7 @@ defmodule Harlock.App.Runtime do
         focusables: [],
         traps: [],
         focus_stack: [],
-        widget_index: %{},
+        routed_widgets: %{},
         widget_metrics: %{},
         subs: %{},
         pending_cmd: init_cmd
@@ -181,7 +181,7 @@ defmodule Harlock.App.Runtime do
   # spine's handle_info path.
   defp maybe_route_widget({:key, _, _} = event, state) do
     with focus_id when not is_nil(focus_id) <- state.focused,
-         {:ok, %Element{} = el} <- Map.fetch(state.widget_index, focus_id) do
+         {:ok, %Element{} = el} <- Map.fetch(state.routed_widgets, focus_id) do
       route_to_widget(el, event, focus_id, state)
     else
       _ -> :pass
@@ -324,9 +324,9 @@ defmodule Harlock.App.Runtime do
 
   defp render_unsafe(state) do
     tree = state.app.view(state.model)
-    {focusables, traps, widget_index} = Focusables.collect(tree)
+    {focusables, traps, routed_widgets} = Focusables.collect(tree)
     state = update_focus_state(state, focusables, traps)
-    state = %{state | widget_index: widget_index}
+    state = %{state | routed_widgets: routed_widgets}
     state = update_subs(state)
 
     WidgetMetrics.clear()

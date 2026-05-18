@@ -57,34 +57,34 @@ defmodule Harlock.Element.FocusablesTest do
         ]
       )
 
-    {ids, traps, widget_index} = Focusables.collect(tree)
+    {ids, traps, routed_widgets} = Focusables.collect(tree)
     assert ids == [:outside, :in1, :in2, :after]
     assert traps == [[:in1, :in2]]
-    assert widget_index == %{}
+    assert routed_widgets == %{}
   end
 
-  describe "widget_index (R2)" do
+  describe "routed_widgets (R2)" do
     test "focusable viewport is indexed by its focus id" do
       vp =
         viewport(focusable: :log, offset: 0, content_height: 10, child: text("x"))
 
-      {ids, traps, widget_index} = Focusables.collect(vp)
+      {ids, traps, routed_widgets} = Focusables.collect(vp)
       assert ids == [:log]
       assert traps == []
-      assert is_map_key(widget_index, :log)
-      assert widget_index[:log].type == :viewport
+      assert is_map_key(routed_widgets, :log)
+      assert routed_widgets[:log].type == :viewport
     end
 
     test "viewport without :focusable is not indexed" do
       vp = viewport(offset: 0, content_height: 10, child: text("x"))
-      {_, _, widget_index} = Focusables.collect(vp)
-      assert widget_index == %{}
+      {_, _, routed_widgets} = Focusables.collect(vp)
+      assert routed_widgets == %{}
     end
 
     test "non-viewport focusable elements are not indexed (not auto-routable)" do
       tree = text("btn", focusable: :ok)
-      {_, _, widget_index} = Focusables.collect(tree)
-      assert widget_index == %{}
+      {_, _, routed_widgets} = Focusables.collect(tree)
+      assert routed_widgets == %{}
     end
 
     test "handle_keys: false opts out of indexing" do
@@ -97,9 +97,9 @@ defmodule Harlock.Element.FocusablesTest do
           child: text("x")
         )
 
-      {ids, _, widget_index} = Focusables.collect(vp)
+      {ids, _, routed_widgets} = Focusables.collect(vp)
       assert ids == [:log]
-      assert widget_index == %{}
+      assert routed_widgets == %{}
     end
   end
 end
