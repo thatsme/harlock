@@ -515,8 +515,8 @@ defmodule Harlock.Element.Renderer do
 
   defp row_style(id, _idx, _focused, {:single, id}, _, styles), do: styles.selected
 
-  defp row_style(id, _idx, _focused, {:multi, %MapSet{} = set}, _, styles) do
-    if MapSet.member?(set, id), do: styles.selected, else: base_row_style(0, styles)
+  defp row_style(id, idx, _focused, {:multi, %MapSet{} = set}, _, styles) do
+    if MapSet.member?(set, id), do: styles.selected, else: base_row_style(idx, styles)
   end
 
   defp row_style(_id, idx, _focused, _selection, _, styles), do: base_row_style(idx, styles)

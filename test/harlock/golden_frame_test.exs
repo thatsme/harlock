@@ -20,12 +20,11 @@ defmodule Harlock.GoldenFrameTest do
   defmodule CanonicalApp do
     use Harlock.App
 
-    # Exercises every styled element the renderer reaches for today:
-    #   - box with a border (uses Theme.get(:border))
-    #   - a focused box (uses Theme.get(:focus) via the box's border style cascade)
-    #   - a table with header (Theme.get(:header))
-    #   - a focused row (Theme.get(:focus))
-    #   - a selected row (Theme.get(:selection))
+    # Exercises every theme-token render path that's actually wired up:
+    #   - box with a border (Theme.get(:border))
+    #   - a table with a header row (Theme.get(:header))
+    #   - the table's :focused_row, styled by Theme.get(:focus)
+    #   - the table's :selection {:single, 2}, styled by Theme.get(:selection)
     #   - plain text (no theme involvement)
     def init(_) do
       %{rows: [%{id: 1, name: "alpha"}, %{id: 2, name: "beta"}]}
@@ -55,17 +54,13 @@ defmodule Harlock.GoldenFrameTest do
     end
   end
 
-  test ":default theme output is byte-identical to the v0.4-Phase-3 baseline" do
+  test ":default theme output is byte-identical to the v0.3.0 baseline" do
     h = Harlock.Test.start_app(CanonicalApp, nil, rows: 10, cols: 30)
     raw = Harlock.Test.raw_writes(h)
     Harlock.Test.stop(h)
 
     hash = :crypto.hash(:sha256, raw) |> Base.encode16(case: :lower)
 
-    # Baseline captured against the v0.4 Phase 3 implementation
-    # (commit prep; theme defaults match v0.3 byte-for-byte). If you
-    # are intentionally changing default rendered output, update this
-    # hash in the same commit and explain why.
     # Provenance: this hash was independently captured by running the
     # same CanonicalApp under a git worktree at tag v0.3.0 — NOT by
     # observing the v0.4-Phase-3 implementation and copying what it

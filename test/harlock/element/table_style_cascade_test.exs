@@ -111,6 +111,38 @@ defmodule Harlock.Element.TableStyleCascadeTest do
     Harlock.Test.stop(h)
   end
 
+  test ":alt_row_style still applies to non-selected rows in multi-selection mode" do
+    # Regression guard: an earlier version of row_style/6's multi clause
+    # hardcoded idx=0 when the row was not in the selection set, which
+    # meant alt-row zebra striping silently never fired alongside
+    # {:multi, _} selection. Both must apply: selected rows get
+    # selected_style, non-selected rows still alternate row/alt_row.
+    rows = for i <- 1..4, do: %{id: i, name: "row#{i}"}
+    selection = {:multi, MapSet.new([1])}
+
+    h =
+      Harlock.Test.start_app(
+        TableApp,
+        [
+          rows: rows,
+          selection: selection,
+          table_opts: [
+            selected_style: %Style{fg: :green},
+            alt_row_style: %Style{dim: true}
+          ]
+        ],
+        rows: 8,
+        cols: 12
+      )
+
+    raw = Harlock.Test.raw_writes(h)
+    # Selected row 1 gets the green-fg SGR; non-selected rows 2 and 4
+    # (odd visible indices) get the dim SGR.
+    assert raw =~ "\e[0;32m"
+    assert raw =~ "\e[0;2m"
+    Harlock.Test.stop(h)
+  end
+
   test "no overrides = byte-identical to v0.3 (defaults fall through to theme)" do
     # This is the load-bearing constraint: a table with no style opts must
     # produce the exact SGR codes the v0.3 hardcoded path would.

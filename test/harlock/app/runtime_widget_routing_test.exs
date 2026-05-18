@@ -2,10 +2,13 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
   use ExUnit.Case, async: false
 
   # R2: focus-aware key routing for stock widgets. When the focused
-  # element is an auto-routable widget (currently :viewport), the
-  # runtime translates scroll keys into {:harlock_scroll, focus_id,
-  # new_offset} before delivering them to the app's update/2. Apps
-  # opt out per-element with `handle_keys: false`.
+  # element is an auto-routable widget (viewport, tabs, or text_input),
+  # the runtime translates its handled keys into a widget-shaped
+  # message ({:harlock_scroll | _select | _edit | _submit, focus_id,
+  # _}) before delivering them to the app's update/2. No-op operations
+  # fall through as raw {:key, …} so apps can still bind those gestures
+  # for out-of-widget actions. Apps opt out per-element with
+  # `handle_keys: false`.
 
   defmodule ScrollApp do
     @moduledoc false
