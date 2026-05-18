@@ -27,7 +27,6 @@ defmodule ShowcaseApp do
   use Harlock.App
 
   alias Harlock.Focus
-  alias Harlock.Viewport
 
   @log_lines (for i <- 1..200 do
                 level = Enum.at(~w(INFO  WARN  ERROR DEBUG), rem(i, 4))
@@ -108,22 +107,20 @@ defmodule ShowcaseApp do
     %{model | keys: Enum.take([format_event(ev) | model.keys], 12)}
   end
 
-  # Logs tab: scroll keys.
-  def update({:key, key, _mods}, %{tab: :logs} = model)
-      when key in [:up, :down, :page_up, :page_down, :home, :end] do
-    visible = log_visible_height()
-    offset = Viewport.apply_key(model.logs.offset, length(@log_lines), visible, key)
-    %{model | logs: %{model.logs | offset: offset}}
+  # Logs tab: scrolling is now routed by the runtime via :logs_viewport
+  # (v0.4 R2). Tab is used by the runtime for focus traversal, so alert
+  # cycling moved to `[` / `]`.
+  def update({:harlock_scroll, :logs_viewport, n}, model) do
+    %{model | logs: %{model.logs | offset: n}}
   end
 
-  # Logs tab: tab cycles through alert rows (focused via Focus module).
-  def update({:key, :tab, []}, %{tab: :logs} = model) do
+  def update({:key, {:char, ?]}, []}, %{tab: :logs} = model) do
     n = length(model.logs.alert_rows)
     next = rem(model.logs.focused_alert + 1, n)
     %{model | logs: %{model.logs | focused_alert: next}}
   end
 
-  def update({:key, :tab, [:shift]}, %{tab: :logs} = model) do
+  def update({:key, {:char, ?[}, []}, %{tab: :logs} = model) do
     n = length(model.logs.alert_rows)
     next = rem(model.logs.focused_alert - 1 + n, n)
     %{model | logs: %{model.logs | focused_alert: next}}
@@ -213,6 +210,7 @@ defmodule ShowcaseApp do
       constraints: [fill: 1, length: 22],
       children: [
         viewport(
+          focusable: :logs_viewport,
           child: child,
           offset: model.logs.offset,
           content_height: length(@log_lines),
@@ -255,7 +253,7 @@ defmodule ShowcaseApp do
               style: %Style{fg: :yellow}
             ),
             spacer(),
-            text("Tab→next alert", style: %Style{dim: true})
+            text("[ / ] cycle alert", style: %Style{dim: true})
           ]
         )
     )
@@ -430,7 +428,7 @@ defmodule ShowcaseApp do
         bindings: [
           {"↑↓", "scroll"},
           {"PgUp/PgDn", "page"},
-          {"Tab", "next alert"},
+          {"[ ]", "alert"},
           {"Shift-←→", "tab"},
           {?q, "quit"}
         ],
@@ -498,8 +496,6 @@ defmodule ShowcaseApp do
   defp format_focus({:form_field, f}), do: Atom.to_string(f)
   defp format_focus(nil), do: "—"
   defp format_focus(other), do: inspect(other)
-
-  defp log_visible_height, do: 18
 
   defp alert_rows do
     # Every 30th row gets surfaced as a "focusable" alert (cosmetic only —

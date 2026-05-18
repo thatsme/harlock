@@ -35,6 +35,11 @@ changes are called out in the relevant release notes.
   in `update/2` shrank from 21 lines (manual `Focus.current()` →
   `TextBuffer.apply_key/3` → reassemble form maps) to 7 lines (a single
   routed-message clause). **-67% lines, -1 alias** on this clause.
+  The Logs viewport also became `focusable: :logs_viewport`, the manual
+  `Viewport.apply_key/4` dispatch collapsed to a 3-line
+  `{:harlock_scroll, :logs_viewport, n}` clause, and the `Viewport`
+  alias dropped out. Alert row cycling in the Logs tab moved from
+  `Tab`/`Shift-Tab` to `]`/`[` (Tab is now runtime focus traversal).
 
 - `examples/overview.exs` — runnable end-to-end example covering focus
   traversal, a focusable table with row selection, a focusable viewport
