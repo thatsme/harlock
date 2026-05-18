@@ -108,12 +108,11 @@ Mechanism for a widget to declare "I handle these keys when focused" so
 the runtime dispatches them automatically, without the app's `update/2`
 needing to know.
 
-**Risk:** this is a renderer/runtime-contract change. Per
-[viewport-design lessons](../memory equivalent — see auto-memory
-`feedback_viewport_design`), contract changes are how half-day estimates
-blow up. Prototype against **one widget end-to-end** (Viewport is the
-obvious choice — its key set is small and well-understood) before
-generalizing to Tabs and TextBuffer.
+**Risk:** this is a renderer/runtime-contract change. Prior
+viewport-contract work showed that renderer-contract changes blow past
+their estimates — prototype narrowly first. Prototype against **one
+widget end-to-end** (Viewport is the obvious choice — its key set is
+small and well-understood) before generalizing to Tabs and TextBuffer.
 
 Open design questions:
 

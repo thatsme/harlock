@@ -1,7 +1,7 @@
 # Harlock Roadmap
 
 A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
-loop on top of OTP, no NIFs, no ports for the core rendering path.
+loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan from v0.1 (current) to v1.0 (Hex-publishable,
 stable API). It's a living document — revise as we learn.
@@ -51,8 +51,9 @@ What's stubbed / missing — the honest list:
 
 1. **OTP-first.** The supervision tree is the architecture. New features
    that need processes get their own child, supervised correctly.
-2. **No NIFs in the core.** ANSI in, ANSI out. NIFs only if a NIF-optional
-   path measurably ships (e.g. termios via port).
+2. **No NIFs in the rendering path.** ANSI in, ANSI out. The termios NIF
+   shipped in v0.2 is the one allowed exception, strictly scoped to
+   /dev/tty control; new NIFs require the same level of justification.
 3. **Phoenix devs feel at home.** `update/view/subs` mirrors LiveView's
    mental model on purpose. `Sub.pubsub` should be a first-class citizen.
 4. **Headless-testable.** Every new widget gets `IO.Test`-driven coverage.
