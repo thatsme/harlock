@@ -1,7 +1,8 @@
 defmodule Harlock.Render.StyleTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Harlock.Render.Style
+  alias Harlock.Terminal.Caps
 
   defp sgr(style), do: style |> Style.to_sgr() |> IO.iodata_to_binary()
 
@@ -50,5 +51,88 @@ defmodule Harlock.Render.StyleTest do
     assert Style.from(bold: true).bold == true
     assert Style.from(%{bold: true}).bold == true
     assert Style.from(%Style{bold: true}).bold == true
+  end
+
+  describe "downgrade/2 (v0.4 caps-aware emission)" do
+    test ":mono collapses any color to :default" do
+      assert Style.downgrade(:red, :mono) == :default
+      assert Style.downgrade({:rgb, 255, 0, 0}, :mono) == :default
+      assert Style.downgrade({:color256, 196}, :mono) == :default
+      assert Style.downgrade(:default, :mono) == :default
+    end
+
+    test ":truecolor passes everything through" do
+      assert Style.downgrade(:red, :truecolor) == :red
+      assert Style.downgrade({:rgb, 1, 2, 3}, :truecolor) == {:rgb, 1, 2, 3}
+      assert Style.downgrade({:color256, 17}, :truecolor) == {:color256, 17}
+    end
+
+    test ":ansi256 maps RGB into the 6x6x6 cube" do
+      # 0,0,0 → cube origin (16); 255,255,255 → far corner (231).
+      assert Style.downgrade({:rgb, 0, 0, 0}, :ansi256) == {:color256, 16}
+      assert Style.downgrade({:rgb, 255, 255, 255}, :ansi256) == {:color256, 231}
+      # Pure red maxes the r-channel only.
+      assert Style.downgrade({:rgb, 255, 0, 0}, :ansi256) == {:color256, 196}
+    end
+
+    test ":ansi256 leaves named and 256-indexed colors unchanged" do
+      assert Style.downgrade(:bright_cyan, :ansi256) == :bright_cyan
+      assert Style.downgrade({:color256, 99}, :ansi256) == {:color256, 99}
+    end
+
+    test ":ansi16 collapses RGB to a named ANSI color" do
+      assert Style.downgrade({:rgb, 0, 0, 0}, :ansi16) == :black
+      assert Style.downgrade({:rgb, 255, 0, 0}, :ansi16) == :bright_red
+      assert Style.downgrade({:rgb, 0, 255, 0}, :ansi16) == :bright_green
+      assert Style.downgrade({:rgb, 100, 100, 100}, :ansi16) == :bright_black
+      assert Style.downgrade({:rgb, 255, 255, 255}, :ansi16) == :bright_white
+    end
+
+    test ":ansi16 maps the 256-color basic range to its atom equivalents" do
+      assert Style.downgrade({:color256, 0}, :ansi16) == :black
+      assert Style.downgrade({:color256, 7}, :ansi16) == :white
+      assert Style.downgrade({:color256, 8}, :ansi16) == :bright_black
+      assert Style.downgrade({:color256, 15}, :ansi16) == :bright_white
+    end
+
+    test ":ansi16 maps cube/grayscale 256 entries via approximate RGB" do
+      # 196 in the cube is pure red (255,0,0) → :bright_red.
+      assert Style.downgrade({:color256, 196}, :ansi16) == :bright_red
+      # 240 is mid-grayscale (~88) → :bright_black.
+      assert Style.downgrade({:color256, 240}, :ansi16) == :bright_black
+    end
+  end
+
+  describe "to_sgr/1 with caps in process dict" do
+    test "no caps installed = truecolor passthrough (back-compat)" do
+      Caps.__clear__()
+      assert sgr(%Style{fg: {:rgb, 10, 20, 30}}) == "\e[0;38;2;10;20;30m"
+    end
+
+    test ":mono caps strip all color, keep attributes" do
+      Caps.__set__(%Caps{colors: :mono})
+
+      assert sgr(%Style{fg: :red, bold: true}) == "\e[0;1m"
+      assert sgr(%Style{fg: {:rgb, 255, 0, 0}, bg: :blue}) == "\e[0m"
+
+      Caps.__clear__()
+    end
+
+    test ":ansi16 caps downgrade RGB into a named color SGR" do
+      Caps.__set__(%Caps{colors: :ansi16})
+
+      # {:rgb,255,0,0} downgrades to :bright_red → \e[0;91m
+      assert sgr(%Style{fg: {:rgb, 255, 0, 0}}) == "\e[0;91m"
+
+      Caps.__clear__()
+    end
+
+    test ":ansi256 caps downgrade RGB into the cube" do
+      Caps.__set__(%Caps{colors: :ansi256})
+
+      assert sgr(%Style{fg: {:rgb, 255, 0, 0}}) == "\e[0;38;5;196m"
+
+      Caps.__clear__()
+    end
   end
 end

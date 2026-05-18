@@ -76,4 +76,46 @@ defmodule Harlock.Terminal.Caps do
     # just a hint for the runtime about whether to bother.
     term != "" and term != "dumb"
   end
+
+  # Process-dict helpers for the render path. Mirrors the Focus/Theme
+  # pattern: the runtime sets caps before each render, the SGR emitter
+  # in Style.to_sgr/1 reads them to decide whether (and how) to downgrade
+  # colors that the terminal can't display.
+
+  @key :harlock_caps
+
+  @spec __set__(t()) :: :ok
+  def __set__(%__MODULE__{} = caps) do
+    Process.put(@key, caps)
+    :ok
+  end
+
+  @spec __clear__() :: :ok
+  def __clear__ do
+    Process.delete(@key)
+    :ok
+  end
+
+  @doc """
+  Return the caps installed by the runtime, or a generous default
+  (`:truecolor`) when called outside a Harlock callback — that default
+  matches v0.3 behaviour, which never downgraded.
+  """
+  @spec get() :: t()
+  def get do
+    Process.get(@key) ||
+      %__MODULE__{
+        term: "",
+        term_program: "",
+        colorterm: "",
+        colors: :truecolor,
+        bracketed_paste: false,
+        mouse: false,
+        kitty_keyboard: false
+      }
+  end
+
+  @doc "Convenience accessor for just the color depth."
+  @spec color_depth() :: color_depth()
+  def color_depth, do: get().colors
 end

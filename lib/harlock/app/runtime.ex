@@ -22,6 +22,7 @@ defmodule Harlock.App.Runtime do
   alias Harlock.Focus
   alias Harlock.Render.Diff
   alias Harlock.Sub
+  alias Harlock.Terminal.Caps
   alias Harlock.Terminal.Keeper
   alias Harlock.Terminal.Reader
   alias Harlock.Terminal.Writer
@@ -41,9 +42,11 @@ defmodule Harlock.App.Runtime do
     reader = Keyword.fetch!(opts, :reader)
     task_sup = Keyword.fetch!(opts, :task_sup)
     theme = Keyword.get(opts, :theme, Theme.default())
+    caps = Keyword.get(opts, :caps, Caps.detect())
     caller = Keyword.get(opts, :caller)
 
     Theme.__set__(theme)
+    Caps.__set__(caps)
 
     try do
       {rows, cols} = detect_size(opts)
@@ -57,6 +60,7 @@ defmodule Harlock.App.Runtime do
         reader: reader,
         task_sup: task_sup,
         theme: theme,
+        caps: caps,
         caller: caller,
         prev_frame: nil,
         dirty: true,
@@ -75,6 +79,7 @@ defmodule Harlock.App.Runtime do
       {:ok, state, {:continue, :start}}
     after
       Theme.__clear__()
+      Caps.__clear__()
     end
   end
 
@@ -118,6 +123,7 @@ defmodule Harlock.App.Runtime do
   defp apply_update(state, event) do
     Focus.__set__(state.focused)
     Theme.__set__(state.theme)
+    Caps.__set__(state.caps)
     meta = %{app: state.app, event: event, focused: state.focused}
 
     try do
@@ -126,6 +132,7 @@ defmodule Harlock.App.Runtime do
         {result, meta}
       end)
     after
+      Caps.__clear__()
       Theme.__clear__()
       Focus.__clear__()
     end
@@ -294,6 +301,7 @@ defmodule Harlock.App.Runtime do
   defp render(state) do
     Focus.__set__(state.focused)
     Theme.__set__(state.theme)
+    Caps.__set__(state.caps)
 
     try do
       :telemetry.span(
@@ -317,6 +325,7 @@ defmodule Harlock.App.Runtime do
         notify_done(state, {:render_error, e})
         reraise e, __STACKTRACE__
     after
+      Caps.__clear__()
       Theme.__clear__()
       Focus.__clear__()
     end

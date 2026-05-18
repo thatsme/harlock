@@ -307,6 +307,8 @@ defmodule Harlock.Element.Renderer do
     show_header = Keyword.get(el.opts, :show_header, true)
     table_focused? = Keyword.get(el.opts, :focusable) == focused
 
+    styles = table_styles(el.opts)
+
     col_rects = Layout.split(region, :horizontal, Enum.map(columns, & &1.width))
 
     header_h = if show_header, do: 1, else: 0
@@ -314,7 +316,7 @@ defmodule Harlock.Element.Renderer do
 
     frame =
       if show_header,
-        do: render_header(frame, region.row, columns, col_rects),
+        do: render_header(frame, region.row, columns, col_rects, styles.header),
         else: frame
 
     visible = visible_rows(rows, focused_row, body_height, row_id_fn)
@@ -324,9 +326,22 @@ defmodule Harlock.Element.Renderer do
     |> Enum.reduce(frame, fn {row, idx}, acc ->
       y = region.row + header_h + idx
       row_id = row_id_fn.(row)
-      style = row_style(row_id, focused_row, selection, table_focused?)
+      style = row_style(row_id, idx, focused_row, selection, table_focused?, styles)
       render_row(acc, y, columns, col_rects, row, style)
     end)
+  end
+
+  # Resolve per-table style overrides up front so the row loop stays
+  # cheap. Defaults preserve v0.3 behaviour exactly: header from theme,
+  # body rows %Style{} unless focused/selected.
+  defp table_styles(opts) do
+    %{
+      header: Keyword.get(opts, :header_style, Theme.get(:header)),
+      row: Keyword.get(opts, :row_style, %Style{}),
+      alt_row: Keyword.get(opts, :alt_row_style, nil),
+      selected: Keyword.get(opts, :selected_style, Theme.get(:selection)),
+      focus: Keyword.get(opts, :focus_style, Theme.get(:focus))
+    }
   end
 
   defp anchor_region(region, :center, w, h) do
@@ -359,9 +374,7 @@ defmodule Harlock.Element.Renderer do
   defp anchor_region(region, {row, col}, w, h),
     do: Rect.new(region.row + row, region.col + col, w, h)
 
-  defp render_header(frame, y, columns, col_rects) do
-    header_style = Theme.get(:header)
-
+  defp render_header(frame, y, columns, col_rects, header_style) do
     Enum.zip(columns, col_rects)
     |> Enum.reduce(frame, fn {%Column{} = col, rect}, f ->
       render_cell(f, y, rect.col, rect.w, col.title, col.align, header_style)
@@ -493,16 +506,24 @@ defmodule Harlock.Element.Renderer do
     end
   end
 
-  defp row_style(id, id, _selection, true), do: Theme.get(:focus)
-  defp row_style(id, id, _selection, false), do: Theme.get(:focus)
+  # Resolve the style for one row, honouring per-table overrides plus
+  # zebra striping. Priority: focused > selected > alt-row > default.
+  # Defaults match v0.3 because styles.row is %Style{}, styles.alt_row
+  # is nil (skip), styles.selected = Theme.get(:selection), and
+  # styles.focus = Theme.get(:focus).
+  defp row_style(id, _idx, id, _selection, _table_focused?, styles), do: styles.focus
 
-  defp row_style(id, _focused, {:single, id}, _), do: Theme.get(:selection)
+  defp row_style(id, _idx, _focused, {:single, id}, _, styles), do: styles.selected
 
-  defp row_style(id, _focused, {:multi, %MapSet{} = set}, _) do
-    if MapSet.member?(set, id), do: Theme.get(:selection), else: %Style{}
+  defp row_style(id, _idx, _focused, {:multi, %MapSet{} = set}, _, styles) do
+    if MapSet.member?(set, id), do: styles.selected, else: base_row_style(0, styles)
   end
 
-  defp row_style(_id, _focused, _selection, _), do: %Style{}
+  defp row_style(_id, idx, _focused, _selection, _, styles), do: base_row_style(idx, styles)
+
+  defp base_row_style(_idx, %{alt_row: nil} = styles), do: styles.row
+  defp base_row_style(idx, styles) when rem(idx, 2) == 1, do: styles.alt_row
+  defp base_row_style(_idx, styles), do: styles.row
 
   defp visible_rows(_rows, _focused_id, body_height, _id_fn) when body_height <= 0, do: []
 

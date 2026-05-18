@@ -12,6 +12,37 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **Theme: full token set, built-in themes, caps-aware color
+  downgrade.** `%Harlock.Theme{}` picks up four general-purpose
+  tokens — `:primary`, `:accent`, `:muted`, `:error` — alongside the
+  four v0.2 renderer tokens. Three built-in themes ship via
+  `Harlock.Theme.builtin/1`: `:default` (byte-identical to v0.3),
+  `:dark`, and `:high_contrast`. `Harlock.Render.Style.to_sgr/1`
+  now consults `Harlock.Terminal.Caps` and downgrades RGB and 256-color
+  values to whatever the terminal can display (truecolor →
+  6×6×6 cube → nearest of the 16 standard ANSI colors → `:default` on
+  mono). When no caps are installed the path defaults to truecolor,
+  preserving v0.3 emission exactly. `Harlock.Terminal.Caps` gains
+  `__set__`/`__clear__`/`get`/`color_depth` helpers mirroring the
+  Focus/Theme process-dict pattern; `Harlock.App.Runtime` sets caps
+  before each render and dispatch.
+
+- **Table style cascade.** The `table/1` element accepts five new
+  style opts: `:header_style`, `:row_style`, `:alt_row_style`,
+  `:selected_style`, `:focus_style`. Each defaults to its current
+  resolution (`header_style` → `Theme.get(:header)`, selection / focus
+  via the existing tokens, plain rows to `%Style{}`), so existing
+  apps render unchanged. `:alt_row_style` is the only behavioural
+  addition — when set, odd-indexed visible rows pick it up for zebra
+  striping; the default `nil` keeps v0.3 single-style row output.
+
+- **Golden-frame test** (`test/harlock/golden_frame_test.exs`). A
+  small canonical app exercising every theme-driven render path is
+  rendered under `Theme.default()`; the raw byte stream is hashed and
+  pinned in-tree. Any future change that silently alters default
+  output fails CI with a message instructing how to intentionally
+  re-pin if the drift is wanted.
+
 - **Focus-aware widget key routing (R2).** A focused widget that
   carries a `:focusable` id and whose type is one of `:viewport`,
   `:tabs`, or `:text_input` no longer needs the app's `update/2` to

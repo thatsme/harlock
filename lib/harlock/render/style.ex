@@ -95,9 +95,27 @@ defmodule Harlock.Render.Style do
   emits this once per style transition; we don't try to be clever about
   diffing individual attribute changes — terminals process SGR fast enough
   that the extra bytes are cheaper than the bookkeeping.
+
+  Reads the active terminal color depth from `Harlock.Terminal.Caps.get/0`
+  (process-dict) and downgrades colors that the terminal can't display:
+
+    * `:mono` — fg/bg become `:default` (no color SGR emitted)
+    * `:ansi16` — `{:rgb, …}` and `{:color256, …}` collapse to the
+      nearest standard ANSI color
+    * `:ansi256` — `{:rgb, …}` collapses into the 256-color cube
+    * `:truecolor` — colors pass through unchanged
+
+  When no caps are installed (e.g. tests rendering through the test
+  backend) the default is `:truecolor`, matching v0.3 behaviour exactly.
   """
+  alias Harlock.Terminal.Caps
+
   @spec to_sgr(t()) :: iodata()
   def to_sgr(%__MODULE__{} = s) do
+    depth = Caps.color_depth()
+    fg = downgrade(s.fg, depth)
+    bg = downgrade(s.bg, depth)
+
     params =
       ["0"]
       |> append_if(s.bold, "1")
@@ -105,11 +123,119 @@ defmodule Harlock.Render.Style do
       |> append_if(s.italic, "3")
       |> append_if(s.underline, "4")
       |> append_if(s.reverse, "7")
-      |> append_color(:fg, s.fg)
-      |> append_color(:bg, s.bg)
+      |> append_color(:fg, fg)
+      |> append_color(:bg, bg)
 
     ["\e[", Enum.intersperse(Enum.reverse(params), ?;), ?m]
   end
+
+  @doc """
+  Map a color to what the given terminal depth can actually emit.
+  Exposed for tests; the renderer uses it implicitly via `to_sgr/1`.
+  """
+  @spec downgrade(color(), Caps.color_depth()) :: color()
+  def downgrade(:default, _depth), do: :default
+  def downgrade(_color, :mono), do: :default
+  def downgrade(color, :truecolor), do: color
+
+  def downgrade({:rgb, r, g, b}, :ansi256), do: {:color256, rgb_to_256(r, g, b)}
+  def downgrade({:rgb, r, g, b}, :ansi16), do: rgb_to_ansi16(r, g, b)
+  def downgrade({:color256, n}, :ansi16), do: color256_to_ansi16(n)
+  def downgrade(color, :ansi256), do: color
+  def downgrade(color, :ansi16), do: color
+
+  # 6x6x6 color cube starting at 16; 0..5 per channel.
+  defp rgb_to_256(r, g, b) do
+    16 + 36 * scale_to_6(r) + 6 * scale_to_6(g) + scale_to_6(b)
+  end
+
+  defp scale_to_6(c) when c < 48, do: 0
+  defp scale_to_6(c) when c < 115, do: 1
+  defp scale_to_6(c), do: div(c - 35, 40) |> min(5)
+
+  # 256-color → standard ANSI 16: low 16 pass through to their bright
+  # variants where appropriate; cube/grayscale map via approximate RGB
+  # then through the RGB→16 path.
+  defp color256_to_ansi16(n) when n in 0..7, do: ansi16_basic(n)
+  defp color256_to_ansi16(n) when n in 8..15, do: ansi16_bright(n - 8)
+
+  defp color256_to_ansi16(n) when n in 16..231 do
+    idx = n - 16
+    r = div(idx, 36) * 51
+    g = rem(div(idx, 6), 6) * 51
+    b = rem(idx, 6) * 51
+    rgb_to_ansi16(r, g, b)
+  end
+
+  defp color256_to_ansi16(n) when n in 232..255 do
+    level = (n - 232) * 10 + 8
+    rgb_to_ansi16(level, level, level)
+  end
+
+  defp ansi16_basic(0), do: :black
+  defp ansi16_basic(1), do: :red
+  defp ansi16_basic(2), do: :green
+  defp ansi16_basic(3), do: :yellow
+  defp ansi16_basic(4), do: :blue
+  defp ansi16_basic(5), do: :magenta
+  defp ansi16_basic(6), do: :cyan
+  defp ansi16_basic(7), do: :white
+
+  defp ansi16_bright(0), do: :bright_black
+  defp ansi16_bright(1), do: :bright_red
+  defp ansi16_bright(2), do: :bright_green
+  defp ansi16_bright(3), do: :bright_yellow
+  defp ansi16_bright(4), do: :bright_blue
+  defp ansi16_bright(5), do: :bright_magenta
+  defp ansi16_bright(6), do: :bright_cyan
+  defp ansi16_bright(7), do: :bright_white
+
+  # RGB → nearest ANSI 16. Channel bit if > 127; bright variant if any
+  # channel ≥ 192. Grays handled separately so they don't all collapse
+  # to :black.
+  defp rgb_to_ansi16(r, g, b) do
+    max_c = max(r, max(g, b))
+    min_c = min(r, min(g, b))
+    gray? = max_c - min_c < 24
+    bright? = max_c >= 192
+
+    cond do
+      gray? and max_c < 48 -> :black
+      gray? and max_c < 128 -> :bright_black
+      gray? and max_c < 192 -> :white
+      gray? -> :bright_white
+      true -> chromatic_ansi16(r, g, b, bright?)
+    end
+  end
+
+  @chromatic_by_bits %{
+    0 => :black,
+    1 => :red,
+    2 => :green,
+    3 => :yellow,
+    4 => :blue,
+    5 => :magenta,
+    6 => :cyan,
+    7 => :white
+  }
+
+  defp chromatic_ansi16(r, g, b, bright?) do
+    bits = channel_bit(r) + 2 * channel_bit(g) + 4 * channel_bit(b)
+    base = Map.fetch!(@chromatic_by_bits, bits)
+    if bright?, do: brighten(base), else: base
+  end
+
+  defp channel_bit(c) when c > 127, do: 1
+  defp channel_bit(_), do: 0
+
+  defp brighten(:black), do: :bright_black
+  defp brighten(:red), do: :bright_red
+  defp brighten(:green), do: :bright_green
+  defp brighten(:yellow), do: :bright_yellow
+  defp brighten(:blue), do: :bright_blue
+  defp brighten(:magenta), do: :bright_magenta
+  defp brighten(:cyan), do: :bright_cyan
+  defp brighten(:white), do: :bright_white
 
   defp append_if(params, false, _val), do: params
   defp append_if(params, true, val), do: [val | params]

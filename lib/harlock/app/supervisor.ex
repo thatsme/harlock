@@ -105,7 +105,8 @@ defmodule Harlock.App.Supervisor do
              name: runtime_name,
              rows: Keyword.get(opts, :rows),
              cols: Keyword.get(opts, :cols),
-             theme: Keyword.get(opts, :theme, Harlock.Theme.default())
+             theme: Keyword.get(opts, :theme, Harlock.Theme.default()),
+             caps: caps
            ]
          ]},
       restart: :temporary,

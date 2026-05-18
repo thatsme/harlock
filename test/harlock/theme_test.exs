@@ -12,6 +12,43 @@ defmodule Harlock.ThemeTest do
       assert theme.selection == %Style{bg: :cyan}
       assert theme.border == %Style{}
     end
+
+    test "carries v0.4 generic tokens with sensible defaults" do
+      theme = Theme.default()
+      assert theme.primary == %Style{fg: :cyan}
+      assert theme.accent == %Style{fg: :magenta}
+      assert theme.muted == %Style{dim: true}
+      assert theme.error == %Style{fg: :red}
+    end
+  end
+
+  describe "builtin/1" do
+    test ":default is identical to default/0" do
+      assert Theme.builtin(:default) == Theme.default()
+    end
+
+    test ":dark uses bright colours and a coloured border" do
+      theme = Theme.builtin(:dark)
+      assert theme.border.fg == :bright_black
+      assert theme.primary.fg == :bright_cyan
+      assert theme.error.bold == true
+    end
+
+    test ":high_contrast bolds primaries and underlines errors" do
+      theme = Theme.builtin(:high_contrast)
+      assert theme.primary.bold == true
+      assert theme.error.underline == true
+      assert theme.focus.bold == true
+    end
+  end
+
+  describe "get/1 for new tokens" do
+    test ":primary/:accent/:muted/:error all resolve through Theme.get" do
+      Theme.__set__(Theme.builtin(:dark))
+      assert Theme.get(:primary) == %Style{fg: :bright_cyan}
+      assert Theme.get(:error).bold == true
+      Theme.__clear__()
+    end
   end
 
   describe "build/1" do
