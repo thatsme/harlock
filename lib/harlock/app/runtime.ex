@@ -169,41 +169,88 @@ defmodule Harlock.App.Runtime do
   defp maybe_handle_focus(_event, _state), do: :pass
 
   # R2: focus-aware key routing. If the focused element is an auto-routable
-  # widget (currently only :viewport) and the key is one the widget handles,
-  # translate the raw key into a widget-shaped message that the app's
-  # update/2 receives instead. Apps still own the model write — they just
-  # write one generic clause per widget kind instead of N per-key clauses.
+  # widget (viewport / tabs / text_input) and the key is one the widget
+  # handles, translate the raw key into a widget-shaped message that the
+  # app's update/2 receives instead. Apps still own the model write — they
+  # just write one generic clause per widget kind instead of N per-key
+  # clauses.
   #
   # Degrades to :pass on any unexpected shape (e.g. an app constructs a
   # viewport without :offset/:content_height) so misuse surfaces as a
   # render error in the user's code, not as a runtime crash on the
   # spine's handle_info path.
-  defp maybe_route_widget({:key, key, _mods}, state)
-       when key in [:up, :down, :page_up, :page_down, :home, :end] do
+  defp maybe_route_widget({:key, _, _} = event, state) do
     with focus_id when not is_nil(focus_id) <- state.focused,
-         {:ok, %Element{type: :viewport} = el} <- Map.fetch(state.widget_index, focus_id),
-         {:ok, offset} <- Keyword.fetch(el.opts, :offset),
-         {:ok, content_height} <- Keyword.fetch(el.opts, :content_height) do
-      # widget_metrics is populated during render_unsafe (the previous
-      # frame). Safe to read here because every focus-changing path
-      # (Tab handling, any update/2 returning a model) renders before the
-      # next key event is processed — so the focused widget's metrics are
-      # current. If you add a focus path that doesn't render, the fallback
-      # to state.rows breaks page-step/:end clamping for short viewports.
-      viewport_h = get_in(state.widget_metrics, [focus_id, :viewport_h]) || state.rows
-      new_offset = Harlock.Viewport.apply_key(offset, content_height, viewport_h, key)
-
-      if new_offset == offset do
-        :pass
-      else
-        {:routed, {:harlock_scroll, focus_id, new_offset}}
-      end
+         {:ok, %Element{} = el} <- Map.fetch(state.widget_index, focus_id) do
+      route_to_widget(el, event, focus_id, state)
     else
       _ -> :pass
     end
   end
 
   defp maybe_route_widget(_event, _state), do: :pass
+
+  defp route_to_widget(%Element{type: :viewport} = el, {:key, key, _}, focus_id, state) do
+    if key in [:up, :down, :page_up, :page_down, :home, :end] do
+      with {:ok, offset} <- Keyword.fetch(el.opts, :offset),
+           {:ok, content_height} <- Keyword.fetch(el.opts, :content_height) do
+        # widget_metrics is populated during render_unsafe (the previous
+        # frame). Safe to read here because every focus-changing path
+        # (Tab handling, any update/2 returning a model) renders before the
+        # next key event is processed — so the focused widget's metrics are
+        # current. If you add a focus path that doesn't render, the fallback
+        # to state.rows breaks page-step/:end clamping for short viewports.
+        viewport_h = get_in(state.widget_metrics, [focus_id, :viewport_h]) || state.rows
+        new_offset = Harlock.Viewport.apply_key(offset, content_height, viewport_h, key)
+
+        if new_offset == offset do
+          :pass
+        else
+          {:routed, {:harlock_scroll, focus_id, new_offset}}
+        end
+      else
+        _ -> :pass
+      end
+    else
+      :pass
+    end
+  end
+
+  defp route_to_widget(%Element{type: :tabs} = el, event, focus_id, _state) do
+    with {:ok, items} <- Keyword.fetch(el.opts, :items),
+         {:ok, active} <- Keyword.fetch(el.opts, :active) do
+      case Harlock.Tabs.apply_key(event, active, items) do
+        {:select, ^active} -> :pass
+        {:select, new_id} -> {:routed, {:harlock_select, focus_id, new_id}}
+        :noop -> :pass
+      end
+    else
+      _ -> :pass
+    end
+  end
+
+  defp route_to_widget(%Element{type: :text_input} = el, event, focus_id, _state) do
+    with {:ok, value} <- Keyword.fetch(el.opts, :value),
+         {:ok, cursor} <- Keyword.fetch(el.opts, :cursor) do
+      case Harlock.TextBuffer.apply_key(event, value, cursor) do
+        {:edit, ^value, ^cursor} ->
+          :pass
+
+        {:edit, new_value, new_cursor} ->
+          {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}}}
+
+        :submit ->
+          {:routed, {:harlock_submit, focus_id}}
+
+        :noop ->
+          :pass
+      end
+    else
+      _ -> :pass
+    end
+  end
+
+  defp route_to_widget(_el, _event, _focus_id, _state), do: :pass
 
   defp focus_next(state) do
     case active_ids(state) do

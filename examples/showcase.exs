@@ -305,7 +305,10 @@ defmodule ShowcaseApp do
           value: model.form.values[field],
           cursor: model.form.cursors[field],
           placeholder: "(Tab to focus, type to edit)",
-          focusable: {:form_field, field}
+          focusable: {:form_field, field},
+          # Pinned to the manual key-handling path (see update/2 below) until
+          # Phase 4 migrates this example to the v0.4 routed-message idiom.
+          handle_keys: false
         )
       ]
     )

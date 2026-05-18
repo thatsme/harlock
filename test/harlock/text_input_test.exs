@@ -1,8 +1,6 @@
 defmodule Harlock.TextInputTest do
   use ExUnit.Case, async: true
 
-  alias Harlock.TextBuffer
-
   defmodule InputApp do
     use Harlock.App
 
@@ -15,19 +13,9 @@ defmodule Harlock.TextInputTest do
       }
     end
 
-    def update({:key, _, _} = event, model) do
-      case Harlock.Focus.current() do
-        :input ->
-          case TextBuffer.apply_key(event, model.value, model.cursor) do
-            {:edit, v, c} -> %{model | value: v, cursor: c}
-            _ -> model
-          end
-
-        _ ->
-          model
-      end
-    end
-
+    # Since v0.4 the runtime auto-routes focused text_input keys; the
+    # app just writes the routed messages back to the model.
+    def update({:harlock_edit, :input, {v, c}}, m), do: %{m | value: v, cursor: c}
     def update(_, m), do: m
 
     def view(m) do

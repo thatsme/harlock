@@ -132,4 +132,113 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
       assert Harlock.Test.model(h).offset == 0
     end
   end
+
+  defmodule TabsApp do
+    @moduledoc false
+    use Harlock.App
+
+    def init(_), do: %{tab: :a, raw_keys: []}
+
+    def update({:harlock_select, :nav, id}, m), do: %{m | tab: id}
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+    def update(_, m), do: m
+
+    def view(m) do
+      tabs(focusable: :nav, items: [{:a, "Alpha"}, {:b, "Beta"}, {:c, "Gamma"}], active: m.tab)
+    end
+  end
+
+  describe "tabs auto-routing" do
+    setup do
+      h = Harlock.Test.start_app(TabsApp, nil, rows: 5, cols: 40)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "Right cycles to next tab without raw key delivery", %{h: h} do
+      assert Harlock.Test.model(h).tab == :a
+      Harlock.Test.send_key(h, :right)
+      assert Harlock.Test.model(h).tab == :b
+      assert Harlock.Test.model(h).raw_keys == []
+    end
+
+    test "Home jumps to first; Left wraps", %{h: h} do
+      Harlock.Test.send_key(h, :end)
+      assert Harlock.Test.model(h).tab == :c
+
+      Harlock.Test.send_key(h, :right)
+      assert Harlock.Test.model(h).tab == :a
+
+      Harlock.Test.send_key(h, :left)
+      assert Harlock.Test.model(h).tab == :c
+    end
+
+    test "Home on the first tab is a no-op and falls through to the app", %{h: h} do
+      assert Harlock.Test.model(h).tab == :a
+      Harlock.Test.send_key(h, :home)
+      assert Harlock.Test.model(h).tab == :a
+      assert [{:key, :home, []}] = Harlock.Test.model(h).raw_keys
+    end
+
+    test "an unrelated key flows through unchanged", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?q})
+      assert [{:key, {:char, ?q}, []}] = Harlock.Test.model(h).raw_keys
+    end
+  end
+
+  defmodule InputApp do
+    @moduledoc false
+    use Harlock.App
+
+    def init(_), do: %{value: "", cursor: 0, submits: 0, raw_keys: []}
+
+    def update({:harlock_edit, :input, {v, c}}, m), do: %{m | value: v, cursor: c}
+    def update({:harlock_submit, :input}, m), do: %{m | submits: m.submits + 1}
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+    def update(_, m), do: m
+
+    def view(m) do
+      text_input(focusable: :input, value: m.value, cursor: m.cursor)
+    end
+  end
+
+  describe "text_input auto-routing" do
+    setup do
+      h = Harlock.Test.start_app(InputApp, nil, rows: 5, cols: 40)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "printable keys insert characters via the routed edit message", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?h})
+      Harlock.Test.send_key(h, {:char, ?i})
+      m = Harlock.Test.model(h)
+      assert m.value == "hi"
+      assert m.cursor == 2
+      assert m.raw_keys == []
+    end
+
+    test "Backspace and arrows route through edit", %{h: h} do
+      for c <- ~c"abc", do: Harlock.Test.send_key(h, {:char, c})
+      assert Harlock.Test.model(h).value == "abc"
+
+      Harlock.Test.send_key(h, :backspace)
+      assert Harlock.Test.model(h).value == "ab"
+
+      Harlock.Test.send_key(h, :left)
+      assert Harlock.Test.model(h).cursor == 1
+    end
+
+    test "Enter delivers :harlock_submit", %{h: h} do
+      Harlock.Test.send_key(h, :enter)
+      assert Harlock.Test.model(h).submits == 1
+      assert Harlock.Test.model(h).raw_keys == []
+    end
+
+    test "a modifier-only printable (e.g. Ctrl-x) is :noop and falls through", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?x}, [:ctrl])
+      assert Harlock.Test.model(h).value == ""
+      assert [{:key, {:char, ?x}, [:ctrl]}] = Harlock.Test.model(h).raw_keys
+    end
+  end
 end

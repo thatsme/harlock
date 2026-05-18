@@ -24,6 +24,21 @@ defmodule Harlock.Tabs do
     * `Left` / `Right` — cycle tabs (with wrap)
     * `Home` / `End` — first / last
     * anything else — `:noop`
+
+  ## Auto-routing (v0.4)
+
+  When a `tabs` element carries a `:focusable` id, the runtime calls
+  `apply_key/3` automatically and delivers the result to `update/2` as
+  `{:harlock_select, focus_id, new_id}` — the app only writes where
+  the active tab id lives on the model:
+
+      tabs(focusable: :nav, items: [{:a, "Alpha"}, {:b, "Beta"}], active: m.tab)
+
+      def update({:harlock_select, :nav, id}, m), do: %{m | tab: id}
+
+  Calling `apply_key/3` directly from `update/2` is still supported
+  (and required for `tabs` widgets without a `:focusable` id, or
+  with `handle_keys: false`).
   """
 
   @type id :: any()

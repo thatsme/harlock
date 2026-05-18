@@ -28,6 +28,22 @@ defmodule Harlock.TextBuffer do
             model
         end
       end
+
+  ## Auto-routing (v0.4)
+
+  When a `text_input` element is focused, the runtime routes its keys
+  through `apply_key/3` automatically and delivers the result to
+  `update/2` — the app's clauses get to the point:
+
+      text_input(focusable: :search, value: m.search, cursor: m.cursor)
+
+      def update({:harlock_edit, :search, {v, c}}, m),
+        do: %{m | search: v, cursor: c}
+
+      def update({:harlock_submit, :search}, m), do: trigger_search(m)
+
+  Opt out with `handle_keys: false`; calling `apply_key/3` directly
+  from `update/2` continues to work.
   """
 
   alias Harlock.Width

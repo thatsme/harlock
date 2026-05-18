@@ -27,7 +27,7 @@ defmodule Harlock.Element.Focusables do
 
   @type id :: any()
 
-  @auto_routed_types [:viewport]
+  @auto_routed_types [:viewport, :tabs, :text_input]
 
   @spec collect(Element.t()) :: {[id()], [[id()]], %{id() => Element.t()}}
   def collect(%Element{} = root) do
