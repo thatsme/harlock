@@ -44,7 +44,16 @@ defmodule Harlock.App.Supervisor do
     runtime_name = :"#{name}.Runtime"
     task_sup_name = :"#{name}.TaskSupervisor"
 
-    caps = Caps.detect()
+    # Production caps are detected from $TERM / $COLORTERM. The :test
+    # backend uses deterministic truecolor caps so test rendered-byte
+    # output doesn't drift when CI ($TERM unset → :mono) or a thin SSH
+    # session runs the suite — only the real terminal backend should
+    # downgrade based on host environment.
+    caps =
+      case backend do
+        :test -> Caps.test_defaults()
+        _ -> Caps.detect()
+      end
 
     io_children =
       case backend do

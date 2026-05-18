@@ -97,22 +97,31 @@ defmodule Harlock.Terminal.Caps do
   end
 
   @doc """
-  Return the caps installed by the runtime, or a generous default
-  (`:truecolor`) when called outside a Harlock callback — that default
-  matches v0.3 behaviour, which never downgraded.
+  Return the caps installed by the runtime, or `test_defaults/0` when
+  called outside a Harlock callback — that default matches v0.3
+  behaviour, which never downgraded.
   """
   @spec get() :: t()
-  def get do
-    Process.get(@key) ||
-      %__MODULE__{
-        term: "",
-        term_program: "",
-        colorterm: "",
-        colors: :truecolor,
-        bracketed_paste: false,
-        mouse: false,
-        kitty_keyboard: false
-      }
+  def get, do: Process.get(@key) || test_defaults()
+
+  @doc false
+  # Synthetic caps used by the `:test` backend (and as the fallback for
+  # Style.to_sgr/1 outside a runtime callback). Truecolor + everything
+  # else off so test output is deterministic across environments —
+  # GitHub Actions runners ship with $TERM unset, which would otherwise
+  # make Caps.detect/0 classify as `:mono` and silently strip every
+  # color SGR from rendered bytes.
+  @spec test_defaults() :: t()
+  def test_defaults do
+    %__MODULE__{
+      term: "",
+      term_program: "",
+      colorterm: "",
+      colors: :truecolor,
+      bracketed_paste: false,
+      mouse: false,
+      kitty_keyboard: false
+    }
   end
 
   @doc "Convenience accessor for just the color depth."
