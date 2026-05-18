@@ -43,9 +43,7 @@ Full source: [`examples/overview.exs`](examples/overview.exs).
 ```elixir
 defmodule Overview do
   use Harlock.App
-  alias Harlock.{Cmd, Focus, Viewport}
-
-  @log_visible 10
+  alias Harlock.{Cmd, Focus}
 
   def init(_) do
     %{
@@ -74,16 +72,14 @@ defmodule Overview do
 
   def update({:refreshed, lines}, m), do: %{m | log: lines ++ m.log}
 
-  def update({:key, key, _} = ev, m) do
+  # The runtime auto-routes scroll keys to the focused viewport and
+  # delivers this message; the app just writes where the offset lives.
+  def update({:harlock_scroll, :log, new_offset}, m), do: %{m | log_offset: new_offset}
+
+  def update({:key, _, _} = ev, m) do
     case Focus.current() do
-      :tasks ->
-        update_tasks(ev, m)
-
-      :log ->
-        %{m | log_offset: Viewport.apply_key(m.log_offset, length(m.log), @log_visible, key)}
-
-      _ ->
-        m
+      :tasks -> update_tasks(ev, m)
+      _ -> m
     end
   end
 
@@ -122,9 +118,9 @@ defmodule Overview do
             box(
               title: "Log",
               border: :rounded,
-              focusable: :log,
               child:
                 viewport(
+                  focusable: :log,
                   offset: m.log_offset,
                   content_height: length(m.log),
                   child:

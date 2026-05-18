@@ -5,6 +5,7 @@ defmodule Harlock.Element.Renderer do
 
   alias Harlock.Element
   alias Harlock.Element.Column
+  alias Harlock.Element.WidgetMetrics
   alias Harlock.Layout
   alias Harlock.Layout.Rect
   alias Harlock.Render.Buffer
@@ -225,6 +226,13 @@ defmodule Harlock.Element.Renderer do
     declared_offset = Keyword.fetch!(el.opts, :offset)
     content_height = Keyword.fetch!(el.opts, :content_height)
     scrollbar? = Keyword.get(el.opts, :scrollbar, false)
+
+    # R2: a focused viewport records its rendered visible height so the
+    # runtime can compute correct page-step offsets when auto-routing
+    # scroll keys. record_viewport/2 is a no-op for nil ids.
+    if Keyword.get(el.opts, :focusable) == focused and not is_nil(focused) do
+      WidgetMetrics.record_viewport(focused, region.h)
+    end
 
     sb_col = if scrollbar?, do: 1, else: 0
     child_w = region.w - sb_col

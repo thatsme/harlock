@@ -35,6 +35,23 @@ defmodule Harlock.Viewport do
   `viewport_h - 1` (leaves one row of context like most pagers),
   `:home`/`:end` jump to the extremes. Any other key returns the
   offset unchanged.
+
+  ## Auto-routing (v0.4)
+
+  When a viewport element carries a `:focusable` id, the runtime
+  routes the six scroll keys to `apply_key/4` automatically and
+  delivers the result to `update/2` as
+  `{:harlock_scroll, focus_id, new_offset}` — the app only has to
+  write where the offset lives on the model:
+
+      viewport(focusable: :log, offset: m.offset, content_height: ...)
+
+      def update({:harlock_scroll, :log, new_offset}, m),
+        do: %{m | offset: new_offset}
+
+  Calling `apply_key/4` from `update/2` directly is still supported
+  (and required for viewports without a `:focusable` id, or with
+  `handle_keys: false`).
   """
 
   @type key ::

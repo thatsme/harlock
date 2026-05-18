@@ -15,8 +15,11 @@ defmodule Harlock.App.Runtime do
   require Logger
 
   alias Harlock.Cmd
+  alias Harlock.Element
   alias Harlock.Element.Focusables
   alias Harlock.Element.Renderer
+  alias Harlock.Element.WidgetIndex
+  alias Harlock.Element.WidgetMetrics
   alias Harlock.Focus
   alias Harlock.Render.Diff
   alias Harlock.Sub
@@ -64,6 +67,8 @@ defmodule Harlock.App.Runtime do
         focusables: [],
         traps: [],
         focus_stack: [],
+        widget_index: %{},
+        widget_metrics: %{},
         subs: %{},
         pending_cmd: init_cmd
       }
@@ -84,8 +89,14 @@ defmodule Harlock.App.Runtime do
   @impl true
   def handle_info({:harlock_event, event}, state) do
     case maybe_handle_focus(event, state) do
-      {:handled, state} -> {:noreply, render(state)}
-      :pass -> apply_update(state, event)
+      {:handled, state} ->
+        {:noreply, render(state)}
+
+      :pass ->
+        case maybe_route_widget(event, state) do
+          {:routed, routed_event} -> apply_update(state, routed_event)
+          :pass -> apply_update(state, event)
+        end
     end
   end
 
@@ -157,6 +168,33 @@ defmodule Harlock.App.Runtime do
   end
 
   defp maybe_handle_focus(_event, _state), do: :pass
+
+  # R2: focus-aware key routing. If the focused element is an auto-routable
+  # widget (currently only :viewport) and the key is one the widget handles,
+  # translate the raw key into a widget-shaped message that the app's
+  # update/2 receives instead. Apps still own the model write — they just
+  # write one generic clause per widget kind instead of N per-key clauses.
+  defp maybe_route_widget({:key, key, _mods}, state)
+       when key in [:up, :down, :page_up, :page_down, :home, :end] do
+    with focus_id when not is_nil(focus_id) <- state.focused,
+         {:ok, %Element{type: :viewport} = el} <- Map.fetch(state.widget_index, focus_id) do
+      offset = Keyword.fetch!(el.opts, :offset)
+      content_height = Keyword.fetch!(el.opts, :content_height)
+      viewport_h = get_in(state.widget_metrics, [focus_id, :viewport_h]) || state.rows
+
+      new_offset = Harlock.Viewport.apply_key(offset, content_height, viewport_h, key)
+
+      if new_offset == offset do
+        :pass
+      else
+        {:routed, {:harlock_scroll, focus_id, new_offset}}
+      end
+    else
+      _ -> :pass
+    end
+  end
+
+  defp maybe_route_widget(_event, _state), do: :pass
 
   defp focus_next(state) do
     case active_ids(state) do
@@ -231,13 +269,19 @@ defmodule Harlock.App.Runtime do
   defp render_unsafe(state) do
     tree = state.app.view(state.model)
     {focusables, traps} = Focusables.collect(tree)
+    widget_index = WidgetIndex.collect(tree)
     state = update_focus_state(state, focusables, traps)
+    state = %{state | widget_index: widget_index}
     state = update_subs(state)
+
+    WidgetMetrics.clear()
     frame = Renderer.render(tree, state.rows, state.cols, state.focused)
+    widget_metrics = WidgetMetrics.consume()
+
     diff = Diff.diff(state.prev_frame, frame)
     Writer.write(state.writer, diff)
 
-    %{state | prev_frame: frame, dirty: false}
+    %{state | prev_frame: frame, widget_metrics: widget_metrics, dirty: false}
   end
 
   defp update_subs(state) do
