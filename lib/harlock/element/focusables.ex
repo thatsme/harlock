@@ -1,41 +1,80 @@
 defmodule Harlock.Element.Focusables do
   @moduledoc false
-  # DFS traversal collecting focusable ids from an element tree. Returns
-  # `{ids, traps}`:
-  #   * `ids` — every focusable id in render order (top-to-bottom,
-  #     left-to-right within siblings)
-  #   * `traps` — for each subtree marked `focus_trap: true`, the list of
-  #     focusable ids within it. Innermost traps are listed last in tree
-  #     order so the runtime can pick the deepest active trap by walking
-  #     the list backward.
+  # DFS traversal collecting everything the runtime needs from an element
+  # tree for focus and R2 widget-key auto-routing. Returns:
+  #
+  #   {ids, traps, widget_index}
+  #
+  # * `ids` — every focusable id in render order (top-to-bottom,
+  #   left-to-right within siblings).
+  # * `traps` — for each subtree marked `focus_trap: true`, the list of
+  #   focusable ids within it (including the trap container's own id and
+  #   any ids inside nested traps). Innermost traps are listed last in
+  #   tree order so the runtime can pick the deepest active trap by
+  #   walking the list backward.
+  # * `widget_index` — `%{focus_id => element}` for focusable elements
+  #   whose type opts in to R2 auto-routing (currently `:viewport`) and
+  #   that have not explicitly set `handle_keys: false`. Used by
+  #   `Harlock.App.Runtime` to look up the focused widget at
+  #   key-dispatch time without re-walking the tree.
+  #
+  # The id and widget-index collection are folded into one walk
+  # (`collect_ids_and_widgets/2`); traps remain a separate walk because
+  # their semantics (each trap captures the *whole* subtree, including
+  # nested traps' ids) make folding harder than it's worth.
 
   alias Harlock.Element
 
   @type id :: any()
 
-  @spec collect(Element.t()) :: {[id()], [[id()]]}
+  @auto_routed_types [:viewport]
+
+  @spec collect(Element.t()) :: {[id()], [[id()]], %{id() => Element.t()}}
   def collect(%Element{} = root) do
-    {collect_ids(root), collect_traps(root)}
+    {ids, widgets} = collect_ids_and_widgets(root, {[], %{}})
+    {Enum.reverse(ids), collect_traps(root), widgets}
   end
 
-  defp collect_ids(%Element{} = el) do
+  defp collect_ids_and_widgets(%Element{} = el, {ids, widgets}) do
+    {ids, widgets} =
+      case Keyword.get(el.opts, :focusable) do
+        nil ->
+          {ids, widgets}
+
+        focus_id ->
+          ids = [focus_id | ids]
+
+          widgets =
+            if el.type in @auto_routed_types and Keyword.get(el.opts, :handle_keys, true) do
+              Map.put(widgets, focus_id, el)
+            else
+              widgets
+            end
+
+          {ids, widgets}
+      end
+
+    Enum.reduce(el.children, {ids, widgets}, &collect_ids_and_widgets/2)
+  end
+
+  defp collect_traps(%Element{} = el) do
+    here =
+      if Keyword.get(el.opts, :focus_trap) == true do
+        [collect_focus_ids_only(el)]
+      else
+        []
+      end
+
+    here ++ Enum.flat_map(el.children, &collect_traps/1)
+  end
+
+  defp collect_focus_ids_only(%Element{} = el) do
     here =
       case Keyword.get(el.opts, :focusable) do
         nil -> []
         id -> [id]
       end
 
-    here ++ Enum.flat_map(el.children, &collect_ids/1)
-  end
-
-  defp collect_traps(%Element{} = el) do
-    here =
-      if Keyword.get(el.opts, :focus_trap) == true do
-        [collect_ids(el)]
-      else
-        []
-      end
-
-    here ++ Enum.flat_map(el.children, &collect_traps/1)
+    here ++ Enum.flat_map(el.children, &collect_focus_ids_only/1)
   end
 end

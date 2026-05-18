@@ -93,6 +93,8 @@ defmodule Overview do
   defp update_tasks(_, m), do: m
 
   def view(m) do
+    here = Focus.current()
+
     vbox(
       constraints: [fill: 1, length: 1],
       children: [
@@ -102,6 +104,7 @@ defmodule Overview do
             box(
               title: "Tasks",
               border: :rounded,
+              border_style: border_style(here == :tasks),
               focusable: :tasks,
               child:
                 table(
@@ -118,6 +121,7 @@ defmodule Overview do
             box(
               title: "Log",
               border: :rounded,
+              border_style: border_style(here == :log),
               child:
                 viewport(
                   focusable: :log,
@@ -136,6 +140,9 @@ defmodule Overview do
       ]
     )
   end
+
+  defp border_style(true), do: [fg: :cyan, bold: true]
+  defp border_style(false), do: [dim: true]
 end
 
 Harlock.run(Overview)

@@ -7,12 +7,12 @@ defmodule Harlock.Element.FocusablesTest do
 
   test "tree with no focusables returns empty" do
     tree = vbox(children: [text("a"), text("b")])
-    assert {[], []} == Focusables.collect(tree)
+    assert {[], [], %{}} == Focusables.collect(tree)
   end
 
   test "single focusable text element" do
     tree = text("ok", focusable: :ok_btn)
-    assert {[:ok_btn], []} == Focusables.collect(tree)
+    assert {[:ok_btn], [], %{}} == Focusables.collect(tree)
   end
 
   test "siblings in DFS order" do
@@ -25,7 +25,7 @@ defmodule Harlock.Element.FocusablesTest do
         ]
       )
 
-    assert {[:a, :b, :c], []} == Focusables.collect(tree)
+    assert {[:a, :b, :c], [], %{}} == Focusables.collect(tree)
   end
 
   test "nested DFS order" do
@@ -38,7 +38,7 @@ defmodule Harlock.Element.FocusablesTest do
         ]
       )
 
-    assert {[:a, :b, :c, :d], []} == Focusables.collect(tree)
+    assert {[:a, :b, :c, :d], [], %{}} == Focusables.collect(tree)
   end
 
   test "focus_trap captures its subtree ids as one trap" do
@@ -57,8 +57,49 @@ defmodule Harlock.Element.FocusablesTest do
         ]
       )
 
-    {ids, traps} = Focusables.collect(tree)
+    {ids, traps, widget_index} = Focusables.collect(tree)
     assert ids == [:outside, :in1, :in2, :after]
     assert traps == [[:in1, :in2]]
+    assert widget_index == %{}
+  end
+
+  describe "widget_index (R2)" do
+    test "focusable viewport is indexed by its focus id" do
+      vp =
+        viewport(focusable: :log, offset: 0, content_height: 10, child: text("x"))
+
+      {ids, traps, widget_index} = Focusables.collect(vp)
+      assert ids == [:log]
+      assert traps == []
+      assert is_map_key(widget_index, :log)
+      assert widget_index[:log].type == :viewport
+    end
+
+    test "viewport without :focusable is not indexed" do
+      vp = viewport(offset: 0, content_height: 10, child: text("x"))
+      {_, _, widget_index} = Focusables.collect(vp)
+      assert widget_index == %{}
+    end
+
+    test "non-viewport focusable elements are not indexed (not auto-routable)" do
+      tree = text("btn", focusable: :ok)
+      {_, _, widget_index} = Focusables.collect(tree)
+      assert widget_index == %{}
+    end
+
+    test "handle_keys: false opts out of indexing" do
+      vp =
+        viewport(
+          focusable: :log,
+          handle_keys: false,
+          offset: 0,
+          content_height: 10,
+          child: text("x")
+        )
+
+      {ids, _, widget_index} = Focusables.collect(vp)
+      assert ids == [:log]
+      assert widget_index == %{}
+    end
   end
 end
