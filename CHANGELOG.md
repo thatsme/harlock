@@ -10,6 +10,54 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Focus-aware widget key routing (R2).** A focused widget that
+  carries a `:focusable` id and whose type is one of `:viewport`,
+  `:tabs`, or `:text_input` no longer needs the app's `update/2` to
+  receive raw `{:key, …}` events and re-dispatch through the
+  widget's `apply_key` helper. The runtime calls the helper itself
+  (`Harlock.Viewport.apply_key/4`, `Harlock.Tabs.apply_key/3`,
+  `Harlock.TextBuffer.apply_key/3`) and delivers the result as one
+  of four well-known routed-message tuples:
+  - `{:harlock_scroll, focus_id, new_offset}` — focused `viewport`
+  - `{:harlock_select, focus_id, new_id}` — focused `tabs`
+  - `{:harlock_edit, focus_id, {new_value, new_cursor}}` — focused `text_input`
+  - `{:harlock_submit, focus_id}` — focused `text_input` saw Enter
+
+  The four tuples are documented as public-API contract in
+  `Harlock.App`'s moduledoc. No-op operations (e.g. `:up` on a viewport
+  already at offset 0, `:left` on a text input at cursor 0) fall
+  through to `update/2` as raw `{:key, …}` events so apps can still
+  react. Opt out per-element with `handle_keys: false`.
+
+  Applied on `examples/showcase.exs`: the per-field text-input dispatch
+  in `update/2` shrank from 21 lines (manual `Focus.current()` →
+  `TextBuffer.apply_key/3` → reassemble form maps) to 7 lines (a single
+  routed-message clause). **-67% lines, -1 alias** on this clause.
+
+- `examples/overview.exs` — runnable end-to-end example covering focus
+  traversal, a focusable table with row selection, a focusable viewport
+  with R2 auto-routing, and a `Cmd` round-trip. The same app body is
+  embedded in `README.md`, and `test/examples/overview_test.exs`
+  `Code.require_file`s the example so the README snippet can't rot
+  silently in CI.
+
+### Changed
+
+- Apps that previously handled `{:key, …}` events directly for a
+  focusable widget will see those keys swallowed by R2 by default and
+  re-emitted as `{:harlock_scroll | _select | _edit | _submit, …}`.
+  The simplest migration: add the matching routed-message clause to
+  `update/2` (see `Harlock.App` moduledoc for the four shapes). If you
+  need the v0.3 behavior unchanged, set `handle_keys: false` on the
+  element.
+- `Harlock.Element.Focusables.collect/1` now returns
+  `{ids, traps, routed_widgets}` instead of `{ids, traps}`. The third
+  element is the focus-id-to-element map the runtime uses for R2
+  dispatch. Internal API; affects only callers that pattern-matched on
+  the previous 2-tuple shape.
+
 ## [0.3.0] — 2026-05-13
 
 Demo-quality release. Adds the viewport, the standard widget set

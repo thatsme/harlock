@@ -27,7 +27,6 @@ defmodule ShowcaseApp do
   use Harlock.App
 
   alias Harlock.Focus
-  alias Harlock.TextBuffer
   alias Harlock.Viewport
 
   @log_lines (for i <- 1..200 do
@@ -130,26 +129,12 @@ defmodule ShowcaseApp do
     %{model | logs: %{model.logs | focused_alert: next}}
   end
 
-  # Form tab: any key when an input is focused goes to that input.
-  def update({:key, _, _} = ev, %{tab: :form} = model) do
-    case Focus.current() do
-      {:form_field, field} ->
-        value = model.form.values[field]
-        cursor = model.form.cursors[field]
-
-        case TextBuffer.apply_key(ev, value, cursor) do
-          {:edit, v, c} ->
-            new_values = Map.put(model.form.values, field, v)
-            new_cursors = Map.put(model.form.cursors, field, c)
-            %{model | form: %{model.form | values: new_values, cursors: new_cursors}}
-
-          _ ->
-            model
-        end
-
-      _ ->
-        model
-    end
+  # Form tab: routed text-input edit — the runtime auto-routes the focused
+  # field's apply_key result to this clause (v0.4 R2).
+  def update({:harlock_edit, {:form_field, field}, {v, c}}, model) do
+    new_values = Map.put(model.form.values, field, v)
+    new_cursors = Map.put(model.form.cursors, field, c)
+    %{model | form: %{model.form | values: new_values, cursors: new_cursors}}
   end
 
   # Widgets tab: space toggles working/paused.
@@ -305,10 +290,7 @@ defmodule ShowcaseApp do
           value: model.form.values[field],
           cursor: model.form.cursors[field],
           placeholder: "(Tab to focus, type to edit)",
-          focusable: {:form_field, field},
-          # Pinned to the manual key-handling path (see update/2 below) until
-          # Phase 4 migrates this example to the v0.4 routed-message idiom.
-          handle_keys: false
+          focusable: {:form_field, field}
         )
       ]
     )
