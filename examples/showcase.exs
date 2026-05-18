@@ -1,4 +1,6 @@
-# Showcase — a multi-tab demo of everything that landed in Harlock v0.3:
+# Showcase — a multi-tab demo of the v0.3 widget set, migrated to the
+# v0.4 R2 routed-message idiom (focused-widget keys are auto-routed by
+# the runtime; this app's update/2 owns no manual apply_key dispatch):
 #
 #   - `tabs/1`         — horizontal tab bar
 #   - `viewport/1`     — scrollable container with scroll-into-view
@@ -158,7 +160,7 @@ defmodule ShowcaseApp do
 
   defp header(_model) do
     text(
-      " Harlock v0.3 Showcase " <>
+      " Harlock v0.4 Showcase " <>
         String.duplicate(" ", 80) <> " viewport · tabs · widgets · modified keys ",
       style: %Style{bold: true, fg: :cyan, reverse: true}
     )

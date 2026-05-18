@@ -11,7 +11,7 @@ defmodule Harlock.Examples.ShowcaseTest do
 
   test "boots and shows the Logs tab", %{h: h} do
     out = Harlock.Test.render(h)
-    assert out =~ "Harlock v0.3 Showcase"
+    assert out =~ "Harlock v0.4 Showcase"
     assert out =~ "1. Logs"
     assert out =~ "2. Form"
     assert out =~ "3. Widgets"

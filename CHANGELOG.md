@@ -10,6 +10,15 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-18
+
+The "absorb the boilerplate" release. v0.3 shipped a complete widget
+set; v0.4's job was to stop making app authors hand-wire every key
+press through `apply_key` helpers. The runtime now routes navigation
+keys directly to focused widgets, the theme grows beyond the four
+renderer-only tokens it had, and `:default`-theme rendered output is
+verified byte-for-byte against v0.3.0 by a pinned golden-frame test.
+
 ### Added
 
 - **Theme: full token set, built-in themes, caps-aware color
@@ -99,18 +108,36 @@ changes are called out in the relevant release notes.
 
 ### Changed
 
-- Apps that previously handled `{:key, …}` events directly for a
-  focusable widget will see those keys swallowed by R2 by default and
-  re-emitted as `{:harlock_scroll | _select | _edit | _submit, …}`.
-  The simplest migration: add the matching routed-message clause to
-  `update/2` (see `Harlock.App` moduledoc for the four shapes). If you
-  need the v0.3 behavior unchanged, set `handle_keys: false` on the
-  element.
+- **R2 default-on auto-routing changes how navigation keys reach
+  `update/2`.** If you have a `viewport`, `tabs`, or `text_input`
+  widget that carries a `:focusable` id and your `update/2` binds the
+  keys that widget handles (`:up`/`:down`/`:page_up`/`:page_down`/
+  `:home`/`:end` for viewport; `:left`/`:right`/`:home`/`:end` for
+  tabs; printables/arrows/backspace/delete/enter for text_input),
+  **those key clauses in your `update/2` will silently stop firing
+  the moment that widget is focused** — the routed
+  `{:harlock_scroll | _select | _edit | _submit, focus_id, _}`
+  message arrives instead. See the Event vocabulary section of
+  `Harlock.App`'s moduledoc for the four shapes, or set
+  `handle_keys: false` on the element to keep the v0.3 manual-handling
+  path. This is the single migration step every existing app must
+  consider; everything else is additive.
+- Boundary cases (e.g. `:up` on a viewport already at offset 0,
+  `:left` on a text input at cursor 0) fall through to `update/2` as
+  raw `{:key, …}` events so apps that bind those gestures for
+  out-of-widget actions (focus-out, menu open) still work.
+- Tab / Shift-Tab were always consumed by the runtime when any
+  focusable existed in the tree; v0.4 documents this explicitly in
+  `Harlock.App`'s moduledoc. Apps that bound Tab for sub-navigation
+  should rebind to another key when adding focusable widgets — the
+  binding will be silently shadowed otherwise. (Worked example:
+  `examples/showcase.exs` rebound Logs-tab alert cycling from Tab to
+  `]`/`[` in this release.)
 - `Harlock.Element.Focusables.collect/1` now returns
   `{ids, traps, routed_widgets}` instead of `{ids, traps}`. The third
   element is the focus-id-to-element map the runtime uses for R2
-  dispatch. Internal API; affects only callers that pattern-matched on
-  the previous 2-tuple shape.
+  dispatch. Internal API (`@moduledoc false`); affects only callers
+  that pattern-matched on the previous 2-tuple shape.
 
 ## [0.3.0] — 2026-05-13
 
@@ -387,7 +414,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/thatsme/harlock/releases/tag/v0.4.0
 [0.3.0]: https://github.com/thatsme/harlock/releases/tag/v0.3.0
 [0.2.0]: https://github.com/thatsme/harlock/releases/tag/v0.2.0
 [0.1.0]: https://github.com/thatsme/harlock/releases/tag/v0.1.0

@@ -354,9 +354,37 @@ hard dep (tiny library, no transitive deps).
 
 ---
 
-## v0.4 — "polish & adoption" (~4 weeks)
+## v0.4 — "absorb the boilerplate" ✓ (shipped 2026-05-18)
 
-### Theming (full token set)
+The v0.4 plan was re-scoped against [`docs/feedback-v0.3.md`](docs/feedback-v0.3.md)
+and [`docs/v0.4-plan.md`](docs/v0.4-plan.md): instead of growing the widget
+roster, v0.4 made the widgets that already shipped cost less to wire.
+The original "polish & adoption" sub-sections below are kept as-is for
+provenance — entries marked ✓ landed, others moved to v0.4.1.
+
+### Focus-aware widget key routing (R2) ✓
+
+The headline. Focusable `viewport`, `tabs`, and `text_input` elements
+get their navigation keys auto-routed by the runtime; the app's
+`update/2` receives a synthesised `{:harlock_scroll | _select | _edit
+| _submit, focus_id, payload}` instead of raw `{:key, …}`. Opt out
+per-element with `handle_keys: false`. The four routed-message tuples
+are public API and documented in `Harlock.App`'s moduledoc.
+Applied to `examples/showcase.exs`: the per-field text-input dispatch
+clause in `update/2` went 21→7 lines (-67%); the manual
+`Viewport.apply_key/4` scroll dispatch went 7→3 lines. No widget calls
+`apply_key/_` from `update/2` in showcase any more.
+
+### End-to-end README example ✓
+
+`examples/overview.exs` (also embedded inline in the README between
+the Counter snippet and Installation) is a runnable ~70-line app
+covering focus traversal, a selectable table, a focusable viewport
+with R2 auto-routing, and a `Cmd` round-trip.
+`test/examples/overview_test.exs` `Code.require_file`s it so the
+README snippet can't rot silently.
+
+### Theming (full token set) ✓
 
 The four-token minimum (`header`, `focus`, `selection`, `border`) landed
 in v0.2. v0.4 extends to the full palette and ships the ergonomics around
@@ -382,37 +410,81 @@ it:
 - App still configures via `Harlock.run(MyApp, init_arg, theme: theme)`;
   `Harlock.Theme.get/1` already exists from v0.2.
 
-### Style cascade
+### Style cascade ✓
 
-- `box` propagates `:border_style` to title.
+- `box` propagates `:border_style` to title. ✓ (was already true in
+  v0.3 — `draw_title` shares the border style parameter; verified
+  during Phase 3.)
 - `table` accepts `:header_style`, `:row_style`, `:alt_row_style`,
-  `:selected_style`, `:focus_style` (all default to theme).
+  `:selected_style`, `:focus_style` (all default to theme). ✓
+  `:alt_row_style` is the only behavioural addition; the rest are
+  pure overrides that preserve v0.3 output when unset.
 - `Style.merge/2` with proper inheritance (child overrides parent;
-  unspecified attrs inherit).
+  unspecified attrs inherit). ✓ (already had these semantics in v0.2;
+  verified during Phase 3.)
+
+### `:default` byte-identical to v0.3 ✓
+
+Pinned in `test/harlock/golden_frame_test.exs`. Hash captured by
+running the same canonical app under a git worktree at tag `v0.3.0`,
+not by observing the v0.4 implementation — so the test proves parity,
+not self-locking.
+
+---
+
+## v0.4.1 — widgets on the new contract (next)
+
+The work originally listed under v0.4 that was deferred so it could
+ship as the **first consumer of the R2 routing contract** instead of
+being built against the v0.3 manual-dispatch idiom. Building them
+inside v0.4 would have meant writing their key handling against the
+old API and rewriting it the moment R2 landed; v0.4.1 lets them
+arrive as native R2 widgets from day one.
 
 ### tree / menu / select widgets
 
-- `tree(:nodes, :expanded, :focused, :on_toggle, :on_select)` — recursive
-  node display with expand/collapse on `Right`/`Left` or `Enter`.
-- `menu(:items, :on_select)` — vertical list, arrow navigation, `Enter`
-  selects.
-- `select(:items, :value, :on_change)` — dropdown (uses `overlay` for the
-  open state).
+- `tree(:nodes, :expanded, :focused, :on_toggle, :on_select)` —
+  recursive node display with expand/collapse on `Right`/`Left` or
+  `Enter`. Auto-routed via `{:harlock_select, focus_id, node_id}` and
+  a new `{:harlock_toggle, focus_id, node_id}`.
+- `menu(:items, :on_select)` — vertical list, arrow navigation,
+  `Enter` selects. Auto-routed via `{:harlock_select, focus_id, id}`.
+- `select(:items, :value, :on_change)` — dropdown (uses `overlay` for
+  the open state). Same routed-select shape.
+
+Each gets its own `apply_key/n` pure helper plus a per-type clause in
+`Harlock.App.Runtime.route_to_widget/4`; no new mechanism, just three
+new consumers.
 
 ### Multi-line text_area
 
 Builds on `text_input` + `viewport`. Word wrap, soft/hard line breaks,
 proper cursor across wraps. Word movement (`Ctrl-Left`/`Ctrl-Right`),
-line movement (`Up`/`Down` preserving visual column).
+line movement (`Up`/`Down` preserving visual column). Routed-edit
+message stays `{:harlock_edit, focus_id, {value, cursor}}` — the
+cursor type widens slightly to accommodate `{line, col}`.
 
 ### Richer Sub kinds
 
 - `Sub.pubsub(pubsub_mod, topic, transform_fn)` — subscribes via
-  `Phoenix.PubSub`. Killer integration for Phoenix-based ops dashboards.
-- `Sub.file(path, opts)` — watch via `:fs` if available, polling fallback.
+  `Phoenix.PubSub`. The killer integration for Phoenix-based ops
+  dashboards. Deferred from v0.4 because R2 took the cycle.
+- `Sub.file(path, opts)` — watch via `:fs` if available, polling
+  fallback.
 - `Sub.signal(:sigusr1, msg)` — wraps `:os.set_signal/2`.
-- `Sub.port(cmd, args)` — long-running external process, stdout lines as
-  events.
+- `Sub.port(cmd, args)` — long-running external process, stdout lines
+  as events.
+
+### `box(focus_proxy: :child_id)`
+
+Polish for the R2 visual story. With R2 default-on, `:focusable`
+lives on the interactive widget (the viewport, the tabs, the text
+input) — but the wrapping `box` is what users *see*. The
+`focus_proxy:` opt lets a box mirror a named child's focus state for
+visual highlighting only (border style, title style) without itself
+participating in focus traversal. Until this lands, `examples/overview.exs`
+styles its boxes' borders off `Focus.current()` by hand as a workaround
+(see the `border_style/1` helper there).
 
 ---
 

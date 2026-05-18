@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.3.0/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.4.0/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -152,7 +152,7 @@ Harlock.run(Overview)
 
 ```elixir
 def deps do
-  [{:harlock, "~> 0.3"}]
+  [{:harlock, "~> 0.4"}]
 end
 ```
 
@@ -190,19 +190,24 @@ Compared to alternatives:
 
 ## Status
 
-Harlock is `v0.3`. The API is intentionally narrow and stable for the
+Harlock is `v0.4`. The API is intentionally narrow and stable for the
 primitives it ships; widgets and ergonomics are still landing.
 Anything `@moduledoc false` is internal and free to change.
 
-| Area | v0.3 |
+| Area | Status |
 |---|---|
 | TEA runtime (`init` / `update` / `view` / `subs`) | ✓ |
 | OTP supervision + terminal restoration | ✓ |
 | Cmd executor (`Cmd.from`, `Cmd.batch`, `Cmd.map`) | ✓ |
 | Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ |
 | Focus traversal + focus_trap overlays | ✓ |
+| Focus-aware widget key routing (`viewport` / `tabs` / `text_input`) | ✓ (v0.4) |
 | Wide-grapheme width (CJK, emoji, ZWJ, flags) | ✓ |
-| Theme tokens (`:header`, `:focus`, `:selection`, `:border`) | ✓ |
+| Theme tokens (`:header`, `:focus`, `:selection`, `:border`, `:primary`, `:accent`, `:muted`, `:error`) | ✓ (full set in v0.4) |
+| Built-in themes (`:default` / `:dark` / `:high_contrast`) | ✓ (v0.4) |
+| Caps-aware color downgrade (truecolor → 256 → 16 → mono) | ✓ (v0.4) |
+| Table style cascade (`:header_style` / `:row_style` / `:alt_row_style` / `:selected_style` / `:focus_style`) | ✓ (v0.4) |
+| `:default` theme byte-identical to v0.3 (golden-frame pin) | ✓ (v0.4) |
 | SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
 | `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ |
@@ -211,9 +216,10 @@ Anything `@moduledoc false` is internal and free to change.
 | Modified arrows / Home / End / F-keys (parser) | ✓ |
 | Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
-| Full theme set + built-in themes + color downgrade | v0.4 |
-| `tree` / `menu` / `select` widgets | v0.4 |
-| Multi-line `text_area` | v0.4 |
+| `tree` / `menu` / `select` widgets | v0.4.1 |
+| Multi-line `text_area` | v0.4.1 |
+| Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.4.1 |
+| `box(focus_proxy: id)` (visual focus mirroring) | v0.4.1 |
 
 See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 
