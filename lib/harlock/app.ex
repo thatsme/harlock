@@ -32,8 +32,16 @@ defmodule Harlock.App do
 
   `update/2` receives messages from several sources. The runtime
   guarantees the following tuple shapes; apps pattern-match on these
-  directly. Tab / Shift-Tab are intercepted by the runtime for focus
-  traversal and do **not** reach `update/2`.
+  directly.
+
+  **Tab / Shift-Tab are consumed by the runtime for focus traversal
+  whenever the current tree contains at least one focusable element**
+  and do **not** reach `update/2` in that case. (When the tree has no
+  focusables to cycle, the keys fall through as raw `{:key, :tab, …}`
+  events.) Apps that previously dispatched on `{:key, :tab, []}` for
+  sub-navigation — for example, cycling a custom highlight — should
+  bind that gesture to a non-Tab key the moment a focusable widget
+  enters the tree, or the binding will be silently shadowed.
 
   Raw input:
 

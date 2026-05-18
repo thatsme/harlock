@@ -31,15 +31,30 @@ changes are called out in the relevant release notes.
   through to `update/2` as raw `{:key, …}` events so apps can still
   react. Opt out per-element with `handle_keys: false`.
 
-  Applied on `examples/showcase.exs`: the per-field text-input dispatch
-  in `update/2` shrank from 21 lines (manual `Focus.current()` →
-  `TextBuffer.apply_key/3` → reassemble form maps) to 7 lines (a single
-  routed-message clause). **-67% lines, -1 alias** on this clause.
-  The Logs viewport also became `focusable: :logs_viewport`, the manual
-  `Viewport.apply_key/4` dispatch collapsed to a 3-line
-  `{:harlock_scroll, :logs_viewport, n}` clause, and the `Viewport`
-  alias dropped out. Alert row cycling in the Logs tab moved from
-  `Tab`/`Shift-Tab` to `]`/`[` (Tab is now runtime focus traversal).
+  Applied on `examples/showcase.exs` (the most key-handling-heavy
+  example in the repo), measured against the v0.3 manual-dispatch
+  baseline:
+
+  - **Form text-input clause** (Phase 4a, no user-visible change):
+    21 → 7 lines, **-67%** on that clause. Removed the
+    `Focus.current()` → `TextBuffer.apply_key/3` → reassemble
+    `model.form.{values,cursors}` ladder; one
+    `{:harlock_edit, {:form_field, field}, {v, c}}` clause replaces
+    it. `alias Harlock.TextBuffer` no longer needed.
+  - **Logs viewport scroll clause** (Phase 4b, with a keybind
+    change): 7-line `when key in [...]` guard + helper call → 3-line
+    `{:harlock_scroll, :logs_viewport, n}` clause. The
+    `log_visible_height/0` helper and `alias Harlock.Viewport`
+    dropped out. Tab now goes to runtime focus traversal, so the
+    Logs tab's alert-row cycling moved from `Tab`/`Shift-Tab` to
+    `]`/`[`; legend and keybar labels updated.
+
+  Across both clauses, the `apply_key`-wiring share of `update/2`
+  fell from 29 lines (21 form + 7 logs + 1 helper) to 13 lines
+  (7 + 6), **-55% overall**. No `apply_key` helper is called from
+  showcase's `update/2` anymore; the file is the worked example
+  the four routed-message tuples in `Harlock.App`'s moduledoc
+  point at.
 
 - `examples/overview.exs` — runnable end-to-end example covering focus
   traversal, a focusable table with row selection, a focusable viewport
