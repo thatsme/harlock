@@ -10,6 +10,43 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-05-18
+
+Patch release. One test-stability bug that affects downstream
+consumers running their suites against Harlock on CI, plus a small
+typespec + docs cleanup that gets the v0.4.x hexdocs build to zero
+warnings. No runtime behaviour change for end users; no API
+additions or removals.
+
+### Fixed
+
+- The `:test` backend now uses deterministic truecolor caps instead of
+  consulting host `$TERM`, so tests that render through
+  `Harlock.Test.start_app/3` produce identical bytes regardless of
+  where they run. Previously: `$TERM` unset (GitHub Actions runners)
+  or `dumb` → caps classified as `:mono` → `Style.to_sgr/1` stripped
+  every color SGR → test assertions on color output (golden frame,
+  table style cascade) failed in CI while passing locally. The
+  `:terminal` backend still detects host caps and downgrades for
+  genuinely color-poor terminals — that's the feature; only the test
+  backend was wrong to inherit it. New `Caps.test_defaults/0` exposes
+  the synthetic struct for explicit use.
+
+### Changed (internal / docs only — no public API change)
+
+- `Harlock.Render.Style.downgrade/2` typespec uses a local
+  `Style.depth` type (`:mono | :ansi16 | :ansi256 | :truecolor`)
+  instead of the hidden `Caps.color_depth/0`. Functionally identical;
+  hexdocs.pm can now resolve the type reference.
+- CHANGELOG, ROADMAP, and `Style` moduledoc dropped link-form
+  references to `@moduledoc false` modules so the docs build is
+  warning-free. The information stayed; the auto-link targets didn't
+  resolve before and silently 404'd on hexdocs.pm.
+- ROADMAP `docs/feedback-v0.3.md` and `docs/v0.4-plan.md` references
+  switched to full GitHub URLs so the links resolve from hexdocs.pm
+  (those files are dev-facing and intentionally not in the hex
+  tarball).
+
 ## [0.4.0] — 2026-05-18
 
 The "absorb the boilerplate" release. v0.3 shipped a complete widget
@@ -416,7 +453,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/thatsme/harlock/releases/tag/v0.4.1
 [0.4.0]: https://github.com/thatsme/harlock/releases/tag/v0.4.0
 [0.3.0]: https://github.com/thatsme/harlock/releases/tag/v0.3.0
 [0.2.0]: https://github.com/thatsme/harlock/releases/tag/v0.2.0

@@ -360,7 +360,7 @@ The v0.4 plan was re-scoped against [`docs/feedback-v0.3.md`](https://github.com
 and [`docs/v0.4-plan.md`](https://github.com/thatsme/harlock/blob/main/docs/v0.4-plan.md): instead of growing the widget
 roster, v0.4 made the widgets that already shipped cost less to wire.
 The original "polish & adoption" sub-sections below are kept as-is for
-provenance — entries marked ✓ landed, others moved to v0.4.1.
+provenance — entries marked ✓ landed, others moved to v0.5.
 
 ### Focus-aware widget key routing (R2) ✓
 
@@ -432,13 +432,13 @@ not self-locking.
 
 ---
 
-## v0.4.1 — widgets on the new contract (next)
+## v0.5 — widgets on the new contract (next)
 
 The work originally listed under v0.4 that was deferred so it could
 ship as the **first consumer of the R2 routing contract** instead of
 being built against the v0.3 manual-dispatch idiom. Building them
 inside v0.4 would have meant writing their key handling against the
-old API and rewriting it the moment R2 landed; v0.4.1 lets them
+old API and rewriting it the moment R2 landed; v0.5 lets them
 arrive as native R2 widgets from day one.
 
 ### tree / menu / select widgets
@@ -488,7 +488,7 @@ styles its boxes' borders off `Focus.current()` by hand as a workaround
 
 ---
 
-## v0.5 — pre-1.0 hardening (~3 weeks)
+## v0.6 — pre-1.0 hardening (~3 weeks)
 
 - **Dialyzer clean** at `:underspecs` + `:overspecs`. Strict specs on all
   public functions.
@@ -511,7 +511,7 @@ styles its boxes' borders off `Focus.current()` by hand as a workaround
 ## v1.0 — stable API, Hex release
 
 - Public API frozen per the `@moduledoc` decisions above.
-- All v0.5 hardening complete.
+- All v0.6 hardening complete.
 - Hex publish, hexdocs.pm live.
 - Announcement post + Reddit/Elixir Forum thread.
 - Minimum supported: Elixir 1.17+, OTP 26+ (decide closer to date).

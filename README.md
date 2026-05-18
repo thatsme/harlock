@@ -216,10 +216,10 @@ Anything `@moduledoc false` is internal and free to change.
 | Modified arrows / Home / End / F-keys (parser) | ✓ |
 | Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
-| `tree` / `menu` / `select` widgets | v0.4.1 |
-| Multi-line `text_area` | v0.4.1 |
-| Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.4.1 |
-| `box(focus_proxy: id)` (visual focus mirroring) | v0.4.1 |
+| `tree` / `menu` / `select` widgets | v0.5 |
+| Multi-line `text_area` | v0.5 |
+| Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.5 |
+| `box(focus_proxy: id)` (visual focus mirroring) | v0.5 |
 
 See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 
