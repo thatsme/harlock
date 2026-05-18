@@ -96,8 +96,9 @@ defmodule Harlock.Render.Style do
   diffing individual attribute changes — terminals process SGR fast enough
   that the extra bytes are cheaper than the bookkeeping.
 
-  Reads the active terminal color depth from `Harlock.Terminal.Caps.get/0`
-  (process-dict) and downgrades colors that the terminal can't display:
+  Reads the active terminal color depth from the renderer's process-
+  dictionary context (installed by the runtime around each frame) and
+  downgrades colors that the terminal can't display:
 
     * `:mono` — fg/bg become `:default` (no color SGR emitted)
     * `:ansi16` — `{:rgb, …}` and `{:color256, …}` collapse to the
@@ -129,11 +130,14 @@ defmodule Harlock.Render.Style do
     ["\e[", Enum.intersperse(Enum.reverse(params), ?;), ?m]
   end
 
+  @typedoc "Color depth the terminal can display; mirrors the internal caps type."
+  @type depth :: :mono | :ansi16 | :ansi256 | :truecolor
+
   @doc """
   Map a color to what the given terminal depth can actually emit.
   Exposed for tests; the renderer uses it implicitly via `to_sgr/1`.
   """
-  @spec downgrade(color(), Caps.color_depth()) :: color()
+  @spec downgrade(color(), depth()) :: color()
   def downgrade(:default, _depth), do: :default
   def downgrade(_color, :mono), do: :default
   def downgrade(color, :truecolor), do: color

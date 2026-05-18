@@ -29,14 +29,14 @@ Changed.
   four v0.2 renderer tokens. Three built-in themes ship via
   `Harlock.Theme.builtin/1`: `:default` (byte-identical to v0.3),
   `:dark`, and `:high_contrast`. `Harlock.Render.Style.to_sgr/1`
-  now consults `Harlock.Terminal.Caps` and downgrades RGB and 256-color
-  values to whatever the terminal can display (truecolor →
-  6×6×6 cube → nearest of the 16 standard ANSI colors → `:default` on
-  mono). When no caps are installed the path defaults to truecolor,
-  preserving v0.3 emission exactly. `Harlock.Terminal.Caps` gains
-  `__set__`/`__clear__`/`get`/`color_depth` helpers mirroring the
-  Focus/Theme process-dict pattern; `Harlock.App.Runtime` sets caps
-  before each render and dispatch.
+  now consults the internal terminal-capabilities layer and downgrades
+  RGB and 256-color values to whatever the terminal can display
+  (truecolor → 6×6×6 cube → nearest of the 16 standard ANSI colors →
+  `:default` on mono). When no caps are installed the path defaults to
+  truecolor, preserving v0.3 emission exactly. The capabilities module
+  gains `__set__`/`__clear__`/`get`/`color_depth` helpers mirroring the
+  Focus/Theme process-dict pattern; the runtime sets caps before each
+  render and dispatch.
 
 - **Table style cascade.** The `table/1` element accepts five new
   style opts: `:header_style`, `:row_style`, `:alt_row_style`,
@@ -135,7 +135,7 @@ Changed.
   binding will be silently shadowed otherwise. (Worked example:
   `examples/showcase.exs` rebound Logs-tab alert cycling from Tab to
   `]`/`[` in this release.)
-- `Harlock.Element.Focusables.collect/1` now returns
+- The internal `Focusables.collect/1` traversal now returns
   `{ids, traps, routed_widgets}` instead of `{ids, traps}`. The third
   element is the focus-id-to-element map the runtime uses for R2
   dispatch. Internal API (`@moduledoc false`); affects only callers

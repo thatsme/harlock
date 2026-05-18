@@ -356,8 +356,8 @@ hard dep (tiny library, no transitive deps).
 
 ## v0.4 — "absorb the boilerplate" ✓ (shipped 2026-05-18)
 
-The v0.4 plan was re-scoped against [`docs/feedback-v0.3.md`](docs/feedback-v0.3.md)
-and [`docs/v0.4-plan.md`](docs/v0.4-plan.md): instead of growing the widget
+The v0.4 plan was re-scoped against [`docs/feedback-v0.3.md`](https://github.com/thatsme/harlock/blob/main/docs/feedback-v0.3.md)
+and [`docs/v0.4-plan.md`](https://github.com/thatsme/harlock/blob/main/docs/v0.4-plan.md): instead of growing the widget
 roster, v0.4 made the widgets that already shipped cost less to wire.
 The original "polish & adoption" sub-sections below are kept as-is for
 provenance — entries marked ✓ landed, others moved to v0.4.1.
