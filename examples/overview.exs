@@ -110,7 +110,7 @@ defmodule Overview do
 
   # The :log focus id lives on the inner viewport (so the runtime can
   # auto-route scroll keys to it), which leaves the wrapping box unable
-  # to auto-highlight when focused. Until the v0.4.1 box(focus_proxy:)
+  # to auto-highlight when focused. Until the v0.5 box(focus_proxy:)
   # mechanism ships, the example reflects focus by styling the border
   # itself off Focus.current().
   defp border_style(true), do: [fg: :cyan, bold: true]

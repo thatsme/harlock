@@ -4,10 +4,10 @@ A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan through v1.0 (stable API). It's a living
-document — revised as the design settles. v0.4.1 is current and published
+document — revised as the design settles. v0.4.2 is current and published
 on Hex.
 
-## Status snapshot (v0.4.1, current)
+## Status snapshot (v0.4.2, current)
 
 What works:
 
@@ -34,7 +34,8 @@ What works:
   output is pinned byte-for-byte against v0.3.0 by a golden-frame test.
 - Primitives: `text`, `vbox`, `hbox`, `spacer`, `box` (4 border styles +
   title + padding), `overlay` (5 anchors + focus trap), `table` / `list`
-  (row-id identity, single/multi selection, header), `text_input`, `viewport`
+  (row-id identity, single/multi selection, header), `text_input`, `textarea`
+  (multi-line, opt-in word wrap), `viewport`
   (render-then-clip + scroll-into-view + cursor remap), `progress`, `spinner`,
   `statusbar`, `keybar`, `tabs`.
 - Wide-grapheme width (CJK, emoji, ZWJ sequences, flags).
@@ -55,7 +56,7 @@ What's stubbed / missing — the honest list:
   `port`) are v0.5.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
-- No `tree`, `menu` / `select` widgets, and no multi-line `text_area`; all v0.5.
+- No `tree`, `menu` / `select` widgets — v0.5.
 - No `box(focus_proxy: id)` visual focus mirroring — v0.5.
 - No `row.ex` helper (only `column.ex`).
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
@@ -469,7 +470,7 @@ Each gets its own `apply_key/n` pure helper plus a per-type clause in
 `Harlock.App.Runtime.route_to_widget/4`; no new mechanism, just three
 new consumers.
 
-### Multi-line text_area ✓
+### Multi-line text_area ✓ (shipped in v0.4.2)
 
 Shipped as `textarea/1` + `Harlock.TextArea`. Hard and soft line breaks,
 vertical motion, display-row Home / End, logical-line kills, and Enter

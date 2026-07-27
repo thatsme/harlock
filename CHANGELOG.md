@@ -10,6 +10,8 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-07-27
+
 ### Added
 
 - **`textarea/1` — a multi-line text area**, backed by the new
@@ -601,7 +603,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/thatsme/harlock/releases/tag/v0.4.2
 [0.4.1]: https://github.com/thatsme/harlock/releases/tag/v0.4.1
 [0.4.0]: https://github.com/thatsme/harlock/releases/tag/v0.4.0
 [0.3.0]: https://github.com/thatsme/harlock/releases/tag/v0.3.0

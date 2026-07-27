@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.4.1/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.4.2/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -210,7 +210,7 @@ Anything `@moduledoc false` is internal and free to change.
 | `:default` theme byte-identical to v0.3 (golden-frame pin) | ✓ (v0.4) |
 | SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
-| Readline editing in `text_input` / `textarea` (word motions, kill ring, yank) | ✓ (unreleased) |
+| Readline editing in `text_input` / `textarea` (word motions, kill ring, yank) | ✓ (v0.4.2) |
 | `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ |
 | `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ |
 | `:telemetry` events (frame render, input dispatch, cmd, reader) | ✓ |
@@ -218,7 +218,7 @@ Anything `@moduledoc false` is internal and free to change.
 | Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | `tree` / `menu` / `select` widgets | v0.5 |
-| Multi-line `textarea` with opt-in word wrap | ✓ (unreleased) |
+| Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
 | Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.5 |
 | `box(focus_proxy: id)` (visual focus mirroring) | v0.5 |
 
