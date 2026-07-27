@@ -10,6 +10,20 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A terminal reporting 0x0 no longer produces a 0x0 frame.** `TIOCGWINSZ`
+  *succeeds* while reporting zero rows and columns on a tty that was never told
+  its geometry — a serial console is the usual case, and no `SIGWINCH` is coming
+  to correct it later. The size fallback read `queried_rows || 24`, and `0 || 24`
+  is `0` in Elixir, so the zero passed straight through. A 0x0 region makes the
+  renderer return the frame untouched, so the result was a blank screen that
+  reads as a hang rather than as a misconfiguration. Zero dimensions are now
+  treated as "unknown", which is what they mean, so the 24x80 fallback applies.
+
+  The `{:harlock_resize, rows, cols}` path is guarded the same way and keeps the
+  previous dimensions rather than resizing to something that cannot draw.
+
 ## [0.5.0] — 2026-07-27
 
 The widget set. `menu`, `select` and `tree` were deferred out of v0.4 so they

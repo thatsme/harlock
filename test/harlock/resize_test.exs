@@ -18,6 +18,50 @@ defmodule Harlock.ResizeTest do
     end
   end
 
+  describe "degenerate sizes" do
+    # TIOCGWINSZ *succeeds* while reporting 0x0 on a tty that was never told its
+    # geometry — a serial console is the usual case, and there is no SIGWINCH
+    # coming to correct it later. Resizing to 0x0 renders an empty frame, which
+    # reads as a hang rather than a misconfiguration, so the previous dimensions
+    # have to win. Sent directly because Harlock.Test.resize/3 guards positives.
+    test "a 0x0 report leaves the dimensions alone" do
+      h = Harlock.Test.start_app(SizeApp, self(), rows: 24, cols: 80)
+
+      send(h.runtime, {:harlock_resize, 0, 0})
+      state = :sys.get_state(h.runtime)
+
+      assert state.rows == 24
+      assert state.cols == 80
+
+      Harlock.Test.stop(h)
+    end
+
+    test "a partially zero report is rejected too" do
+      h = Harlock.Test.start_app(SizeApp, self(), rows: 24, cols: 80)
+
+      send(h.runtime, {:harlock_resize, 40, 0})
+      send(h.runtime, {:harlock_resize, 0, 120})
+      state = :sys.get_state(h.runtime)
+
+      assert state.rows == 24
+      assert state.cols == 80
+
+      Harlock.Test.stop(h)
+    end
+
+    test "the app keeps rendering after a rejected resize" do
+      h = Harlock.Test.start_app(SizeApp, self(), rows: 24, cols: 80)
+
+      send(h.runtime, {:harlock_resize, 0, 0})
+      Harlock.Test.resize(h, 30, 100)
+
+      assert Harlock.Test.render(h) =~ "top"
+      assert :sys.get_state(h.runtime).rows == 30
+
+      Harlock.Test.stop(h)
+    end
+  end
+
   describe "resize" do
     test "updates the runtime's stored dimensions" do
       h = Harlock.Test.start_app(SizeApp, self(), rows: 24, cols: 80)

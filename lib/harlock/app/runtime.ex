@@ -107,12 +107,17 @@ defmodule Harlock.App.Runtime do
     end
   end
 
-  def handle_info({:harlock_resize, rows, cols}, state) do
+  def handle_info({:harlock_resize, rows, cols}, state) when rows > 0 and cols > 0 do
     # prev_frame is discarded because diffing against a buffer of different
     # dimensions is meaningless — force a full redraw at the new size.
     new_state = %{state | rows: rows, cols: cols, prev_frame: nil, dirty: true}
     {:noreply, render(new_state)}
   end
+
+  # Same reasoning as detect_size/1: TIOCGWINSZ succeeds while reporting 0x0 on a
+  # tty that was never told its geometry. Keeping the previous dimensions is
+  # strictly better than resizing to a frame that cannot draw anything.
+  def handle_info({:harlock_resize, _rows, _cols}, state), do: {:noreply, state}
 
   def handle_info(_msg, state), do: {:noreply, state}
 
@@ -559,9 +564,15 @@ defmodule Harlock.App.Runtime do
     {explicit_rows || queried_rows || 24, explicit_cols || queried_cols || 80}
   end
 
+  # A zero dimension means "the kernel has no idea", not "a zero-column
+  # terminal" — serial consoles routinely report 0x0 because nothing ever told
+  # the tty its geometry, and TIOCGWINSZ succeeds while saying so. Treat it as
+  # absent so the 24x80 fallback applies: `0 || 24` is `0` in Elixir, so
+  # passing it through renders a 0x0 frame, which draws nothing at all and looks
+  # like a hang rather than a misconfiguration.
   defp from_keeper(keeper) do
     case Keeper.size(keeper) do
-      {:ok, r, c} -> {r, c}
+      {:ok, r, c} when r > 0 and c > 0 -> {r, c}
       _ -> {nil, nil}
     end
   end
