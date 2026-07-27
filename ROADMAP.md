@@ -539,7 +539,7 @@ keyed by focus and discarded on focus change, so it stays out of the routed
 message contract — `apply_key/6` threads it, and vertical motion is the only
 thing that pays for computing it.
 
-### Undo / redo as an app-held helper
+### Undo / redo as an app-held helper ✓
 
 A textarea without undo is the gap users hit first, and more sharply than in a
 single-line input where retyping is cheap. It cannot live in the widget: the
@@ -558,6 +558,12 @@ implementation detail. A run of insertions collapses into one step, and the run
 insert. Get it wrong and a user types a paragraph, presses undo expecting to
 lose a word, and loses the paragraph — worse than shipping no undo at all,
 because it destroys work rather than merely failing to restore it.
+
+Shipped as `Harlock.UndoStack`, with those three break conditions written into
+its moduledoc as contract rather than left as tuning. A cursor jump closes the
+run without becoming a step of its own: restoring a caret position while
+leaving the text alone would spend an undo press on nothing the user thinks of
+as a change. `examples/notes.exs` wires it to `Ctrl-Z` / `Ctrl-R`.
 
 ---
 

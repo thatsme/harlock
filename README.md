@@ -217,10 +217,10 @@ Anything `@moduledoc false` is internal and free to change.
 | Modified arrows / Home / End / F-keys (parser) | ✓ |
 | Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
-| `tree` / `menu` / `select` widgets | v0.5 |
+| `tree` / `menu` / `select` widgets | ✓ (unreleased) |
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
 | Goal-column memory for `textarea` vertical motion | ✓ (v0.4.3) |
-| Undo / redo | v0.5 |
+| Undo / redo (`Harlock.UndoStack`, app-held) | ✓ (unreleased) |
 | Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.6 |
 | `box(focus_proxy: id)` (visual focus mirroring) | v0.6 |
 

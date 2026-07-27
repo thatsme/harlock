@@ -85,6 +85,30 @@ changes are called out in the relevant release notes.
   top-down, and jumping from the last leaf back to the root reads as a glitch
   rather than a convenience.
 
+- **`Harlock.UndoStack` — bounded undo/redo for a `(value, cursor)` pair**, held
+  by the app rather than the widget. `Harlock.TextBuffer` still has no history of
+  its own, deliberately: the model owns `:value` and may rewrite it without the
+  widget seeing — loading a file, clearing a form, applying a `Cmd` result — so a
+  widget-held history would drift and start restoring text the user never typed.
+
+  Snapshots rather than inverse commands: for buffers a terminal edits, copying
+  the string beats the bookkeeping, and it cannot fall out of step with the text.
+  Capped at 100 committed entries by default.
+
+  **Coalescing is documented as contract, not tuning.** A run of insertions
+  collapses into one step, and the run breaks on a newline, on a cursor jump, and
+  on a delete following an insert. Coalescing too eagerly is worse than shipping
+  no undo: a user who types a paragraph, presses undo expecting to lose a word,
+  and loses the paragraph has had work destroyed rather than merely not restored.
+
+  A cursor jump closes the run without becoming a step of its own — restoring a
+  caret position while leaving the text unchanged would spend an undo press on
+  something the user does not think of as a change. An in-progress run is its own
+  nearest undo target, so undo works mid-word instead of waiting for the run to
+  close. `reset/2` rebases history for when the app swaps the document outright.
+
+  Wired to `Ctrl-Z` / `Ctrl-R` in `examples/notes.exs`.
+
 - **`examples/explorer.exs`** — `tree`, `select` and `menu` in one app, so all
   three ship with something runnable rather than only documented. Its `deps`
   node starts unloaded, which makes the lazy path the example's default rather

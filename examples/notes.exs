@@ -21,16 +21,35 @@
 defmodule Notes do
   use Harlock.App
 
-  alias Harlock.{TextArea, TextBuffer}
+  alias Harlock.{TextArea, TextBuffer, UndoStack}
 
   @placeholder "Type a note. F2 toggles wrapping, Esc quits."
 
-  def init(_), do: %{body: "", cursor: 0, wrap: true}
+  def init(_), do: %{body: "", cursor: 0, wrap: true, undo: UndoStack.new(from: {"", 0})}
 
   # Every keystroke the textarea handles arrives here, already applied to a
   # (value, cursor) pair. There is no per-key dispatch to write.
+  #
+  # History is recorded here rather than inside the widget because this model
+  # owns :body — a widget-held history would desync the moment the app rewrote
+  # it. A run of insertions coalesces into one undo step; the run breaks on a
+  # newline, a cursor jump, or a delete after an insert.
   def update({:harlock_edit, :body, {value, cursor}}, m),
-    do: %{m | body: value, cursor: cursor}
+    do: %{m | body: value, cursor: cursor, undo: UndoStack.record(m.undo, {value, cursor})}
+
+  def update({:key, {:char, ?z}, [:ctrl]}, m) do
+    case UndoStack.undo(m.undo) do
+      {:ok, {value, cursor}, undo} -> %{m | body: value, cursor: cursor, undo: undo}
+      :error -> m
+    end
+  end
+
+  def update({:key, {:char, ?r}, [:ctrl]}, m) do
+    case UndoStack.redo(m.undo) do
+      {:ok, {value, cursor}, undo} -> %{m | body: value, cursor: cursor, undo: undo}
+      :error -> m
+    end
+  end
 
   def update({:key, {:f, 2}, []}, m), do: %{m | wrap: not m.wrap}
 
@@ -39,7 +58,7 @@ defmodule Notes do
   # render a column short of where it maps — so expand them on the way in.
   def update({:paste, text}, m) do
     {value, cursor} = TextBuffer.insert(m.body, m.cursor, TextArea.expand_tabs(text))
-    %{m | body: value, cursor: cursor}
+    %{m | body: value, cursor: cursor, undo: UndoStack.record(m.undo, {value, cursor})}
   end
 
   def update({:key, :escape, []}, _), do: :quit
@@ -72,11 +91,12 @@ defmodule Notes do
             text(
               "line #{line + 1}, col #{column + 1}   " <>
                 "#{TextArea.line_count(m.body)} lines   " <>
-                "wrap #{if m.wrap, do: "on", else: "off"}",
+                "wrap #{if m.wrap, do: "on", else: "off"}   " <>
+                "undo #{UndoStack.depth(m.undo)}",
               style: [fg: :cyan]
             ),
             text(
-              "[F2] wrap  [Alt-B/F] word  [Ctrl-W/K/U] kill  [Ctrl-Y] yank  [Esc] quit",
+              "[F2] wrap  [Ctrl-Z/R] undo/redo  [Ctrl-W/K/U] kill  [Ctrl-Y] yank  [Esc] quit",
               style: [dim: true]
             )
           ]
