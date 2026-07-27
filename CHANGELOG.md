@@ -10,6 +10,50 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **`Sub.telemetry/2` — subscribe to `:telemetry` events**, the first push-shaped
+  subscription and the start of v0.6's event-source seam. Until now `Sub` had one
+  kind, `:interval`, which is a *timer*: the runtime wakes itself. This is the
+  other shape — an external source pushes and the runtime receives, without that
+  source knowing anything about rendering.
+
+      Sub.telemetry([:ecto, :repo, :query], &{:query, &1.query_time})
+
+  Accepts one event name or a list of them, and a transform taking either the
+  measurements alone or the full `(event, measurements, metadata)`. Since
+  Phoenix, Ecto, Oban, Broadway, Finch and Bandit all already emit telemetry,
+  integrating with that one thing covers all of them.
+
+  Three things the implementation is shaped by rather than decorated with:
+
+  A handler **runs inside whichever process emitted the event**, so work done
+  there is stolen from the system being observed. The handler applies the
+  transform and sends one message; nothing else. Events do not route through the
+  owning process, which would put a second hop on the emitter's hot path.
+
+  Handlers are **global and not processes**, so nothing detaches them when the
+  app goes away — and a handler sending to a dead pid does not raise, so
+  `:telemetry` never notices and drops it either. Left alone it leaks for the
+  life of the VM and accumulates on every restart. Each subscription therefore
+  owns a linked process whose lifetime *is* the subscription; it traps exits,
+  because the runtime stops subs with `Process.exit(pid, :shutdown)` and a
+  non-trapping process would die without cleaning up the very handler it exists
+  to own. Pinned by a test that asserts the handler is gone after the app stops.
+
+  The handler is a **named module function**, not a closure — `:telemetry` warns
+  about anonymous handlers for real performance reasons. The transform rides in
+  the config, where being anonymous costs nothing.
+
+  Handler ids include the runtime pid, so two apps watching the same event do not
+  silently unsubscribe each other.
+
+- `Harlock.Sub`'s moduledoc now documents that specs are compared **structurally**,
+  and the consequence for subs carrying functions: a closure built at a fixed
+  code location with equal captures compares equal, so it does not churn — but a
+  transform capturing something that changes each render produces a new spec
+  every frame and restarts the subscription.
+
 ### Fixed
 
 - **A terminal reporting 0x0 no longer produces a 0x0 frame.** `TIOCGWINSZ`
