@@ -234,6 +234,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh contacts   # contact manager: search, list, modal forms, async save
 ./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
+./scripts/run.sh explorer   # tree + select + menu, with async-loaded nodes
 ```
 
 The `scripts/run.sh` wrapper is in the GitHub repo — clone the repo to
@@ -251,6 +252,14 @@ that uses scroll-into-view to keep the focused field visible, a
 widget gallery with animated progress/spinner/statusbar/keybar, and a
 key-event inspector you can use to try out modified arrows
 (Ctrl-Up, Shift-Right, etc.).
+
+`explorer` puts `tree`, `select` and `menu` in one app. Its `deps` node
+starts with nothing loaded: expanding it marks the node in flight, returns
+a `Cmd`, and the fetched children arrive as an ordinary message — the
+pattern any tree over a filesystem or a remote node needs. The filter
+dropdown opens over the tree, and the filtered node list is rebuilt in
+`update/2` rather than handed to the widget, because the model owns what
+is displayed.
 
 ## Testing your app
 

@@ -45,7 +45,8 @@ What works:
 - `:telemetry` events for frame render, input dispatch, cmd, and reader.
 - Headless `IO.Test` backend selectable via `backend: :test` for
   deterministic tests without a TTY, plus the `Harlock.Test` helper API.
-- Examples: `counter`, `sysmon`, `contacts`, `showcase`, `overview`, `notes`. Smoke
+- Examples: `counter`, `sysmon`, `contacts`, `showcase`, `overview`, `notes`,
+  `explorer`. Smoke
   tests driven by `script(1)` (handles BSD vs util-linux flag differences).
 - Packaging and quality gates: Hex package metadata, published hexdocs, CI,
   Dialyzer, and Credo all wired in.

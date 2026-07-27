@@ -85,6 +85,15 @@ changes are called out in the relevant release notes.
   top-down, and jumping from the last leaf back to the root reads as a glitch
   rather than a convenience.
 
+- **`examples/explorer.exs`** — `tree`, `select` and `menu` in one app, so all
+  three ship with something runnable rather than only documented. Its `deps`
+  node starts unloaded, which makes the lazy path the example's default rather
+  than a footnote: expanding it marks the node in flight, returns a `Cmd`, and
+  the children arrive as an ordinary message. The filter dropdown opens over
+  the tree, and the filtered node list is rebuilt in `update/2` rather than
+  handed to the widget — the model owns what is displayed. Picked up
+  automatically by `scripts/run.sh explorer`.
+
 - **`{:harlock_toggle, focus_id, node_id}` — a fifth routed message**, and the
   only one the widget set needed. Expanding is not selecting, and a node whose
   children are not loaded yet makes the distinction load-bearing: the app has to
