@@ -55,6 +55,42 @@ changes are called out in the relevant release notes.
   Cancelling is not always local, and a widget that swallowed `Escape` would
   take that choice from the app.
 
+- **`tree/1` — a collapsible tree**, backed by the new `Harlock.Tree`. Last of
+  the three widgets v0.5 closes on. `Right` expands a collapsed node then
+  descends into an open one, so repeated presses walk down; `Left` collapses
+  then steps out to the parent; `Enter` toggles a branch and submits a leaf.
+
+  **The renderer never walks the tree.** `Harlock.Tree.visible/2` projects it to
+  the flat list of rows currently on screen, and the renderer draws rows. Each
+  row carries its depth, whether it is the last of its siblings, its parent id,
+  and `ancestors_last` — the last-child flag of every ancestor. That last field
+  is what the guides actually need: depth alone cannot tell you whether column
+  two of a nested row wants a `│` continuation or a blank, because that depends
+  on whether *that ancestor* still had siblings coming. The renderer cannot see
+  siblings, so the projection computes it.
+
+  **Expansion is keyed by node id, never by row index.** Collapsing a node
+  shifts every row beneath it, so index keys would silently move the selection
+  to an unrelated node.
+
+  **Lazy children are first-class.** A node's `:children` is either a list or
+  one of `:unloaded` / `:loading`, so a tree over a filesystem or a remote node
+  does not have to load eagerly. Expanding an unloaded node routes
+  `{:harlock_toggle, id, node_id}`; the app marks it `:loading`, returns a
+  `Cmd`, and swaps the fetched list in when the result arrives as an ordinary
+  message. Expanding an unloaded node contributes no rows until then, and
+  `:loading` renders with a suffix.
+
+  Movement clamps rather than wrapping, unlike `menu` — a tree is read
+  top-down, and jumping from the last leaf back to the root reads as a glitch
+  rather than a convenience.
+
+- **`{:harlock_toggle, focus_id, node_id}` — a fifth routed message**, and the
+  only one the widget set needed. Expanding is not selecting, and a node whose
+  children are not loaded yet makes the distinction load-bearing: the app has to
+  know to fire a `Cmd`. Documented in `Harlock.App`'s moduledoc alongside the
+  other four, since a 1.0 freeze locks it.
+
 ### Changed
 
 - The renderer gained a **deferred-draw layer** for content that must cover

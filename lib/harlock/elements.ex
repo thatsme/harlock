@@ -544,5 +544,54 @@ defmodule Harlock.Elements do
     %Element{type: :select, opts: opts, children: []}
   end
 
+  @doc """
+  Collapsible tree.
+
+  Required options:
+    * `:nodes`    — list of node maps; see `Harlock.Tree` for the shape
+    * `:expanded` — `MapSet` or list of expanded node ids
+    * `:focused`  — id of the highlighted row
+
+  Optional:
+    * `:focusable`      — focus id; when focused the runtime routes movement as
+      `{:harlock_select, focus_id, node_id}`, expand/collapse as
+      `{:harlock_toggle, focus_id, node_id}`, and `Enter` on a leaf as
+      `{:harlock_submit, focus_id}`
+    * `:scroll`         — index of the first visible row (default `0`)
+    * `:style`          — `%Style{}` for rows
+    * `:focused_style`  — `%Style{}` for the highlighted row
+    * `:guide_style`    — `%Style{}` for the `├`/`└` guides (default dim)
+    * `:loading_label`  — suffix on a node awaiting children (default `" …"`)
+
+  Expansion is keyed by node id, never by row index: collapsing a node shifts
+  every row below it, so index keys would move the selection to an unrelated
+  node.
+
+      tree(
+        nodes: m.nodes,
+        expanded: m.expanded,
+        focused: m.focused,
+        focusable: :files
+      )
+
+      def update({:harlock_select, :files, id}, m), do: %{m | focused: id}
+      def update({:harlock_toggle, :files, id}, m), do: toggle(m, id)
+
+  Nodes whose `:children` are `:unloaded` expand asynchronously — flip them to
+  `:loading`, return a `Cmd`, and swap the fetched list in when it arrives.
+  Rows past the region clip; wrap in a `viewport/1` for a tree taller than its
+  space.
+  """
+  @spec tree(keyword()) :: Element.t()
+  def tree(opts) when is_list(opts) do
+    for required <- [:nodes, :expanded, :focused] do
+      unless Keyword.has_key?(opts, required) do
+        raise ArgumentError, "tree/1 requires #{inspect(required)}"
+      end
+    end
+
+    %Element{type: :tree, opts: opts, children: []}
+  end
+
   defp default_constraints(children), do: Enum.map(children, fn _ -> {:fill, 1} end)
 end

@@ -52,11 +52,12 @@ defmodule Harlock.App do
       printables, `{:f, n}` for function keys.
 
   Focus-aware widget routing (R2, v0.4). When a focusable widget
-  (`viewport`, `tabs`, `text_input`) carries a `:focusable` id and is
-  focused, the runtime translates relevant keys into widget-shaped
-  messages **before** calling `update/2`. The raw `{:key, …}` is
-  swallowed — apps see the routed message *or* the raw key, never both.
-  Opt out per-element with `handle_keys: false`. The four messages:
+  (`viewport`, `tabs`, `text_input`, `textarea`, `menu`, `select`,
+  `tree`) carries a `:focusable` id and is focused, the runtime
+  translates relevant keys into widget-shaped messages **before**
+  calling `update/2`. The raw `{:key, …}` is swallowed — apps see the
+  routed message *or* the raw key, never both. Opt out per-element with
+  `handle_keys: false`. The five messages:
 
     * `{:harlock_scroll, focus_id, new_offset}` — focused `viewport`
       handled a scroll key (`:up`/`:down`/`:page_up`/`:page_down`/
@@ -66,10 +67,19 @@ defmodule Harlock.App do
           def update({:harlock_scroll, :log, n}, m),
             do: %{m | log_offset: n}
 
-    * `{:harlock_select, focus_id, new_id}` — focused `tabs` widget
-      moved selection (`:left`/`:right`/`:home`/`:end`):
+    * `{:harlock_select, focus_id, new_id}` — a focused `tabs`, `menu`,
+      `select`, or `tree` moved its selection or highlight:
 
           def update({:harlock_select, :nav, id}, m), do: %{m | tab: id}
+
+    * `{:harlock_toggle, focus_id, node_id}` — a focused `tree` expanded
+      or collapsed a node. Distinct from `:harlock_select` because
+      expanding is not selecting, and because a node whose children are
+      not loaded yet turns this into a side effect:
+
+          def update({:harlock_toggle, :files, id}, m) do
+            {%{m | nodes: mark_loading(m.nodes, id)}, Cmd.from(fn -> fetch(id) end)}
+          end
 
     * `{:harlock_edit, focus_id, {new_value, new_cursor}}` — focused
       `text_input` accepted a printable character, arrow, backspace, or
@@ -78,9 +88,14 @@ defmodule Harlock.App do
           def update({:harlock_edit, :search, {v, c}}, m),
             do: %{m | search: v, search_cursor: c}
 
-    * `{:harlock_submit, focus_id}` — focused `text_input` saw Enter:
+    * `{:harlock_submit, focus_id}` — the action key was pressed on a
+      focused `text_input`, `menu`, `select`, or `tree` leaf:
 
           def update({:harlock_submit, :search}, m), do: run_search(m)
+
+      For a `select` this means "open the list" or "commit the
+      highlight" depending on state the app already holds, which is why
+      there is no separate open/close message.
 
   No-op key events (e.g. `:up` on a viewport already at offset 0, or a
   modifier-only press in a text input) fall through to `update/2` as

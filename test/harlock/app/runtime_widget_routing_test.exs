@@ -283,6 +283,78 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
     end
   end
 
+  defmodule TreeApp do
+    @moduledoc false
+    use Harlock.App
+
+    # :lazy starts unloaded, so expanding it has to go through a Cmd.
+    def init(observer) do
+      %{
+        observer: observer,
+        nodes: [
+          %{
+            id: :root,
+            label: "root",
+            children: [
+              %{id: :leaf, label: "leaf", children: []},
+              %{id: :lazy, label: "lazy", children: :unloaded}
+            ]
+          }
+        ],
+        expanded: MapSet.new(),
+        focused: :root,
+        submits: 0,
+        raw_keys: []
+      }
+    end
+
+    def update({:harlock_select, :files, id}, m), do: %{m | focused: id}
+
+    # Expanding an unloaded node is a side effect: mark it in flight, fire the
+    # fetch, and let the result arrive as an ordinary message.
+    def update({:harlock_toggle, :files, :lazy}, %{expanded: exp} = m) do
+      if MapSet.member?(exp, :lazy) do
+        %{m | expanded: MapSet.delete(exp, :lazy)}
+      else
+        {
+          %{m | expanded: MapSet.put(exp, :lazy), nodes: set_children(m.nodes, :lazy, :loading)},
+          Cmd.from(fn -> {:loaded, :lazy, [%{id: :kid, label: "kid", children: []}]} end)
+        }
+      end
+    end
+
+    def update({:harlock_toggle, :files, id}, %{expanded: exp} = m) do
+      exp = if MapSet.member?(exp, id), do: MapSet.delete(exp, id), else: MapSet.put(exp, id)
+      %{m | expanded: exp}
+    end
+
+    def update({:loaded, id, children}, m) do
+      if m.observer, do: send(m.observer, {:children_loaded, id})
+      %{m | nodes: set_children(m.nodes, id, children)}
+    end
+
+    def update({:harlock_submit, :files}, m), do: %{m | submits: m.submits + 1}
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+    def update(_, m), do: m
+
+    def view(m) do
+      tree(focusable: :files, nodes: m.nodes, expanded: m.expanded, focused: m.focused)
+    end
+
+    defp set_children(nodes, id, children) do
+      Enum.map(nodes, fn
+        %{id: ^id} = n ->
+          %{n | children: children}
+
+        %{children: list} = n when is_list(list) ->
+          %{n | children: set_children(list, id, children)}
+
+        n ->
+          n
+      end)
+    end
+  end
+
   defmodule SelectApp do
     @moduledoc false
     use Harlock.App
@@ -338,6 +410,80 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
     def update(_, m), do: m
 
     def view(m), do: textarea(focusable: :body, value: m.body, cursor: m.cursor)
+  end
+
+  describe "tree auto-routing" do
+    setup do
+      h = Harlock.Test.start_app(TreeApp, self(), rows: 10, cols: 30)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "Right expands, then descends on the next press", %{h: h} do
+      Harlock.Test.send_key(h, :right)
+      assert MapSet.member?(Harlock.Test.model(h).expanded, :root)
+      # focus has not moved yet
+      assert Harlock.Test.model(h).focused == :root
+
+      Harlock.Test.send_key(h, :right)
+      assert Harlock.Test.model(h).focused == :leaf
+    end
+
+    test "Left collapses, then steps out to the parent", %{h: h} do
+      Harlock.Test.send_key(h, :right)
+      Harlock.Test.send_key(h, :down)
+      assert Harlock.Test.model(h).focused == :leaf
+
+      Harlock.Test.send_key(h, :left)
+      assert Harlock.Test.model(h).focused == :root
+      # still expanded — Left on a leaf steps out rather than collapsing a parent
+      assert MapSet.member?(Harlock.Test.model(h).expanded, :root)
+
+      Harlock.Test.send_key(h, :left)
+      refute MapSet.member?(Harlock.Test.model(h).expanded, :root)
+    end
+
+    test "Enter submits on a leaf and toggles on a branch", %{h: h} do
+      Harlock.Test.send_key(h, :enter)
+      assert MapSet.member?(Harlock.Test.model(h).expanded, :root)
+      assert Harlock.Test.model(h).submits == 0
+
+      Harlock.Test.send_key(h, :down)
+      Harlock.Test.send_key(h, :enter)
+      assert Harlock.Test.model(h).submits == 1
+    end
+
+    test "expanding an unloaded node fires a Cmd and the children arrive", %{h: h} do
+      Harlock.Test.send_key(h, :right)
+      Harlock.Test.send_key(h, :end)
+      assert Harlock.Test.model(h).focused == :lazy
+
+      # marked in flight and rendered as such before the fetch returns
+      Harlock.Test.send_key(h, :right)
+
+      # the Cmd result arrives as an ordinary message, which is the whole point:
+      # a lazily loaded tree needs no widget-level machinery
+      assert_receive {:children_loaded, :lazy}, 500
+
+      # the app notifies from inside update/2, so the frame it produces is not
+      # drawn yet. model/1 is a :sys.get_state call, which queues behind that
+      # same handle_info and therefore returns only once its render is done.
+      assert MapSet.member?(Harlock.Test.model(h).expanded, :lazy)
+
+      frame = Harlock.Test.render(h)
+      assert frame =~ "kid"
+      assert frame =~ "▾ lazy"
+      refute frame =~ "…"
+    end
+
+    test "the tree renders its guides through the runtime", %{h: h} do
+      Harlock.Test.send_key(h, :right)
+      frame = Harlock.Test.render(h)
+
+      assert frame =~ "▾ root"
+      assert frame =~ "├──"
+      assert frame =~ "└──"
+    end
   end
 
   describe "select auto-routing" do

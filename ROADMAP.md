@@ -481,6 +481,37 @@ Each gets its own `apply_key/n` pure helper plus a per-type clause in
 the runtime's `route_to_widget/4`; no new mechanism, just three
 new consumers.
 
+All three shipped. Two things the plan above did not anticipate, both
+worth keeping:
+
+**`select` needed a deferred-draw layer.** `overlay/1` establishes z-order
+by holding both layers as children, which a dropdown cannot do — it is
+anchored to a control buried in the layout, and every sibling drawn after
+that control would bury the panel. So the renderer records floats during
+the walk and draws them after it, in push order. That ordering is also the
+stack nested panels would need, without anything tracking depth. Placement
+flips rather than clips: above the control near the bottom margin,
+shifted left near the right one.
+
+**`tree` keeps the tree as data.** `Harlock.Tree.visible/2` projects to the
+flat list of visible rows and the renderer draws rows, never recursing.
+Rows carry `ancestors_last` — the last-child flag of every ancestor — not
+just a depth, because the guides need to know whether each ancestor column
+wants a continuation bar or a blank, and only the projection can see
+siblings. Expansion is keyed by node id; index keys would move the
+selection whenever a node above collapsed.
+
+Lazy children are the interesting part: `:children` is a list or one of
+`:unloaded` / `:loading`, so expanding a node over a filesystem or a remote
+node is a side effect. The app receives `{:harlock_toggle, …}`, marks the
+node loading, returns a `Cmd`, and swaps the result in when it arrives —
+which is the clearest demonstration in the widget set of why the model is
+not ceremony.
+
+`{:harlock_toggle, focus_id, node_id}` is the only routed message the whole
+set added. `menu` and `select` reuse `{:harlock_select, …}` and
+`{:harlock_submit, …}`.
+
 ### Multi-line text_area ✓ (shipped in v0.4.2)
 
 Shipped as `textarea/1` + `Harlock.TextArea`. Hard and soft line breaks,

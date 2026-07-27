@@ -16,6 +16,7 @@ defmodule Harlock.Element.Renderer do
   alias Harlock.TextArea
   alias Harlock.TextBuffer
   alias Harlock.Theme
+  alias Harlock.Tree
   alias Harlock.Width
 
   @border_chars %{
@@ -322,6 +323,48 @@ defmodule Harlock.Element.Renderer do
     end
 
     frame
+  end
+
+  defp render_element(%Element{type: :tree} = el, region, frame, focused) do
+    nodes = Keyword.fetch!(el.opts, :nodes)
+    expanded = Keyword.fetch!(el.opts, :expanded)
+    focused_id = Keyword.fetch!(el.opts, :focused)
+    scroll = Keyword.get(el.opts, :scroll, 0)
+    id = Keyword.get(el.opts, :focusable)
+    is_focused? = not is_nil(id) and id == focused
+
+    base = el.opts |> Keyword.get(:style, Theme.get(:primary)) |> Style.from()
+    guide = el.opts |> Keyword.get(:guide_style, %Style{dim: true}) |> Style.from()
+
+    row_style =
+      el.opts
+      |> Keyword.get(:focused_style, default_menu_active_style(is_focused?))
+      |> Style.from()
+
+    loading = Keyword.get(el.opts, :loading_label, " …")
+
+    # The renderer never walks the tree — Tree.visible/2 already flattened it to
+    # the rows on screen, guides included.
+    frame =
+      nodes
+      |> Tree.visible(expanded)
+      |> Enum.drop(max(scroll, 0))
+      |> Enum.take(region.h)
+      |> Enum.with_index()
+      |> Enum.reduce(frame, fn {row, index}, acc ->
+        y = region.row + index
+        prefix = tree_prefix(row)
+        label = tree_label(row, expanded, loading)
+        style = if row.node.id == focused_id, do: row_style, else: base
+
+        prefix_w = min(Width.string_width(prefix), region.w)
+
+        acc
+        |> render_cell(y, region.col, prefix_w, prefix, :left, guide)
+        |> render_cell(y, region.col + prefix_w, max(region.w - prefix_w, 0), label, :left, style)
+      end)
+
+    if is_focused?, do: Frame.set_focus_rect(frame, rect_of(region)), else: frame
   end
 
   defp render_element(%Element{type: :vbox} = el, region, frame, focused) do
@@ -644,6 +687,41 @@ defmodule Harlock.Element.Renderer do
   # dropping to the base style — losing focus should not lose your place.
   defp default_menu_active_style(true), do: Theme.get(:focus)
   defp default_menu_active_style(false), do: Theme.get(:selection)
+
+  # Guides for one projected row. Each ancestor contributes a continuation bar
+  # or a blank depending on whether that ancestor still had siblings below it —
+  # which is why the projection carries the whole chain and not just a depth.
+  #
+  # The root-level flag is dropped: a depth-1 row sits directly under a
+  # top-level node, and there is no column to the left of it to draw a bar in.
+  # So the trunk covers ancestors at depths 1..n-1, and the row's own elbow
+  # covers depth n.
+  defp tree_prefix(%{depth: 0}), do: ""
+
+  defp tree_prefix(%{ancestors_last: ancestors, last_child?: last?}) do
+    trunk =
+      ancestors
+      |> Enum.drop(1)
+      |> Enum.map_join(fn ancestor_last? -> if ancestor_last?, do: "    ", else: "│   " end)
+
+    trunk <> if last?, do: "└── ", else: "├── "
+  end
+
+  # An expandable node carries a marker so a collapsed directory is not
+  # indistinguishable from a file; leaves get matching blank space so labels
+  # stay aligned in the same column.
+  defp tree_label(%{node: node}, expanded, loading_label) do
+    marker =
+      cond do
+        not Tree.expandable?(node) -> "  "
+        Tree.expanded?(node, expanded) -> "▾ "
+        true -> "▸ "
+      end
+
+    suffix = if Tree.children(node) == :loading, do: loading_label, else: ""
+
+    marker <> node.label <> suffix
+  end
 
   # A select's open list is deferred rather than drawn in place: it has to cover
   # whatever the rest of the tree draws after the control, and the control can

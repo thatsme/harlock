@@ -280,6 +280,24 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  # A tree is the one widget that needed a new routed tuple: expanding is not
+  # selecting, and collapsing a node the app has not loaded yet has to be
+  # distinguishable so the app can fire the Cmd that fetches it.
+  defp route_to_widget(%Element{type: :tree} = el, event, focus_id, state) do
+    with {:ok, nodes} <- Keyword.fetch(el.opts, :nodes),
+         {:ok, expanded} <- Keyword.fetch(el.opts, :expanded),
+         {:ok, focused_id} <- Keyword.fetch(el.opts, :focused) do
+      case Harlock.Tree.apply_key(event, nodes, expanded, focused_id) do
+        {:select, node_id} -> {:routed, {:harlock_select, focus_id, node_id}, state}
+        {:toggle, node_id} -> {:routed, {:harlock_toggle, focus_id, node_id}, state}
+        :submit -> {:routed, {:harlock_submit, focus_id}, state}
+        :noop -> {:pass, state}
+      end
+    else
+      _ -> {:pass, state}
+    end
+  end
+
   # A textarea produces the same {:harlock_edit, id, {value, cursor}} message a
   # text_input does — both own a (value, cursor) pair, so the app writes one
   # clause either way. It never submits: Enter inserts a newline.
