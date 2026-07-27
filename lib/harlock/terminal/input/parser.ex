@@ -112,6 +112,28 @@ defmodule Harlock.Terminal.Input.Parser do
     parse(rest, [{:key, {:char, c}, [:alt]} | events])
   end
 
+  # -- ESC + DEL/BS → Alt-Backspace ------------------------------------------
+  #
+  # Terminals send Alt-Backspace as ESC followed by DEL (0x7F) or BS (0x08).
+  # Neither is inside the printable range the clause above matches, so without
+  # this the ESC falls through to the UTF-8 clause as codepoint 27 and the
+  # backspace arrives unmodified — backward-kill-word silently degrades to
+  # deleting one grapheme.
+
+  defp parse(<<"\e", c, rest::binary>>, events) when c in [0x7F, 0x08] do
+    parse(rest, [{:key, :backspace, [:alt]} | events])
+  end
+
+  # -- Bare ESC mid-chunk → Escape key ---------------------------------------
+  #
+  # An ESC that did not begin a recognised sequence is the Escape key. The
+  # UTF-8 clause further down would otherwise decode 0x1B as a printable
+  # character, handing apps {:char, 27} for a keypress that has its own atom.
+
+  defp parse(<<0x1B, rest::binary>>, events) do
+    parse(rest, [{:key, :escape, []} | events])
+  end
+
   # -- Single control characters ---------------------------------------------
 
   defp parse(<<?\r, rest::binary>>, events), do: parse(rest, [{:key, :enter, []} | events])

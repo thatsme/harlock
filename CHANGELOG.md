@@ -10,6 +10,36 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-07-27
+
+Input-parser fixes. Both bugs were reachable only from real terminal bytes,
+which is why the v0.4.3 suite passed over them: the widget-level tests feed
+synthesised key events straight to `apply_key/_`, so nothing exercised the
+byte sequences a terminal actually sends.
+
+### Fixed
+
+- **`Alt-Backspace` now reaches the widgets that bind it.** v0.4.3 added the
+  binding to `Harlock.TextBuffer` but nothing could deliver it: terminals send
+  the chord as `ESC` followed by `DEL` (`0x7F`) or `BS` (`0x08`), and neither
+  byte falls inside the `0x20..0x7E` printable range the ESC-prefix clause
+  matched. The sequence decoded as two unrelated events instead, so
+  backward-kill-word silently degraded to deleting a single grapheme.
+
+  `Alt-B` / `Alt-F` were never affected — printable bytes take the ESC-prefix
+  path, which is why word *motion* worked from the start while the word *kill*
+  did not.
+
+- **A bare `ESC` before an unhandled byte is now the Escape key, not codepoint
+  27.** `0x1B` is a valid single-byte UTF-8 sequence, so any ESC that failed to
+  begin a recognised CSI/SS3/Alt sequence fell through to the multibyte clause
+  and surfaced as `{:key, {:char, 27}, []}` — printable text, for a keypress
+  that has its own atom. Apps matching on `{:key, :escape, []}` missed it, and
+  a focused `text_input` would have inserted it into the value.
+
+Both are pinned by parser-level tests asserting on byte sequences rather than
+on synthesised events.
+
 ## [0.4.3] — 2026-07-27
 
 Finishes the textarea shipped in v0.4.2 rather than extending it. No new
@@ -672,7 +702,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/thatsme/harlock/releases/tag/v0.4.4
 [0.4.3]: https://github.com/thatsme/harlock/releases/tag/v0.4.3
 [0.4.2]: https://github.com/thatsme/harlock/releases/tag/v0.4.2
 [0.4.1]: https://github.com/thatsme/harlock/releases/tag/v0.4.1

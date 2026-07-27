@@ -305,6 +305,28 @@ defmodule Harlock.Terminal.Input.ParserTest do
       assert events("\ea") == [{:key, {:char, ?a}, [:alt]}]
       assert events("\eX") == [{:key, {:char, ?X}, [:alt]}]
     end
+
+    test "word motions arrive without any protocol handshake" do
+      # Alt-B / Alt-F are plain ESC-prefixed bytes, so backward-word and
+      # forward-word work on a bare terminal — no DECSET, no kitty protocol.
+      assert events("\eb") == [{:key, {:char, ?b}, [:alt]}]
+      assert events("\ef") == [{:key, {:char, ?f}, [:alt]}]
+    end
+
+    test "ESC + DEL or BS → Alt-Backspace" do
+      # DEL and BS sit outside the printable range, so these need their own
+      # clause. Without it the modifier is lost and backward-kill-word degrades
+      # to deleting a single grapheme.
+      assert events("\e\x7F") == [{:key, :backspace, [:alt]}]
+      assert events("\e\b") == [{:key, :backspace, [:alt]}]
+    end
+
+    test "bare ESC before an unhandled byte is Escape, not codepoint 27" do
+      # 0x1B is a valid single-byte UTF-8 codepoint, so the multibyte clause
+      # would happily emit it as printable text.
+      assert events("\e\x01") == [{:key, :escape, []}, {:key, {:char, ?a}, [:ctrl]}]
+      refute events("\e\x7F") |> Enum.any?(&match?({:key, {:char, 27}, _}, &1))
+    end
   end
 
   describe "bracketed paste" do

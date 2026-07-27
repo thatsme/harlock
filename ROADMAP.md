@@ -4,10 +4,10 @@ A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan through v1.0 (stable API). It's a living
-document — revised as the design settles. v0.4.3 is current and published
+document — revised as the design settles. v0.4.4 is current and published
 on Hex.
 
-## Status snapshot (v0.4.3, current)
+## Status snapshot (v0.4.4, current)
 
 What works:
 
@@ -53,11 +53,11 @@ What works:
 What's stubbed / missing — the honest list:
 
 - `Sub`: only `:interval` exists. Richer kinds (`pubsub` / `file` / `signal` /
-  `port`) are v0.5.
+  `port`) are v0.6.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No `tree`, `menu` / `select` widgets — v0.5.
-- No `box(focus_proxy: id)` visual focus mirroring — v0.5.
+- No `box(focus_proxy: id)` visual focus mirroring — v0.6.
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
 
 ## Guiding principles
@@ -454,6 +454,18 @@ inside v0.4 would have meant writing their key handling against the
 old API and rewriting it the moment R2 landed; v0.5 lets them
 arrive as native R2 widgets from day one.
 
+That reason is now spent: R2 shipped in v0.4, and `textarea` proved the
+contract on the hardest case in v0.4.2–v0.4.3. What remains is a closed
+list — `menu`, `select`, `tree`, and the undo helper — and the milestone
+closes when those are done. Subscriptions and `box(focus_proxy:)` moved to
+v0.6 to keep that boundary meaningful; a widget set has no natural end
+otherwise, and this one needs one.
+
+Build order is `menu` → `select` → `tree`: `menu` is the smallest R2
+consumer and establishes the pattern, `select` adds the `overlay` open
+state on top, and `tree` comes last because it is the only recursive one
+and the only one adding a routed tuple to the public contract.
+
 ### tree / menu / select widgets
 
 - `tree(:nodes, :expanded, :focused, :on_toggle, :on_select)` —
@@ -515,6 +527,15 @@ insert. Get it wrong and a user types a paragraph, presses undo expecting to
 lose a word, and loses the paragraph — worse than shipping no undo at all,
 because it destroys work rather than merely failing to restore it.
 
+---
+
+## v0.6 — subscriptions and focus polish
+
+Split out of v0.5 so that milestone can close on the widget set alone.
+Neither of these is a widget, and holding `tree` / `menu` / `select` back
+until `Phoenix.PubSub` integration is also done would leave finished work
+unpublished for no reason.
+
 ### Richer Sub kinds
 
 - `Sub.pubsub(pubsub_mod, topic, transform_fn)` — subscribes via
@@ -539,7 +560,7 @@ styles its boxes' borders off `Focus.current()` by hand as a workaround
 
 ---
 
-## v0.6 — pre-1.0 hardening (~3 weeks)
+## v0.7 — pre-1.0 hardening (~3 weeks)
 
 - **Dialyzer clean** at `:underspecs` + `:overspecs`. Strict specs on all
   public functions.
@@ -570,7 +591,7 @@ styles its boxes' borders off `Focus.current()` by hand as a workaround
 ## v1.0 — stable API
 
 - Public API frozen per the `@moduledoc` decisions above.
-- All v0.6 hardening complete.
+- All v0.7 hardening complete.
 - Announcement post + Reddit/Elixir Forum thread.
 - Minimum supported: Elixir 1.19+, OTP 26+ — matching the `elixir: "~> 1.19"`
   requirement `mix.exs` already ships.
