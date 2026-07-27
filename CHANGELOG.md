@@ -56,6 +56,24 @@ changes are called out in the relevant release notes.
   starting an app is racing the attach. `interval/2` is unaffected; it starts its
   own clock.
 
+- **`sparkline/1` — a one-line trend**, the piece that makes a telemetry
+  subscription worth looking at. `progress/1` shows one fraction; this shows a
+  history. One cell per value using `▁▂▃▄▅▆▇█`, **right-aligned** so the newest
+  sample stays at the right edge as history scrolls off the left.
+
+  Auto-scaling spans the values *shown*, not the whole series, so it reports
+  shape rather than magnitude — a series of 100s and a series of 3s draw
+  identically, and narrowing the region can change the shape as the scale
+  re-fits. `:min` and `:max` pin the range, which is usually what a dashboard
+  wants. A flat series draws through the middle of the ramp rather than the
+  bottom, because a steady value is not a zero one.
+
+  The ramp is an explicit `:glyphs` option rather than something inferred from
+  capabilities. The internal caps struct has no notion of glyph coverage and
+  colour depth is not a proxy for it — a mono terminal renders block elements
+  perfectly well — so an ASCII ramp is passed rather than guessed, matching
+  `spinner`'s `:frames`.
+
 - **`Sub.logger/1` — subscribe to log events**, the seam's second consumer. Takes
   `:level` (filtered by `:logger` before Harlock sees it), `:metadata` (keys to
   keep, or `:all`), and an optional `:transform`; delivers `{:log, entry}` where

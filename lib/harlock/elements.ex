@@ -500,6 +500,47 @@ defmodule Harlock.Elements do
   end
 
   @doc """
+  Single-line trend line drawn with block glyphs.
+
+  Required options:
+    * `:values` — list of numbers, oldest first
+
+  Optional:
+    * `:min` / `:max` — pin the scale instead of deriving it from the data
+    * `:style`  — `%Style{}` for the line
+    * `:glyphs` — ramp from lowest to highest, defaulting to
+      `~w(▁ ▂ ▃ ▄ ▅ ▆ ▇ █)`. Pass an ASCII ramp such as `~w(_ . - ~ = + * #)`
+      for terminals or fonts that render block elements badly.
+
+  One cell per value, **right-aligned**, so the newest sample sits at the right
+  edge and stays there as history scrolls off the left. A series longer than the
+  region keeps its most recent values.
+
+      sparkline(values: m.query_times, style: [fg: :cyan])
+
+  Auto-scaling spans the data, so the line shows *shape* rather than magnitude —
+  a series of 100s and a series of 3s look identical. Pin `:min` and `:max` when
+  the absolute level matters, which for a dashboard it usually does. A flat
+  series draws through the middle of the ramp rather than the bottom, since a
+  steady value is not the same as a zero one.
+
+  The derived range covers the values actually *shown*, not the whole series, so
+  narrowing the region can change the shape as the scale re-fits to the visible
+  window. Pinning the range removes that effect too.
+
+  Complements `progress/1` rather than replacing it: a progress bar shows one
+  fraction, a sparkline shows a history.
+  """
+  @spec sparkline(keyword()) :: Element.t()
+  def sparkline(opts) when is_list(opts) do
+    unless Keyword.has_key?(opts, :values) do
+      raise ArgumentError, "sparkline/1 requires :values"
+    end
+
+    %Element{type: :sparkline, opts: opts, children: []}
+  end
+
+  @doc """
   Dropdown: a one-line control that opens a list of choices.
 
   Required options:

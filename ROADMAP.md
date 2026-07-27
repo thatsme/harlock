@@ -61,7 +61,6 @@ What's stubbed / missing — the honest list:
 - `Sub`: only `:interval` exists, and it is a timer rather than a subscription —
   push-shaped sources (`telemetry` / `logger` / `pubsub` / `file` / `signal` /
   `port`) all wait on the v0.6 event-source seam.
-- No `sparkline`; `progress` shows a fraction, not a history.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No `box(focus_proxy: id)` visual focus mirroring — v0.6.
@@ -632,13 +631,19 @@ the fourth caller.
 Same detach-on-shutdown requirement, same do-not-block rule: a handler that
 blocks slows every log call in the system.
 
-### sparkline
+### sparkline ✓
 
 A one-line trend widget, because a numeric column is not a dashboard and a
 `progress` bar shows a fraction rather than a history. Takes a list of numbers
-and draws them with block glyphs, auto-scaled, degrading to ASCII where the
-caps say so. Needed by the telemetry work above rather than desirable
-alongside it.
+and draws them with block glyphs, auto-scaled. Needed by the telemetry work
+above rather than desirable alongside it.
+
+Shipped with the glyph ramp as an explicit `:glyphs` option rather than
+switching on capabilities: the internal caps struct tracks colour depth,
+bracketed paste, mouse and kitty, and has no notion of glyph coverage. Adding
+one would mean guessing — a mono terminal renders block elements perfectly
+well, so colour depth is not a proxy for it. Passing an ASCII ramp explicitly
+is honest and follows `spinner`'s `:frames`.
 
 ### The remaining Sub kinds
 

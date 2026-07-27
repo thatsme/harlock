@@ -30,6 +30,9 @@ defmodule Harlock.Element.Renderer do
   # drawn. Nesting deeper than this is a bug, not a layout.
   @max_float_depth 8
 
+  # U+2581..U+2588, one-eighth block through full block. All width 1.
+  @sparkline_glyphs ~w(▁ ▂ ▃ ▄ ▅ ▆ ▇ █)
+
   @spec render(Element.t(), non_neg_integer(), non_neg_integer(), any()) :: Frame.t()
   def render(%Element{} = root, rows, cols, focused \\ nil) do
     frame = Frame.new(rows, cols)
@@ -367,6 +370,24 @@ defmodule Harlock.Element.Renderer do
     if is_focused?, do: Frame.set_focus_rect(frame, rect_of(region)), else: frame
   end
 
+  defp render_element(%Element{type: :sparkline} = el, region, frame, _focused) do
+    values = Keyword.fetch!(el.opts, :values)
+    glyphs = Keyword.get(el.opts, :glyphs, @sparkline_glyphs)
+    style = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
+
+    # Right-aligned: keep the most recent region.w samples so "now" stays at the
+    # right edge instead of the series marching rightward until it wraps.
+    shown = values |> Enum.reverse() |> Enum.take(region.w) |> Enum.reverse()
+
+    lo = Keyword.get(el.opts, :min) || min_of(shown)
+    hi = Keyword.get(el.opts, :max) || max_of(shown)
+
+    line = Enum.map_join(shown, &glyph_for(&1, lo, hi, glyphs))
+    col = region.col + max(region.w - length(shown), 0)
+
+    Frame.write(frame, region.row, col, line, style)
+  end
+
   defp render_element(%Element{type: :vbox} = el, region, frame, focused) do
     constraints = Keyword.fetch!(el.opts, :constraints)
     rects = Layout.split(region, :vertical, constraints)
@@ -682,6 +703,26 @@ defmodule Harlock.Element.Renderer do
 
   defp default_tabs_active_style(true), do: Theme.get(:focus)
   defp default_tabs_active_style(false), do: Theme.get(:header)
+
+  defp min_of([]), do: 0
+  defp min_of(values), do: Enum.min(values)
+
+  defp max_of([]), do: 0
+  defp max_of(values), do: Enum.max(values)
+
+  # A flat series has no range to scale against, so it draws through the middle
+  # of the ramp: a steady value reads as steady, where the bottom glyph would
+  # read as nothing happening.
+  defp glyph_for(_value, lo, hi, glyphs) when hi <= lo do
+    Enum.at(glyphs, div(length(glyphs), 2))
+  end
+
+  defp glyph_for(value, lo, hi, glyphs) do
+    last = length(glyphs) - 1
+    scaled = (value - lo) / (hi - lo) * last
+    index = scaled |> round() |> max(0) |> min(last)
+    Enum.at(glyphs, index)
+  end
 
   # Unfocused menus keep the highlight visible via :selection rather than
   # dropping to the base style — losing focus should not lose your place.
