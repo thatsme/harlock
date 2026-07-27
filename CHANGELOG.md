@@ -61,11 +61,12 @@ changes are called out in the relevant release notes.
   without wrapping — moving up a column of CJK text now lands where it looks
   like it should.
 
-- `Harlock.Element.WidgetMetrics.record/2` generalises the previously
-  viewport-only metrics scratchpad, so the renderer can hand a textarea's
-  rendered wrap width back to the runtime for key routing.
-  `record_viewport/2` is retained and delegates to it. Internal
-  (`@moduledoc false`).
+- The internal widget-metrics scratchpad grows a generic `record/2`,
+  generalising the previously viewport-only helper so the renderer can hand a
+  textarea's rendered wrap width back to the runtime for key routing. The
+  viewport-specific function is retained and delegates to it. Internal
+  (`@moduledoc false`); named in prose rather than linked, since hexdocs
+  can't resolve references into hidden modules.
 
 - **`Harlock.TextBuffer.push_kill/2`** — pushes killed text onto a ring,
   dropping empty kills and applying the depth cap. Exposed so `TextArea` can
