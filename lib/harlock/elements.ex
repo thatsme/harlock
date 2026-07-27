@@ -191,7 +191,8 @@ defmodule Harlock.Elements do
 
   Required options:
     * `:columns`  — list of `column/1` specs
-    * `:rows`     — enumerable of row data
+    * `:rows`     — enumerable of row data, **or** a `fn offset, limit -> rows`
+      window function (see below)
     * `:row_id`   — fn(row) -> id. Row identity is by id, not index, so focus
       and selection survive sort/filter.
 
@@ -199,7 +200,39 @@ defmodule Harlock.Elements do
     * `:focused_row` — currently-focused row id
     * `:selection`   — `:none` | `{:single, id}` | `{:multi, MapSet}`
     * `:show_header` — default `true`
+    * `:offset`      — first visible row, for a window function (default `0`)
     * `:focusable`, `:focus_trap` — same as other elements
+
+  ## Windowed rows
+
+  An enumerable is walked, so its length is known and the visible window can be
+  centred on `:focused_row` automatically. That is what makes a small table
+  effortless, and it stays the default.
+
+  It also means the whole thing is materialised. For a table backed by a query,
+  a large file, or an unbounded stream, pass a two-argument function instead and
+  it will be asked only for what fits:
+
+      table(
+        columns: cols,
+        row_id: & &1.id,
+        offset: m.offset,
+        rows: fn offset, limit -> MyApp.page(offset, limit) end
+      )
+
+  Nothing calls `length/1`, `Enum.drop/2` or `Enum.find_index/2` on a window
+  function, so the cost is one fetch of viewport size no matter how much sits
+  behind it. Returning fewer rows than `limit` simply means the end.
+
+  Two consequences worth planning for. Auto-centring is impossible — with cursor
+  or keyset pagination there is no row *index* to centre on — so `:offset` is
+  app-owned, the same way `viewport/1` owns its own. And `:focused_row` still
+  works, but only styles a row that the current window actually contains.
+
+  Harlock has no notion of where the rows come from, deliberately: an
+  `Ecto.Queryable`-backed table is a few lines of app code over this function,
+  and building it in here would mean a terminal UI library depending on a
+  database library.
   """
   @spec table(keyword()) :: Element.t()
   def table(opts) when is_list(opts) do

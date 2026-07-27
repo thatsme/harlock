@@ -67,8 +67,8 @@ What's stubbed / missing — the honest list:
   they need is built, so they are additions rather than design work.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
-- `table` draws only the visible rows but materialises the whole enumerable to
-  find them, so a queryable-backed table needs windowed data access first.
+- No mouse-driven interaction; `table` has no auto-routing, so a windowed table
+  scrolls by app-handled keys writing `:offset`, as `viewport` did pre-R2.
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
 
 ## Guiding principles
@@ -86,6 +86,14 @@ What's stubbed / missing — the honest list:
    without leaving the terminal in raw mode / alt-screen. Test it.
 6. **Honest stubs over fake completeness.** Stub modules clearly say so in
    their moduledoc. No silent half-features.
+7. **Seams, not adapters.** Harlock provides the shape an integration plugs
+   into and stops there. `table` takes a window function, not an
+   `Ecto.Queryable`; `Sub.telemetry` takes event names, not an Oban
+   dashboard. A terminal UI library should not acquire a dependency on a
+   database, a web framework, or a job runner in order to display their
+   output — the adapter is a few lines of app code, or its own package if it
+   ever earns one. `:telemetry` is the sole first-party integration, and only
+   because it is already a dependency and its seam is generic.
 
 ## Versioning
 
@@ -779,18 +787,26 @@ incrementally from a running total.
   drawing does not: at n=800 wrapping is closer to half the cost. That makes it
   worth doing for large documents and not worth doing for typical ones — which
   is the opposite of the priority it had before it was measured.
-- **Windowed data access for `table`**, alongside the benchmarks that would
-  justify it. Drawing is already O(viewport) — `visible_rows/4` drops and takes
-  to the body height — but the element materialises its `:rows` enumerable in
-  full to find that window, then scans it again to locate the focused row. A
-  table backed by a query or an infinite stream therefore needs `table` to
-  *pull* a window (`{offset, limit} -> rows`) instead of consuming an
-  enumerable. Two consequences worth designing for rather than discovering:
-  keyset pagination has no row *index*, so `:focused_row` has to be identified
-  by cursor; and the total row count may be unknown, so the scrollbar and any
-  position readout must tolerate not knowing how far down they are. This is the
-  prerequisite for an `Ecto.Queryable`-backed table, which is otherwise the
-  shortest path from Harlock to an admin panel.
+- **Windowed data access for `table`** ✓ — `:rows` now accepts a
+  `fn offset, limit -> rows` function as well as an enumerable, with `:offset`
+  app-owned because keyset pagination has no row index to auto-centre on.
+
+  The benchmark corrected the reason for doing it. Render cost is flat in row
+  count already — 10 137µs at 200 rows, 8 908µs at 20 000 — because drawing is
+  bounded by the region, and the `length/1` / `find_index/2` / `drop/2`
+  traversals the list path performs are trivial beside cell writing. So this was
+  never a rendering optimisation.
+
+  What it actually buys is not *acquiring* rows nobody will see. A list-backed
+  table over a query issues a query for every row; a windowed one asks for
+  viewport-many. The benchmark could not show that because it pre-built an
+  in-memory list, which is exactly the kind of measurement that confirms the
+  wrong thing.
+
+  No `Ecto.Queryable` adapter, deliberately — see the principle below. A
+  query-backed table is a few lines of app code over the window function, and
+  building it in-tree would put a database dependency inside a terminal UI
+  library.
 - **Documentation**: every public function has `@doc` + example. Module
   guides (`guides/getting_started.md`, `guides/widgets.md`,
   `guides/testing.md`, `guides/embedding.md`).

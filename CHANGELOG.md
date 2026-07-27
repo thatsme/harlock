@@ -12,6 +12,29 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **`table` accepts a window function** — `rows: fn offset, limit -> rows` as an
+  alternative to an enumerable, so a table over a query, a large file, or an
+  unbounded stream is asked only for what fits on screen. Nothing calls
+  `length/1`, `Enum.drop/2` or `Enum.find_index/2` on it.
+
+  `:offset` is app-owned in windowed mode, the way `viewport/1` owns its own,
+  because cursor and keyset pagination have no row *index* to auto-centre on.
+  `:focused_row` still styles, but only a row the current window contains.
+  Enumerable rows are untouched: still materialised, still auto-centred, which is
+  what makes a small table effortless.
+
+  The benchmark corrected why this is worth doing. Render cost is already flat in
+  row count — 10 137µs at 200 rows, 8 908µs at 20 000 — because drawing is bounded
+  by the region and the list path's traversals are trivial beside cell writing. So
+  this is not a rendering optimisation; it is about not *acquiring* rows nobody
+  will see. A list-backed table over a query fetches every row, and the benchmark
+  could not show that because it pre-built an in-memory list.
+
+  No `Ecto` adapter, deliberately — a query-backed table is a few lines of app code
+  over this function, and building it in-tree would put a database dependency
+  inside a terminal UI library. `ROADMAP.md` gains a guiding principle saying so:
+  seams, not adapters.
+
 - **Wrapped `textarea` renders 1.8x faster while editing, 3.3x faster
   redrawing unchanged content.** A single render called `visual_rows/2` three
   times over — directly, then again inside `visual_position/3`, then again

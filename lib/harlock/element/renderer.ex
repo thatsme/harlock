@@ -534,7 +534,7 @@ defmodule Harlock.Element.Renderer do
 
   defp render_element(%Element{type: :table} = el, region, frame, focused) do
     columns = Keyword.fetch!(el.opts, :columns)
-    rows = Keyword.fetch!(el.opts, :rows) |> Enum.to_list()
+    rows_source = Keyword.fetch!(el.opts, :rows)
     row_id_fn = Keyword.fetch!(el.opts, :row_id)
     focused_row = Keyword.get(el.opts, :focused_row)
     selection = Keyword.get(el.opts, :selection, :none)
@@ -553,7 +553,7 @@ defmodule Harlock.Element.Renderer do
         do: render_header(frame, region.row, columns, col_rects, styles.header),
         else: frame
 
-    visible = visible_rows(rows, focused_row, body_height, row_id_fn)
+    visible = table_window(rows_source, el.opts, focused_row, body_height, row_id_fn)
 
     visible
     |> Enum.with_index()
@@ -856,6 +856,34 @@ defmodule Harlock.Element.Renderer do
   defp base_row_style(_idx, %{alt_row: nil} = styles), do: styles.row
   defp base_row_style(idx, styles) when rem(idx, 2) == 1, do: styles.alt_row
   defp base_row_style(_idx, styles), do: styles.row
+
+  # Two ways to supply rows, and the difference is who can afford to count them.
+  #
+  # A list is walked: its length is known, so the window can be centred on the
+  # focused row automatically. That stays the default because it is what makes a
+  # small table effortless.
+  #
+  # A 2-arity function is *asked* for a window, and never for a length. Nothing
+  # here calls length/1, find_index/2 or drop/2 on it, so a source backed by a
+  # query or an unbounded stream costs one fetch of viewport size regardless of
+  # how much sits behind it. The price is that auto-centring is impossible — with
+  # keyset pagination there is no row index to centre on — so the offset is
+  # app-owned, exactly as `viewport` owns its own.
+  defp table_window(fetch, opts, _focused_id, body_height, _id_fn)
+       when is_function(fetch, 2) and body_height > 0 do
+    offset = opts |> Keyword.get(:offset, 0) |> max(0)
+
+    # Fewer rows than asked for simply means the end; there is nothing to clamp
+    # against, because the total may be genuinely unknown.
+    fetch.(offset, body_height) |> Enum.take(body_height)
+  end
+
+  defp table_window(fetch, _opts, _focused_id, _body_height, _id_fn) when is_function(fetch, 2),
+    do: []
+
+  defp table_window(enumerable, _opts, focused_id, body_height, id_fn) do
+    enumerable |> Enum.to_list() |> visible_rows(focused_id, body_height, id_fn)
+  end
 
   defp visible_rows(_rows, _focused_id, body_height, _id_fn) when body_height <= 0, do: []
 
