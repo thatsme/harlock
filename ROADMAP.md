@@ -745,9 +745,29 @@ incrementally from a running total.
 
 - **Dialyzer clean** at `:underspecs` + `:overspecs`. Strict specs on all
   public functions.
-- **Property-based tests** for layout solver (StreamData): for any list of
-  constraints summing to ≥ 0, output sizes are non-negative and sum to
-  total. For any frame diff: replay produces equivalent frame.
+- **Property-based tests** — done for the layout solver, twelve properties over
+  generated constraint lists: sizes non-negative, one rect per constraint, slots
+  contiguous and non-overlapping, cross axis untouched, `:max` never exceeded,
+  `:length` honoured with slack absorbed, `:fill` proportional to weights,
+  over-constraint truncating rather than crashing, zero regions yielding zero
+  slots, and determinism.
+
+  One of them was wrong before the solver was: "a split always consumes the whole
+  region" fails for `[{:max, 0}]`, because filling the space would violate the cap
+  the caller asked for. The solver is right and the invariant needed the
+  condition, which is the sort of correction generated input produces and example
+  tests do not.
+
+  Running at StreamData's default 100 runs per property. Worth raising if the
+  solver changes.
+
+  **The frame-diff half is not done, and needs a prerequisite.** "Replay produces
+  an equivalent frame" requires interpreting the ANSI the differ emits, and
+  nothing in the tree can do that — `Harlock.IO.Test.Writer` captures a cell
+  buffer written *through* the renderer, not a terminal emulator that consumes
+  escape sequences. Either a minimal ANSI interpreter gets written for tests
+  only, or this property gets dropped as costing more than it proves. Deciding
+  which is the actual open item; it is not a matter of writing the property.
 - **Benchmarks** ✓ — `Harlock.Bench` measures render and diff over five
   canonical scenarios, reporting percentiles rather than a mean because a frame
   budget is about the slow frames. Public rather than dev-only, so app authors

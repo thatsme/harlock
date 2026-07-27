@@ -12,6 +12,24 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **Property-based tests for the layout solver** (twelve properties, `stream_data`
+  as a test-only dependency). The solver is the oldest load-bearing code in the
+  tree and the one piece with a mathematical contract, so it is where generated
+  input earns its keep: invariants have to hold for every constraint list, not the
+  handful anyone thinks to write.
+
+  Covered: sizes non-negative, one rect per constraint, slots contiguous and
+  non-overlapping, cross axis untouched, `:max` never exceeded, `:length` honoured
+  with slack absorbed onto the last slot, `:fill` proportional to weights,
+  over-constraint truncating rather than crashing, zero-sized regions yielding
+  zero-sized slots, and determinism.
+
+  One property was wrong before the solver was. "A split always consumes the whole
+  region" fails for `[{:max, 0}]` — filling the space would violate the cap the
+  caller asked for, so the solver is correct and the invariant needed a condition.
+  That is the class of correction generated input produces and example tests do
+  not, which was the argument for writing these.
+
 - **`Sub.source/3` — subscribe to anything that delivers Erlang messages.** The
   subscribe function runs *inside* the subscription's own process, and every
   message that process receives is forwarded to `update/2`, optionally through a
