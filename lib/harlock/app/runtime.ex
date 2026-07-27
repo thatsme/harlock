@@ -260,6 +260,26 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  # A select routes the same two tuples a menu does. :submit means "the action
+  # key was pressed" — the app reads its own :open flag to know whether that
+  # opens the list or commits the highlight, which is why no open/close message
+  # shape had to be invented.
+  defp route_to_widget(%Element{type: :select} = el, event, focus_id, state) do
+    with {:ok, items} <- Keyword.fetch(el.opts, :items),
+         {:ok, value} <- Keyword.fetch(el.opts, :value),
+         {:ok, open?} <- Keyword.fetch(el.opts, :open) do
+      highlight = Keyword.get(el.opts, :highlight, value)
+
+      case Harlock.Select.apply_key(event, highlight, items, open?) do
+        {:select, new_id} -> {:routed, {:harlock_select, focus_id, new_id}, state}
+        :submit -> {:routed, {:harlock_submit, focus_id}, state}
+        :noop -> {:pass, state}
+      end
+    else
+      _ -> {:pass, state}
+    end
+  end
+
   # A textarea produces the same {:harlock_edit, id, {value, cursor}} message a
   # text_input does — both own a (value, cursor) pair, so the app writes one
   # clause either way. It never submits: Enter inserts a newline.

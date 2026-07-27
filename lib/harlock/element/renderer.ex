@@ -5,6 +5,7 @@ defmodule Harlock.Element.Renderer do
 
   alias Harlock.Element
   alias Harlock.Element.Column
+  alias Harlock.Element.Floats
   alias Harlock.Element.WidgetMetrics
   alias Harlock.Layout
   alias Harlock.Layout.Rect
@@ -24,11 +25,71 @@ defmodule Harlock.Element.Renderer do
     thick: {"┏", "┓", "┗", "┛", "━", "┃"}
   }
 
+  # Guards the float pass against a widget that pushes a float every time it is
+  # drawn. Nesting deeper than this is a bug, not a layout.
+  @max_float_depth 8
+
   @spec render(Element.t(), non_neg_integer(), non_neg_integer(), any()) :: Frame.t()
   def render(%Element{} = root, rows, cols, focused \\ nil) do
     frame = Frame.new(rows, cols)
     region = Rect.new(0, 0, cols, rows)
-    render_element(root, region, frame, focused)
+
+    Floats.clear()
+    frame = render_element(root, region, frame, focused)
+    draw_floats(frame, rows, cols, focused, @max_float_depth)
+  end
+
+  # Deferred draws, in push order. Rendering a float may itself push one — a
+  # submenu off a menu — so this repeats until nothing new arrives.
+  defp draw_floats(frame, _rows, _cols, _focused, 0), do: frame
+
+  defp draw_floats(frame, rows, cols, focused, depth) do
+    case Floats.drain() do
+      [] ->
+        frame
+
+      floats ->
+        floats
+        |> Enum.reduce(frame, fn %{anchor: anchor, w: w, h: h, element: el}, acc ->
+          render_element(el, float_region(anchor, w, h, rows, cols), acc, focused)
+        end)
+        |> draw_floats(rows, cols, focused, depth - 1)
+    end
+  end
+
+  # Place a panel against its anchor, flipping rather than clipping when it
+  # will not fit. Opening below and to the left is the default because that is
+  # where a reader looks next; the flips are what keep a control near the right
+  # or bottom margin usable instead of half off-screen.
+  @doc false
+  @spec float_region(
+          Rect.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) ::
+          Rect.t()
+  def float_region(anchor, w, h, rows, cols) do
+    w = w |> min(cols) |> max(0)
+    h = h |> min(rows) |> max(0)
+
+    below = anchor.row + anchor.h
+
+    row =
+      cond do
+        # Below the control, the common case.
+        below + h <= rows -> below
+        # Flipped above: the panel ends where the control begins.
+        anchor.row - h >= 0 -> anchor.row - h
+        # Fits neither side — bottom-align so as much as possible is readable
+        # rather than letting the tail run off the screen.
+        true -> max(rows - h, 0)
+      end
+
+    col = if anchor.col + w <= cols, do: anchor.col, else: max(cols - w, 0)
+
+    Rect.new(row, col, w, h)
   end
 
   defp render_element(_element, %Rect{w: 0}, frame, _focused), do: frame
@@ -223,6 +284,44 @@ defmodule Harlock.Element.Renderer do
       style = if id == active, do: active_style, else: base
       render_cell(acc, region.row + index, region.col, region.w, label, align, style)
     end)
+  end
+
+  defp render_element(%Element{type: :select} = el, region, frame, focused) do
+    items = Keyword.fetch!(el.opts, :items)
+    value = Keyword.fetch!(el.opts, :value)
+    open? = Keyword.fetch!(el.opts, :open)
+    id = Keyword.get(el.opts, :focusable)
+    is_focused? = not is_nil(id) and id == focused
+    marker = Keyword.get(el.opts, :marker, if(open?, do: "▴", else: "▾"))
+
+    label =
+      case Enum.find(items, fn {item_id, _} -> item_id == value end) do
+        {_id, text} -> text
+        nil -> Keyword.get(el.opts, :placeholder, "")
+      end
+
+    style =
+      el.opts
+      |> Keyword.get(:style, if(is_focused?, do: Theme.get(:focus), else: %Style{}))
+      |> Style.from()
+
+    # The marker sits hard right so the control reads as a dropdown at any
+    # width; the label takes what is left.
+    marker_w = Width.string_width(marker)
+    label_w = max(region.w - marker_w - 1, 0)
+
+    frame =
+      frame
+      |> render_cell(region.row, region.col, label_w, label, :left, style)
+      |> render_cell(region.row, region.col + label_w + 1, marker_w, marker, :left, style)
+
+    frame = if is_focused?, do: Frame.set_focus_rect(frame, rect_of(region)), else: frame
+
+    if open? and items != [] do
+      push_dropdown(el, region, items, value)
+    end
+
+    frame
   end
 
   defp render_element(%Element{type: :vbox} = el, region, frame, focused) do
@@ -545,6 +644,44 @@ defmodule Harlock.Element.Renderer do
   # dropping to the base style — losing focus should not lose your place.
   defp default_menu_active_style(true), do: Theme.get(:focus)
   defp default_menu_active_style(false), do: Theme.get(:selection)
+
+  # A select's open list is deferred rather than drawn in place: it has to cover
+  # whatever the rest of the tree draws after the control, and the control can
+  # sit anywhere in the layout. Floats also own the flipping, since only the top
+  # level knows the screen bounds.
+  defp push_dropdown(el, region, items, value) do
+    highlight = Keyword.get(el.opts, :highlight, value)
+    max_h = Keyword.get(el.opts, :max_height, 8)
+
+    rows = items |> length() |> min(max_h)
+
+    widest =
+      items
+      |> Enum.map(fn {_id, label} -> Width.string_width(label) end)
+      |> Enum.max(fn -> 0 end)
+
+    menu = %Element{
+      type: :menu,
+      opts: [items: items, active: highlight, style: Theme.get(:primary)],
+      children: []
+    }
+
+    panel = %Element{
+      type: :box,
+      opts: [border: :single, border_style: Theme.get(:border)],
+      children: [menu]
+    }
+
+    Floats.push(%{
+      # region is already a %Rect{}; rect_of/1 flattens to the bare map
+      # Frame.focus_rect wants, which is a different shape than Floats declares.
+      anchor: region,
+      # +2 on each axis for the border.
+      w: max(widest + 2, region.w),
+      h: rows + 2,
+      element: panel
+    })
+  end
 
   defp mask(value) do
     value

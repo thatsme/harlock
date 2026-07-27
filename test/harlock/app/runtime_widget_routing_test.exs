@@ -283,6 +283,46 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
     end
   end
 
+  defmodule SelectApp do
+    @moduledoc false
+    use Harlock.App
+
+    @items [{:it, "Italy"}, {:fr, "France"}, {:de, "Germany"}]
+
+    def init(_), do: %{value: :it, highlight: :it, open: false, raw_keys: []}
+
+    # Movement only ever moves the highlight; the value changes when committed.
+    def update({:harlock_select, :country, id}, m), do: %{m | highlight: id}
+
+    def update({:harlock_submit, :country}, %{open: false} = m), do: %{m | open: true}
+
+    def update({:harlock_submit, :country}, %{open: true} = m),
+      do: %{m | open: false, value: m.highlight}
+
+    def update({:key, :escape, []}, %{open: true} = m), do: %{m | open: false, highlight: m.value}
+
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+
+    def update(_, m), do: m
+
+    def view(m) do
+      vbox(
+        constraints: [length: 1, fill: 1],
+        children: [
+          select(
+            focusable: :country,
+            items: @items,
+            value: m.value,
+            highlight: m.highlight,
+            open: m.open
+          ),
+          # Drawn after the select, so it would bury an inline dropdown.
+          text("XXXXXXXXXXXXXXXX")
+        ]
+      )
+    end
+  end
+
   defmodule TextareaApp do
     @moduledoc false
     use Harlock.App
@@ -298,6 +338,68 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
     def update(_, m), do: m
 
     def view(m), do: textarea(focusable: :body, value: m.body, cursor: m.cursor)
+  end
+
+  describe "select auto-routing" do
+    setup do
+      h = Harlock.Test.start_app(SelectApp, nil, rows: 10, cols: 20)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "Enter opens, arrows move the highlight, Enter commits", %{h: h} do
+      Harlock.Test.send_key(h, :enter)
+      assert Harlock.Test.model(h).open
+
+      Harlock.Test.send_key(h, :down)
+      assert Harlock.Test.model(h).highlight == :fr
+      # not committed yet
+      assert Harlock.Test.model(h).value == :it
+
+      Harlock.Test.send_key(h, :enter)
+      m = Harlock.Test.model(h)
+      refute m.open
+      assert m.value == :fr
+    end
+
+    test "the value does not change while closed", %{h: h} do
+      Harlock.Test.send_key(h, :up)
+      Harlock.Test.send_key(h, :home)
+
+      m = Harlock.Test.model(h)
+      assert m.value == :it
+      assert m.highlight == :it
+      refute m.open
+    end
+
+    test "Escape falls through so the app can cancel the move", %{h: h} do
+      Harlock.Test.send_key(h, :enter)
+      Harlock.Test.send_key(h, :down)
+      assert Harlock.Test.model(h).highlight == :fr
+
+      Harlock.Test.send_key(h, :escape)
+      m = Harlock.Test.model(h)
+      refute m.open
+      # the app reverted the highlight; the value was never touched
+      assert m.highlight == :it
+      assert m.value == :it
+    end
+
+    test "the open list draws over content rendered after the control", %{h: h} do
+      Harlock.Test.send_key(h, :enter)
+      frame = Harlock.Test.render(h)
+
+      # the sibling text sits on row 1, exactly where the dropdown opens
+      assert frame =~ "France"
+      refute frame =~ "XXXXXXXXXXXXXXXX"
+    end
+
+    test "the closed control shows the chosen label and a marker", %{h: h} do
+      frame = Harlock.Test.render(h)
+      assert frame =~ "Italy"
+      assert frame =~ "▾"
+      refute frame =~ "France"
+    end
   end
 
   describe "textarea auto-routing" do

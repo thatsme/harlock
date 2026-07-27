@@ -499,5 +499,50 @@ defmodule Harlock.Elements do
     %Element{type: :menu, opts: opts, children: []}
   end
 
+  @doc """
+  Dropdown: a one-line control that opens a list of choices.
+
+  Required options:
+    * `:items`  — list of `{id, label}` tuples
+    * `:value`  — id of the chosen item, shown on the closed control
+    * `:open`   — whether the list is currently open (app-owned)
+
+  Optional:
+    * `:focusable`    — focus id; when focused the runtime routes navigation as
+      `{:harlock_select, focus_id, id}` and the action key as
+      `{:harlock_submit, focus_id}`
+    * `:highlight`    — id highlighted inside the open list, defaulting to
+      `:value`. Track it separately to let `Escape` discard a move.
+    * `:placeholder`  — shown closed when `:value` matches no item
+    * `:style`        — `%Style{}` for the closed control
+    * `:marker`       — glyph marking the control (default `"▾"`, `"▴"` open)
+    * `:max_height`   — cap the open list's rows (default 8, excluding borders)
+
+  The open list draws *over* whatever follows it in the tree, and flips when it
+  will not fit: above the control near the bottom margin, right-aligned near
+  the right one. So a dropdown on the last row of an 80x24 terminal opens
+  upward rather than off-screen.
+
+      select(
+        items: [{:it, "Italy"}, {:fr, "France"}],
+        value: m.country,
+        open: m.open,
+        focusable: :country
+      )
+
+  The app owns `:open`, so it decides what closes the list. See
+  `Harlock.Select` for the bindings, including why `Escape` falls through.
+  """
+  @spec select(keyword()) :: Element.t()
+  def select(opts) when is_list(opts) do
+    for required <- [:items, :value, :open] do
+      unless Keyword.has_key?(opts, required) do
+        raise ArgumentError, "select/1 requires #{inspect(required)}"
+      end
+    end
+
+    %Element{type: :select, opts: opts, children: []}
+  end
+
   defp default_constraints(children), do: Enum.map(children, fn _ -> {:fill, 1} end)
 end

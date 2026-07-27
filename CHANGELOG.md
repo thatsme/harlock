@@ -32,6 +32,40 @@ changes are called out in the relevant release notes.
   highlight visible via the `:selection` token rather than dropping to the base
   style — losing focus should not lose your place.
 
+- **`select/1` — a dropdown**, backed by the new `Harlock.Select`. Second of
+  the three widgets v0.5 closes on. The app owns both the chosen value and
+  whether the list is open, so it decides what closes it.
+
+  The open list **flips rather than clips**: it opens below the control and
+  left-aligned by default, above the control when there is no room below, and
+  shifted left when it would run past the right margin. A dropdown on the last
+  row of an 80x24 terminal opens upward instead of off-screen. Placement is
+  pinned by tests at that exact size, including the corner case where both
+  flips apply at once.
+
+  Navigation delegates to `Harlock.Menu`, so both widgets move a highlight
+  identically — same wrap, same noop-when-unmoved. Routing reuses the same two
+  tuples as well: `{:harlock_select, …}` for movement, `{:harlock_submit, …}`
+  for the action key. `:submit` means "the action key was pressed", and the app
+  reads its own `:open` flag to know whether that opens the list or commits the
+  highlight — it already has that information, so no open/close message shape
+  had to be added to the routed contract.
+
+  `Escape` deliberately falls through as a raw key rather than being consumed.
+  Cancelling is not always local, and a widget that swallowed `Escape` would
+  take that choice from the app.
+
+### Changed
+
+- The renderer gained a **deferred-draw layer** for content that must cover
+  whatever the rest of the tree draws, regardless of where its element sits in
+  that tree. `overlay/1` never needed it — it holds both layers as children, so
+  its own subtree fixes the z-order — but a dropdown is anchored to a control
+  buried in the layout, and every sibling rendered after that control would
+  draw over it. Panels are recorded during the walk and drawn after it, in
+  push order, so a panel opened from another panel lands on top without
+  anything tracking depth. Internal (`@moduledoc false`).
+
 ## [0.4.4] — 2026-07-27
 
 Input-parser fixes. Both bugs were reachable only from real terminal bytes,
