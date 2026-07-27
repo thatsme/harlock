@@ -83,6 +83,49 @@ defmodule Harlock.BenchTest do
     end
   end
 
+  describe "render_varying/2" do
+    test "builds a fresh tree per sample" do
+      counter = :counters.new(1, [])
+
+      build = fn i ->
+        :counters.add(counter, 1, 1)
+        rows_of(rem(i, 5) + 1)
+      end
+
+      s = Bench.render_varying(build, samples: 6, warmup: 2, rows: 24, cols: 40)
+
+      assert s.samples == 6
+      assert :counters.get(counter, 1) == 8
+    end
+
+    test "measures the uncached path for a content-keyed cache" do
+      # A wrapped textarea memoises its wrap by value. render/2 hands the same
+      # value every sample so the memo hits; varying it makes every sample miss,
+      # which is what typing does.
+      opts = [samples: 8, warmup: 1, rows: 60, cols: 80]
+
+      cached = Bench.render(Bench.scenario(:textarea_wrapped, n: 120), opts)
+      varying = Bench.render_varying(&Bench.scenario(:textarea_wrapped, n: 120, edit: &1), opts)
+
+      assert varying.p50 > cached.p50
+    end
+  end
+
+  describe "scenario/2" do
+    test ":edit makes the tree distinct" do
+      a = Bench.scenario(:textarea_wrapped, n: 10, edit: 1)
+      b = Bench.scenario(:textarea_wrapped, n: 10, edit: 2)
+
+      refute a == b
+    end
+
+    test "every scenario name builds an element" do
+      for name <- Keyword.keys(Bench.scenarios(n: 4)) do
+        assert %Harlock.Element{} = Bench.scenario(name, n: 4)
+      end
+    end
+  end
+
   describe "scenarios/1" do
     test "every scenario renders something non-blank" do
       for {name, element} <- Bench.scenarios(n: 12) do

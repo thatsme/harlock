@@ -151,6 +151,63 @@ defmodule Harlock.TextAreaTest do
     end
   end
 
+  describe "wrap memoisation" do
+    @memo_key :harlock_textarea_wrap_memo
+
+    setup do
+      Process.delete(@memo_key)
+      on_exit(fn -> Process.delete(@memo_key) end)
+      :ok
+    end
+
+    test "a repeat call returns the same rows" do
+      value = "one two three four five\nsix seven eight"
+
+      first = TextArea.visual_rows(value, 10)
+      assert TextArea.visual_rows(value, 10) == first
+    end
+
+    test "changing the value recomputes rather than returning stale rows" do
+      assert TextArea.visual_rows("aaa bbb", 4) == [{0, "aaa "}, {4, "bbb"}]
+      # the memo is keyed by the value, so this cannot hit the entry above
+      assert TextArea.visual_rows("zzz", 4) == [{0, "zzz"}]
+    end
+
+    test "changing only the width recomputes" do
+      value = "aaa bbb ccc"
+
+      narrow = TextArea.visual_rows(value, 4)
+      wide = TextArea.visual_rows(value, 80)
+
+      refute narrow == wide
+      assert length(wide) == 1
+    end
+
+    test "an unwrapped call is memoised separately from a wrapped one" do
+      value = "aaa bbb ccc"
+
+      unwrapped = TextArea.visual_rows(value, nil)
+      wrapped = TextArea.visual_rows(value, 4)
+
+      assert unwrapped == [{0, value}]
+      refute wrapped == unwrapped
+      # back to nil must not return the wrapped result
+      assert TextArea.visual_rows(value, nil) == unwrapped
+    end
+
+    test "callers that wrap visual_rows see consistent results across a cycle" do
+      # visual_position and scroll_to_reveal both go through visual_rows; the
+      # memo must not change what they compute, only how often they compute it.
+      value = "alpha beta gamma\ndelta epsilon"
+
+      Process.delete(@memo_key)
+      cold = TextArea.visual_position(value, 20, 8)
+      warm = TextArea.visual_position(value, 20, 8)
+
+      assert cold == warm
+    end
+  end
+
   describe "expand_tabs" do
     test "advances to the next tab stop rather than emitting a fixed run" do
       assert TextArea.expand_tabs("a\tb", 4) == "a   b"

@@ -54,6 +54,9 @@ defmodule Harlock.TextArea do
   alias Harlock.TextBuffer
   alias Harlock.Width
 
+  # Process-dictionary memo for visual_rows/2. See the comment there.
+  @memo_key :harlock_textarea_wrap_memo
+
   @type cursor :: non_neg_integer()
   @type position :: {non_neg_integer(), non_neg_integer()}
 
@@ -264,6 +267,34 @@ defmodule Harlock.TextArea do
   """
   @spec visual_rows(String.t(), wrap_width()) :: [visual_row()]
   def visual_rows(value, width) when is_binary(value) do
+    case Process.get(@memo_key) do
+      {^value, ^width, rows} -> rows
+      _miss -> memoise(value, width, wrap(value, width))
+    end
+  end
+
+  # One entry, keyed by the value and width themselves. Three properties make
+  # this the right shape:
+  #
+  # * It cannot go stale. A hit requires the key to match the arguments, so
+  #   there is no invalidation step to get wrong — which is what makes this
+  #   safe in a way an incremental line-break index would not be.
+  # * The hit is cheap. Within one keystroke the caller passes the same binary
+  #   term, so the match compares pointers rather than content.
+  # * One entry is enough. The repetition being removed is *within* a single
+  #   render — the textarea clause calls this directly, then again through
+  #   visual_position, then again through scroll_to_reveal — plus apply_key's
+  #   own calls on the way in. Those all share one value. Caching more would
+  #   hold memory for values nobody is going to ask about again.
+  #
+  # Editing replaces the binary, so the next call misses and recomputes, which
+  # is correct: the whole point is that the previous wrap no longer applies.
+  defp memoise(value, width, rows) do
+    Process.put(@memo_key, {value, width, rows})
+    rows
+  end
+
+  defp wrap(value, width) do
     {rows, _offset} =
       value
       |> lines()

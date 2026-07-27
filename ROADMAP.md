@@ -751,14 +751,34 @@ incrementally from a running total.
   **The layout solver is not the bottleneck.** 24 levels of nested boxes cost
   less than half a wrapped textarea, which redirects optimisation effort away
   from where it might otherwise have gone first.
-- **Incremental rewrap for `textarea`**, behind those benchmarks. Every motion
-  and every render calls `visual_rows/2`, which rewraps the whole value — fine
-  at a few hundred lines, poor at tens of thousands. The fix is to cache the
-  line-break index and invalidate from the edited logical line forward, since
-  everything above the edit is unchanged by construction. Deliberately after
-  the benchmark: a wrap cache adds an invalidation boundary, which is exactly
-  where wrap bugs hide, and it should not be added to chase an unmeasured
-  number.
+- **Incremental rewrap for `textarea`** — rescoped by what the benchmark
+  actually showed, and now smaller than it looked.
+
+  A single render called `visual_rows/2` three times over: directly, then again
+  inside `visual_position/3`, then again inside `scroll_to_reveal/5`. Removing
+  that repetition needed no invalidation logic at all — `visual_rows/2` keeps a
+  one-entry memo keyed by the value and width themselves, so a hit requires the
+  key to match and there is nothing to get stale. Editing replaces the binary,
+  the next call misses, and that is correct.
+
+  | n paragraphs | redraw unchanged | while editing |
+  |---|---|---|
+  | 50 | 2 457µs | 3 686µs |
+  | 200 | 5 734µs | 10 444µs |
+  | 800 | 6 656µs | 21 196µs |
+
+  Against the pre-memo 19 148µs at n=200, that is 1.8x on the editing path and
+  3.3x on redrawing unchanged content. n=200 now fits a 60 Hz budget; n=800 does
+  not.
+
+  **What remains is bounded by profiling, not guesswork.** At n=200 wrapping is
+  2 457µs of a 10 444µs render — 24% — and the rest is cell writing, which is
+  bounded by region size rather than content. So a line-break index with
+  per-line invalidation can only take a quarter off a mid-sized document. Its
+  value grows with size, though, because wrapping scales with content while
+  drawing does not: at n=800 wrapping is closer to half the cost. That makes it
+  worth doing for large documents and not worth doing for typical ones — which
+  is the opposite of the priority it had before it was measured.
 - **Windowed data access for `table`**, alongside the benchmarks that would
   justify it. Drawing is already O(viewport) — `visible_rows/4` drops and takes
   to the body height — but the element materialises its `:rows` enumerable in

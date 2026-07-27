@@ -12,6 +12,24 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **Wrapped `textarea` renders 1.8x faster while editing, 3.3x faster
+  redrawing unchanged content.** A single render called `visual_rows/2` three
+  times over — directly, then again inside `visual_position/3`, then again
+  inside `scroll_to_reveal/5` — each time rewrapping the entire value.
+
+  `visual_rows/2` now keeps a one-entry memo keyed by the value and width
+  themselves. That shape was chosen over an incremental line-break index because
+  it cannot go stale: a hit requires the key to match the arguments, so there is
+  no invalidation step to get wrong. Editing replaces the binary, the next call
+  misses, and recomputing is correct. Within one keystroke the caller passes the
+  same term, so the match compares pointers rather than content.
+
+  At 200 paragraphs, 200×80: 19 148µs before, 10 444µs while editing, 5 734µs
+  redrawing unchanged. A 60 Hz budget is ~16 700µs, so that document now fits
+  where it did not.
+
+  No behaviour change — `visual_rows/2` returns exactly what it did.
+
 - **`Harlock.Bench` — frame timing for element trees.** Measures both halves of a
   frame's cost: turning a tree into a `Frame`, and diffing two frames into ANSI.
   Five canonical scenarios (`text_rows`, `nested_boxes`, `table_rows`,
@@ -26,10 +44,18 @@ changes are called out in the relevant release notes.
 
   Three findings from the first baseline, each previously an assumption:
 
-  A **wrapped textarea already misses a 60 Hz budget** — 19 148µs at p50 against
-  ~16 700µs available — and the cost is linear in content (n=50 → 4 198µs,
-  n=800 → 56 115µs), confirming that rewrapping the whole value on every render
-  is the cause rather than a suspect.
+  A **wrapped textarea missed a 60 Hz budget** — 19 148µs at p50 against
+  ~16 700µs available — and the cost was linear in content, which identified
+  repeated whole-value rewrapping as the cause rather than a suspect. Fixed
+  above.
+
+  `render_varying/2` exists because of a mistake made while measuring that fix:
+  `render/2` hands the same tree to every sample, so once a content-keyed memo
+  existed it hit from the second sample onward, and the numbers described
+  redrawing unchanged content rather than editing. A first attempt at the
+  uncached path then overstated it by more than 2x by holding forty large
+  variants alive, so GC pressure landed inside the measurement. Building each
+  tree per sample and letting it become garbage fixed both.
 
   An **unchanged frame is not free**: diffing two identical 200×80 frames costs
   about as much as rendering a 200-row view, because the comparison walks all

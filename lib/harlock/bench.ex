@@ -79,6 +79,61 @@ defmodule Harlock.Bench do
   end
 
   @doc """
+  Time rendering a *different* tree on each sample.
+
+  Necessary wherever a cache sits behind the thing being measured. `render/2`
+  hands the same tree over and over, so any memo keyed on content hits from the
+  second sample onward and the result describes a steady-state redraw of
+  unchanged content. That is a real case — but it is not the one a user typing
+  into a textarea experiences, where every keystroke changes the value and misses.
+
+  `build` receives the sample number and returns the tree for it. It is called
+  *outside* the timed section, and each tree becomes garbage as soon as its
+  sample finishes — holding a list of large variants alive instead adds GC
+  pressure that inflates every reading. That mistake overstated this measurement
+  by more than a factor of two the first time it was written.
+
+      Bench.render_varying(&Bench.scenario(:textarea_wrapped, n: 200, edit: &1), samples: 50)
+  """
+  @spec render_varying((pos_integer() -> Element.t()), keyword()) :: stats()
+  def render_varying(build, opts \\ []) when is_function(build, 1) do
+    {rows, cols} = dimensions(opts)
+    samples = Keyword.get(opts, :samples, @default_samples)
+    warmup = Keyword.get(opts, :warmup, @default_warmup)
+
+    for i <- 1..warmup//1, do: Renderer.render(build.(i), rows, cols)
+
+    1..samples//1
+    |> Enum.map(fn i ->
+      element = build.(i)
+      {micros, _frame} = :timer.tc(fn -> Renderer.render(element, rows, cols) end)
+      micros
+    end)
+    |> stats()
+  end
+
+  @doc """
+  Build one scenario by name.
+
+  `:n` scales the content. `:edit` perturbs it, which is what makes each tree
+  distinct for `render_varying/2` — a content-keyed cache has to miss for the
+  measurement to describe editing rather than redrawing.
+  """
+  @spec scenario(atom(), keyword()) :: Element.t()
+  def scenario(name, opts \\ []) do
+    n = Keyword.get(opts, :n, @default_rows)
+    edit = Keyword.get(opts, :edit, 0)
+
+    case name do
+      :text_rows -> text_rows(n)
+      :nested_boxes -> nested_boxes(24)
+      :table_rows -> table_rows(n)
+      :textarea_wrapped -> textarea_wrapped(n, edit)
+      :tree_expanded -> tree_expanded(n)
+    end
+  end
+
+  @doc """
   Time diffing the frames produced by two element trees.
 
   Both trees are rendered once up front, so this measures only the diff. Pass the
@@ -104,15 +159,8 @@ defmodule Harlock.Bench do
   """
   @spec scenarios(keyword()) :: [{atom(), Element.t()}]
   def scenarios(opts \\ []) do
-    n = Keyword.get(opts, :n, @default_rows)
-
-    [
-      {:text_rows, text_rows(n)},
-      {:nested_boxes, nested_boxes(24)},
-      {:table_rows, table_rows(n)},
-      {:textarea_wrapped, textarea_wrapped(n)},
-      {:tree_expanded, tree_expanded(n)}
-    ]
+    for name <- [:text_rows, :nested_boxes, :table_rows, :textarea_wrapped, :tree_expanded],
+        do: {name, scenario(name, opts)}
   end
 
   @doc """
@@ -219,11 +267,13 @@ defmodule Harlock.Bench do
     }
   end
 
-  defp textarea_wrapped(n) do
+  defp textarea_wrapped(n, edit) do
     value =
       1..n
       |> Enum.map_join("\n", fn i ->
-        "paragraph #{i} " <> String.duplicate("with enough words to wrap at eighty columns ", 2)
+        "paragraph #{i} " <>
+          String.duplicate("with enough words to wrap at eighty columns ", 2) <>
+          if(i == 1 and edit > 0, do: String.duplicate("x", edit), else: "")
       end)
 
     %Element{
