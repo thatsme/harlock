@@ -3,10 +3,11 @@
 A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
-This roadmap is the working plan from v0.1 (current) to v1.0 (Hex-publishable,
-stable API). It's a living document — revise as we learn.
+This roadmap is the working plan through v1.0 (stable API). It's a living
+document — revised as the design settles. v0.4.1 is current and published
+on Hex.
 
-## Status snapshot (v0.1, current)
+## Status snapshot (v0.4.1, current)
 
 What works:
 
@@ -15,37 +16,49 @@ What works:
   `Keeper.terminate/2`. This is correct and load-bearing — don't regress it.
 - TEA loop with `init/1`, `update/2`, `view/1`, optional `subs/1`. Dirty-flag
   rendering, no periodic polling.
+- `Cmd` executor for supervised side effects: `Cmd.from/1`, `Cmd.batch/1`,
+  `Cmd.map/2`. Results arrive back through `update/2` as messages.
 - Focus traversal (`Tab` / `Shift-Tab`), focus traps for modals with
   automatic stash/restore on open/close.
-- Constraint layout solver: `:length`, `:percentage`, `:fill`. Deterministic
-  round-off absorption; graceful truncation on over-constraint (logs warning,
-  never crashes).
+- Focus-aware key routing (v0.4): the runtime dispatches navigation keys
+  straight to the focused `viewport` / `tabs` / `text_input` and delivers the
+  result as a message, so apps no longer hand-wire `apply_key` helpers.
+- Constraint layout solver: `:length`, `:percentage`, `:fill`, `:min`, `:max`.
+  Deterministic round-off absorption; graceful truncation on over-constraint
+  (logs warning, never crashes).
 - Cell-grid renderer with frame diffing. ANSI output via `Writer`.
+- Theming (v0.4): full token set (`:header`, `:focus`, `:selection`,
+  `:border`, `:primary`, `:accent`, `:muted`, `:error`), three built-in themes
+  (`:default` / `:dark` / `:high_contrast`), caps-aware colour downgrade
+  (truecolor → 256 → 16 → mono), and a table style cascade. `:default`-theme
+  output is pinned byte-for-byte against v0.3.0 by a golden-frame test.
 - Primitives: `text`, `vbox`, `hbox`, `spacer`, `box` (4 border styles +
   title + padding), `overlay` (5 anchors + focus trap), `table` / `list`
-  (row-id identity, single/multi selection, header).
-- Input parser handles CSI/SS3, bracketed paste, XTerm focus reporting.
+  (row-id identity, single/multi selection, header), `text_input`, `viewport`
+  (render-then-clip + scroll-into-view + cursor remap), `progress`, `spinner`,
+  `statusbar`, `keybar`, `tabs`.
+- Wide-grapheme width (CJK, emoji, ZWJ sequences, flags).
+- SIGWINCH resize via an `ioctl(TIOCGWINSZ)` NIF — terminal resize reflows.
+- Input parser handles CSI/SS3, bracketed paste, XTerm focus reporting,
+  modified arrows (`CSI 1;5A`), Home / End, and F-keys.
+- `:telemetry` events for frame render, input dispatch, cmd, and reader.
 - Headless `IO.Test` backend selectable via `backend: :test` for
-  deterministic tests without a TTY.
-- Examples: `counter`, `sysmon`. Smoke tests driven by `script(1)` (handles
-  BSD vs util-linux flag differences).
+  deterministic tests without a TTY, plus the `Harlock.Test` helper API.
+- Examples: `counter`, `sysmon`, `contacts`, `showcase`, `overview`. Smoke
+  tests driven by `script(1)` (handles BSD vs util-linux flag differences).
+- Packaging and quality gates: Hex package metadata, published hexdocs, CI,
+  Dialyzer, and Credo all wired in.
 
 What's stubbed / missing — the honest list:
 
-- `Cmd` executor: runtime ignores the `{model, cmd}` return tuple entirely.
-  No async work, no IO, no HTTP. **The single biggest hole.**
-- `Sub`: only `:interval` exists.
-- Layout: `:min` and `:max` constraints behave as `:length` (documented).
-- No SIGWINCH handling — terminal resize doesn't reflow.
-- No `text_input`, `viewport`, `progress`, `spinner`, `tabs`, `tree`,
-  `menu`/`select`, `keybar`/`statusbar`.
-- No mouse, no kitty keyboard protocol, no modified arrows (`CSI 1;5A`).
-- No wide-grapheme width (CJK, emoji). `String.length` ≠ visual columns.
-- `Style` not consistently cascaded (table headers hard-code `bold`,
-  focused box hard-codes `reverse`).
+- `Sub`: only `:interval` exists. Richer kinds (`pubsub` / `file` / `signal` /
+  `port`) are v0.5.
+- Mouse events: SGR parser only — runtime enabling is deferred.
+- Kitty keyboard protocol: parser only — runtime push is deferred.
+- No `tree`, `menu` / `select` widgets, and no multi-line `text_area`; all v0.5.
+- No `box(focus_proxy: id)` visual focus mirroring — v0.5.
 - No `row.ex` helper (only `column.ex`).
-- `mix.exs` has no package metadata. README is the `mix new` default.
-- No CI, no Dialyzer, no Credo wired in.
+- Windows native is unsupported (WSL works); the termios NIF targets POSIX.
 
 ## Guiding principles
 
@@ -508,13 +521,13 @@ styles its boxes' borders off `Focus.current()` by hand as a workaround
   stable-public vs internal-forever. Move stable parts to `@moduledoc`
   proper.
 
-## v1.0 — stable API, Hex release
+## v1.0 — stable API
 
 - Public API frozen per the `@moduledoc` decisions above.
 - All v0.6 hardening complete.
-- Hex publish, hexdocs.pm live.
 - Announcement post + Reddit/Elixir Forum thread.
-- Minimum supported: Elixir 1.17+, OTP 26+ (decide closer to date).
+- Minimum supported: Elixir 1.19+, OTP 26+ — matching the `elixir: "~> 1.19"`
+  requirement `mix.exs` already ships.
 
 ---
 

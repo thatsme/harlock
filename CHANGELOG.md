@@ -10,6 +10,35 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- The README's `examples/overview.exs` link used a relative path. `examples/`
+  is not an ex_doc extra, so while the link worked on GitHub it resolved to a
+  missing page on hexdocs.pm — a 404 on the end-to-end example that v0.4.0
+  added specifically to answer the top new-user question. It is now a full
+  GitHub URL, matching the convention `ROADMAP.md` already uses for its
+  `docs/` references.
+
+### Changed (docs only — no API or runtime change)
+
+- `ROADMAP.md`'s intro and status snapshot still described v0.1. They listed
+  the `Cmd` executor as "the single biggest hole", reported `text_input`,
+  `viewport`, `tabs` and the rest of the widget set as absent, claimed `:min`
+  and `:max` behaved as `:length` (contradicting the v0.3 section of the same
+  file), and stated that `mix.exs` had no package metadata and that CI,
+  Dialyzer, and Credo were unwired. All of that shipped across v0.2–v0.4.
+  Because `ROADMAP.md` ships in the hex tarball and renders as a hexdocs
+  extra, the published v0.4.1 docs described a four-release-old library as an
+  unfinished skeleton. The snapshot now reflects v0.4.1.
+- The v1.0 milestone no longer lists "Hex publish, hexdocs.pm live" as a
+  deliverable — that has been true since v0.2.0 — and its heading drops the
+  now-inaccurate "Hex release".
+- README showcase screenshot references the `v0.4.1` tag instead of `v0.4.0`.
+- The v1.0 minimum-supported target moves to Elixir 1.19+ / OTP 26+, resolving
+  a contradiction: the roadmap named Elixir 1.17+ as a still-open question
+  while every Hex release since v0.2.0 has shipped `elixir: "~> 1.19"`, which
+  already makes 1.17 and 1.18 uninstallable.
+
 ## [0.4.1] — 2026-05-18
 
 Patch release. One test-stability bug that affects downstream

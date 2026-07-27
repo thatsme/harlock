@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.4.0/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.4.1/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -38,7 +38,7 @@ Harlock.run(Counter)
 A more realistic app wires focus traversal, a selectable table, a
 scrollable viewport, and a side-effect via `Cmd` — all together. Tab
 moves focus between the two boxes; the focused widget owns its keys.
-Full source: [`examples/overview.exs`](examples/overview.exs).
+Full source: [`examples/overview.exs`](https://github.com/thatsme/harlock/blob/main/examples/overview.exs).
 
 ```elixir
 defmodule Overview do
