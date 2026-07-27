@@ -12,6 +12,32 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **`Sub.source/3` — subscribe to anything that delivers Erlang messages.** The
+  subscribe function runs *inside* the subscription's own process, and every
+  message that process receives is forwarded to `update/2`, optionally through a
+  transform.
+
+  This is the generic form of the v0.6 seam, and it is why Harlock ships no
+  `Sub.pubsub`. `Phoenix.PubSub` delivers to whichever process called
+  `subscribe`, which is precisely what this arranges:
+
+      Sub.source({:pubsub, "orders"}, fn ->
+        Phoenix.PubSub.subscribe(MyApp.PubSub, "orders")
+      end)
+
+  A named `Sub.pubsub` would have added a `phoenix_pubsub` dependency to a
+  terminal UI library in order to receive messages the seam already handles. The
+  same shape covers `:global` groups, registries, `GenStage` consumers, and
+  anything else that sends to its subscriber — none of which Harlock needs to
+  know about. `Sub.pubsub` is dropped from the roadmap rather than deferred.
+
+  Scoped honestly: there is no lifecycle beyond the process. `subscribe` runs
+  once, and stopping kills the process, which unsubscribes anything scoped to a
+  pid — true for `Phoenix.PubSub` and monitors, not for anything needing an
+  explicit teardown call. `telemetry/2` and `logger/1` remain purpose-built
+  because global registrations *do* need removing. Messages are also forwarded as
+  fast as they arrive, with no buffering or sampling.
+
 - **`table` accepts a window function** — `rows: fn offset, limit -> rows` as an
   alternative to an enumerable, so a table over a query, a large file, or an
   unbounded stream is asked only for what fits on screen. Nothing calls

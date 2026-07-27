@@ -697,18 +697,40 @@ Additive, and each follows the seam v0.6 established — a linked process owning
 the registration, a handler that only builds and sends, detach on the way out.
 No new design work, which is why they did not gate v0.6.0.
 
-- `Sub.pubsub(pubsub_mod, topic, transform_fn)` — subscribes via
-  `Phoenix.PubSub`. Deferred from v0.4 because R2 took the cycle, then from v0.6
-  because telemetry proved the seam against a harder case.
-- `Sub.file(path, opts)` — watch via `:fs` if available, polling fallback.
-- `Sub.signal(:sigusr1, msg)` — wraps `:os.set_signal/2`. The NIF already
-  handles SIGWINCH separately; this is for app-level signals.
+- ~~`Sub.pubsub(pubsub_mod, topic, transform_fn)`~~ — **dropped, not deferred.**
+  `Sub.source/3` covers it: Phoenix.PubSub delivers to whichever process called
+  `subscribe`, and `source/3` runs the caller's function inside the
+  subscription's own process for exactly that reason.
+
+      Sub.source({:pubsub, "orders"}, fn ->
+        Phoenix.PubSub.subscribe(MyApp.PubSub, "orders")
+      end)
+
+  A named constructor would have added a `phoenix_pubsub` dependency to a
+  terminal UI library in order to deliver messages the seam already receives —
+  the case principle 7 exists for. The same shape covers `:global` groups,
+  registries, `GenStage` consumers, and anything else that sends to its
+  subscriber.
+
+- `Sub.file(path, opts)` — watch via `:fs` if available, polling fallback. Stays
+  first-party: the polling fallback and change-detection are real logic, not a
+  seam.
 - `Sub.port(cmd, args)` — long-running external process, stdout lines as events.
+  Also stays: port lifecycle, partial-line buffering and exit handling are real
+  logic.
+- `Sub.signal(:sigusr1, msg)` — **blocked on a verification, not on effort.**
+  `Keeper`'s moduledoc claims `:os.set_signal(:sigwinch, :handle)` "routes
+  `{:signal, :sigwinch}` messages to the most recent caller". That is the
+  mechanism an app-level signal sub would build on, and it has not been checked
+  against OTP's actual delivery path — signals are documented as going to
+  `erl_signal_server`, which is global. Until someone confirms how Keeper really
+  receives them on a POSIX host, building a second signal consumer means
+  building on an unverified comment.
 
 Their relative order should be decided by whichever real app needs one first,
 not guessed here. That is the mistake the v0.6 list originally made:
 `Sub.pubsub` led it because it was written first, not because anything needed
-it.
+it — and it turned out not to be needed at all.
 
 ### Windowed aggregation for metrics
 

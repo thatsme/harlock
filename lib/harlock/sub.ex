@@ -37,6 +37,7 @@ defmodule Harlock.Sub do
           {:interval, pos_integer(), any()}
           | {:telemetry, [[atom()]], function()}
           | {:logger, atom(), [atom()] | :all, function() | nil}
+          | {:source, any(), (-> any()), (any() -> any()) | nil}
 
   @doc """
   Send `msg` to the runtime every `ms` milliseconds. The first fire happens
@@ -148,7 +149,54 @@ defmodule Harlock.Sub do
     }
   end
 
+  @doc """
+  Subscribe to anything that delivers Erlang messages.
+
+  `subscribe` runs **inside** the subscription's own process and should register
+  interest; every message that process then receives is forwarded to `update/2`,
+  through `transform` if one is given. `key` identifies the subscription for
+  diffing, so returning the same key twice starts one process.
+
+  This is the generic form of the seam, and it is why Harlock ships no
+  `Sub.pubsub`. Phoenix.PubSub delivers to whichever process called `subscribe`,
+  which is precisely what this arranges:
+
+      Sub.source({:pubsub, "orders"}, fn ->
+        Phoenix.PubSub.subscribe(MyApp.PubSub, "orders")
+      end)
+
+  A named `Sub.pubsub` would mean a terminal UI library depending on a web
+  framework's pubsub to deliver messages it already knows how to receive. The
+  same shape covers a `:global` group, a registry, a `GenStage` consumer, or any
+  library that sends to its subscriber — none of which Harlock needs to know
+  about.
+
+  ## What it does not do
+
+  It has no lifecycle beyond the process. `subscribe` runs once on start, and the
+  process is killed on stop, which unsubscribes anything scoped to a pid — true
+  for Phoenix.PubSub and for monitors, not true for something requiring an
+  explicit teardown call. Trap exits inside `subscribe` and clean up yourself if
+  you need that, or use a purpose-built kind: `telemetry/2` and `logger/1` exist
+  precisely because global registrations *do* need removing.
+
+  Messages are forwarded as received. A source that sends high-frequency traffic
+  will fill the runtime's mailbox as fast as it arrives — there is no buffering
+  or sampling here, and adding some is the app's call.
+  """
+  @spec source(any(), (-> any()), (any() -> any()) | nil) :: t()
+  def source(key, subscribe, transform \\ nil) when is_function(subscribe, 0) do
+    {:source, key, subscribe, transform}
+  end
+
   @doc false
+  def start({:source, _key, subscribe, transform}, target) do
+    spawn_link(fn ->
+      subscribe.()
+      forward_loop(target, transform)
+    end)
+  end
+
   def start({:interval, ms, msg}, target) do
     spawn_link(fn -> interval_loop(ms, msg, target) end)
   end
@@ -160,6 +208,17 @@ defmodule Harlock.Sub do
   def start({:logger, level, metadata, transform}, target) do
     LoggerSub.start_link(level, metadata, transform, target)
   end
+
+  defp forward_loop(target, transform) do
+    receive do
+      message ->
+        send(target, {:harlock_event, apply_transform(transform, message)})
+        forward_loop(target, transform)
+    end
+  end
+
+  defp apply_transform(nil, message), do: message
+  defp apply_transform(fun, message) when is_function(fun, 1), do: fun.(message)
 
   defp interval_loop(ms, msg, target) do
     next = System.monotonic_time(:millisecond) + ms
