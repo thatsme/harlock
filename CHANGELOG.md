@@ -124,6 +124,25 @@ changes are called out in the relevant release notes.
   know to fire a `Cmd`. Documented in `Harlock.App`'s moduledoc alongside the
   other four, since a 1.0 freeze locks it.
 
+### Fixed
+
+- **The NIF Makefile confused the build host with the build target**, which broke
+  exactly the cross-compilation case that matters for embedded targets. `uname -s`
+  describes the host, so building from macOS to ARM Linux — the common Nerves
+  setup — appended Mach-O linker flags (`-undefined dynamic_lookup`,
+  `-flat_namespace`) to a Linux link. Those branches are now gated on
+  `CROSSCOMPILE`, which cross toolchains export.
+
+  Two related hardenings in the same file: `-fPIC` is appended rather than living
+  in the `?=` default, so a caller-supplied `CFLAGS` can no longer drop the one
+  flag a shared object cannot link without; and the `ERTS_INCLUDE_DIR` fallback
+  now *errors* under `CROSSCOMPILE` instead of quietly shelling out to the host's
+  `erl`, which would have produced a NIF linked against the wrong ERTS and failed
+  at load time on the device rather than at build time.
+
+  The C source itself needed nothing — only POSIX headers, no platform
+  conditionals.
+
 ### Changed
 
 - The renderer gained a **deferred-draw layer** for content that must cover
