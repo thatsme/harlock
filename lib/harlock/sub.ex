@@ -74,6 +74,16 @@ defmodule Harlock.Sub do
   and the runtime pid, so two apps watching the same event do not unsubscribe
   each other. The subscription detaches when the runtime stops it or when the
   runtime dies, since the owning process is linked.
+
+  ## Attachment happens on the first render
+
+  `subs/1` is consulted while rendering, so a push-shaped subscription is not
+  listening the instant `Harlock.run/2` is called — anything emitted before that
+  first render is not delivered. This rarely matters for a dashboard watching a
+  running system, but it does mean a test that emits immediately after starting
+  an app is racing the attach, and it makes this the wrong tool for capturing
+  events from an app's own startup. `interval/2` is unaffected: it starts its own
+  clock rather than waiting on an external emitter.
   """
   @spec telemetry([atom()] | [[atom()]], function() | nil) :: t()
   def telemetry(events, transform \\ nil) do

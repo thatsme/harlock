@@ -43,9 +43,19 @@ defmodule Harlock.Sub.TelemetryTest do
     |> Enum.any?(&match?(%{id: {Harlock.Sub.Telemetry, _, ^runtime_pid}}, &1))
   end
 
+  # Subscriptions attach during the first render, and start_app/3 returns before
+  # that render has necessarily finished. Emitting immediately after therefore
+  # races the attach, and the event is simply lost — so any test that emits has
+  # to wait for the handler to exist first.
+  defp await_attached(events, runtime_pid) do
+    assert eventually(fn -> attached?(events, runtime_pid) end),
+           "handler for #{inspect(events)} never attached"
+  end
+
   describe "delivery" do
     test "an emitted event reaches update/2 through the transform" do
-      start(Sub.telemetry([:demo, :one], &{:tagged, &1.value}))
+      {_h, runtime} = start(Sub.telemetry([:demo, :one], &{:tagged, &1.value}))
+      await_attached([:demo, :one], runtime)
 
       :telemetry.execute([:demo, :one], %{value: 42}, %{})
 
@@ -53,12 +63,17 @@ defmodule Harlock.Sub.TelemetryTest do
     end
 
     test "a 3-arity transform sees the event name and metadata" do
-      start(
-        Sub.telemetry(
-          [:demo, :three],
-          fn event, measurements, meta -> {:raw, List.last(event), {measurements.n, meta.who}} end
+      {_h, runtime} =
+        start(
+          Sub.telemetry(
+            [:demo, :three],
+            fn event, measurements, meta ->
+              {:raw, List.last(event), {measurements.n, meta.who}}
+            end
+          )
         )
-      )
+
+      await_attached([:demo, :three], runtime)
 
       :telemetry.execute([:demo, :three], %{n: 7}, %{who: :worker})
 
@@ -66,12 +81,16 @@ defmodule Harlock.Sub.TelemetryTest do
     end
 
     test "several event names can share one subscription" do
-      start(
-        Sub.telemetry(
-          [[:demo, :a], [:demo, :b]],
-          fn event, _m, _md -> {:raw, List.last(event), nil} end
+      {_h, runtime} =
+        start(
+          Sub.telemetry(
+            [[:demo, :a], [:demo, :b]],
+            fn event, _m, _md -> {:raw, List.last(event), nil} end
+          )
         )
-      )
+
+      await_attached([:demo, :a], runtime)
+      await_attached([:demo, :b], runtime)
 
       :telemetry.execute([:demo, :a], %{}, %{})
       :telemetry.execute([:demo, :b], %{}, %{})
@@ -81,7 +100,8 @@ defmodule Harlock.Sub.TelemetryTest do
     end
 
     test "an unsubscribed event is not delivered" do
-      start(Sub.telemetry([:demo, :wanted], &{:tagged, &1.value}))
+      {_h, runtime} = start(Sub.telemetry([:demo, :wanted], &{:tagged, &1.value}))
+      await_attached([:demo, :wanted], runtime)
 
       :telemetry.execute([:demo, :unwanted], %{value: 1}, %{})
 
@@ -93,13 +113,13 @@ defmodule Harlock.Sub.TelemetryTest do
     test "the handler is attached while the app runs" do
       {_h, runtime} = start(Sub.telemetry([:demo, :live], &{:tagged, &1.value}))
 
-      # subs/1 runs on render, so the handler exists by the time the app is up
-      assert attached?([:demo, :live], runtime)
+      # attaches during the first render, which start_app/3 does not wait for
+      await_attached([:demo, :live], runtime)
     end
 
     test "stopping the app detaches the handler" do
       {h, runtime} = start(Sub.telemetry([:demo, :cleanup], &{:tagged, &1.value}))
-      assert attached?([:demo, :cleanup], runtime)
+      await_attached([:demo, :cleanup], runtime)
 
       Harlock.Test.stop(h)
 
@@ -114,8 +134,8 @@ defmodule Harlock.Sub.TelemetryTest do
       {a, a_pid} = start(Sub.telemetry([:demo, :shared], &{:tagged, &1.value}))
       {_b, b_pid} = start(Sub.telemetry([:demo, :shared], &{:tagged, &1.value}))
 
-      assert attached?([:demo, :shared], a_pid)
-      assert attached?([:demo, :shared], b_pid)
+      await_attached([:demo, :shared], a_pid)
+      await_attached([:demo, :shared], b_pid)
 
       Harlock.Test.stop(a)
 
@@ -131,6 +151,7 @@ defmodule Harlock.Sub.TelemetryTest do
   describe "spec identity" do
     test "a stable transform does not churn the subscription across renders" do
       {_h, runtime} = start(Sub.telemetry([:demo, :stable], &{:tagged, &1.value}))
+      await_attached([:demo, :stable], runtime)
 
       owner = runtime |> :sys.get_state() |> Map.fetch!(:subs) |> Map.values() |> hd()
 

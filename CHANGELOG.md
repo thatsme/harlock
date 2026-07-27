@@ -48,6 +48,14 @@ changes are called out in the relevant release notes.
   Handler ids include the runtime pid, so two apps watching the same event do not
   silently unsubscribe each other.
 
+  Documented consequence of `subs/1` being consulted while rendering: a
+  push-shaped subscription is not listening until the first render completes, so
+  events emitted before that are not delivered. It rarely matters for a dashboard
+  watching a running system, but it makes this the wrong tool for capturing an
+  app's own startup events — and it means a test that emits immediately after
+  starting an app is racing the attach. `interval/2` is unaffected; it starts its
+  own clock.
+
 - `Harlock.Sub`'s moduledoc now documents that specs are compared **structurally**,
   and the consequence for subs carrying functions: a closure built at a fixed
   code location with equal captures compares equal, so it does not churn — but a
