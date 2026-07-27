@@ -885,8 +885,19 @@ defmodule Harlock.Element.Renderer do
     |> Enum.reduce(frame, fn {child, rect}, acc -> render_element(child, rect, acc, focused) end)
   end
 
+  # :focus_proxy mirrors another element's focus for styling only, and is the
+  # general mechanism rather than a box-specific one — anything that takes focus
+  # styling honours it. With R2 the :focusable id lives on the interactive widget,
+  # while the wrapping box is what a user actually looks at, so without this the
+  # border goes visually dead exactly when its contents have focus.
+  #
+  # It deliberately does not appear in focus traversal: Harlock.Element.Focusables
+  # collects on :focusable, so a proxy is invisible to Tab by construction rather
+  # than by being filtered out.
   defp maybe_focus_style(style, %Element{opts: opts}, focused) do
-    case {Keyword.get(opts, :focusable), focused} do
+    watched = Keyword.get(opts, :focusable) || Keyword.get(opts, :focus_proxy)
+
+    case {watched, focused} do
       {nil, _} ->
         style
 

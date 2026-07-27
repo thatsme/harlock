@@ -60,8 +60,6 @@ defmodule Overview do
   defp update_tasks(_, m), do: m
 
   def view(m) do
-    here = Focus.current()
-
     vbox(
       constraints: [fill: 1, length: 1],
       children: [
@@ -71,7 +69,8 @@ defmodule Overview do
             box(
               title: "Tasks",
               border: :rounded,
-              border_style: border_style(here == :tasks),
+              border_style: [dim: true],
+              focus_style: [fg: :cyan, bold: true],
               focusable: :tasks,
               child:
                 table(
@@ -88,7 +87,12 @@ defmodule Overview do
             box(
               title: "Log",
               border: :rounded,
-              border_style: border_style(here == :log),
+              border_style: [dim: true],
+              focus_style: [fg: :cyan, bold: true],
+              # The :log id lives on the viewport inside, because that is what
+              # has to receive the scroll keys. focus_proxy: lets the box light
+              # up with it without joining focus traversal.
+              focus_proxy: :log,
               child:
                 viewport(
                   focusable: :log,
@@ -108,13 +112,6 @@ defmodule Overview do
     )
   end
 
-  # The :log focus id lives on the inner viewport (so the runtime can
-  # auto-route scroll keys to it), which leaves the wrapping box unable
-  # to auto-highlight when focused. Until the v0.5 box(focus_proxy:)
-  # mechanism ships, the example reflects focus by styling the border
-  # itself off Focus.current().
-  defp border_style(true), do: [fg: :cyan, bold: true]
-  defp border_style(false), do: [dim: true]
 end
 
 case System.argv() do

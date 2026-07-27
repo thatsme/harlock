@@ -56,6 +56,24 @@ changes are called out in the relevant release notes.
   starting an app is racing the attach. `interval/2` is unaffected; it starts its
   own clock.
 
+- **`box(focus_proxy: :child_id)` — mirror a child's focus for styling only.**
+  With focus-aware routing, `:focusable` belongs on the interactive widget
+  because that is what must receive the keys — but the box is what a user looks
+  at, so its border went visually dead exactly when its contents had focus.
+
+  The box does not become focusable. Focus traversal collects on `:focusable`
+  alone, so a proxy is invisible to Tab by construction rather than by being
+  filtered out afterwards, and `Harlock.Focus.current/0` still reports the child.
+  `:focusable` wins if both are set.
+
+  Implemented in the shared focus-styling path rather than as a box special case,
+  so any element that takes focus styling honours it; `box/1` is where it
+  matters and where it is documented.
+
+  `examples/overview.exs` drops the hand-rolled `border_style/1` helper it used
+  to work around this — that workaround was cited in its own comment, in the
+  roadmap, and in the v0.4 R2 review, and is now gone.
+
 - **`examples/dashboard.exs`** — both subscriptions and the sparkline on one
   screen, so v0.6's seam ships with something runnable rather than only
   documented. `Sub.telemetry` feeds job durations to a `sparkline`, `Sub.logger`

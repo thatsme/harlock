@@ -63,7 +63,6 @@ What's stubbed / missing — the honest list:
   `port`) all wait on the v0.6 event-source seam.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
-- No `box(focus_proxy: id)` visual focus mirroring — v0.6.
 - `table` draws only the visible rows but materialises the whole enumerable to
   find them, so a queryable-backed table needs windowed data access first.
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
@@ -664,16 +663,23 @@ not guessed here. That was the mistake this section corrects: `Sub.pubsub` led
 the previous version of this list because it was written first, not because
 anything needed it.
 
-### `box(focus_proxy: :child_id)`
+### `box(focus_proxy: :child_id)` ✓
 
 Polish for the R2 visual story. With R2 default-on, `:focusable`
 lives on the interactive widget (the viewport, the tabs, the text
 input) — but the wrapping `box` is what users *see*. The
 `focus_proxy:` opt lets a box mirror a named child's focus state for
 visual highlighting only (border style, title style) without itself
-participating in focus traversal. Until this lands, `examples/overview.exs`
-styles its boxes' borders off `Focus.current()` by hand as a workaround
-(see the `border_style/1` helper there).
+participating in focus traversal.
+
+Shipped in the shared focus-styling path rather than as a box special case, so
+any element taking focus styling honours it. Not participating in traversal
+needed no work: focusable collection keys on `:focusable`, so a proxy is
+invisible to Tab by construction rather than by being filtered out afterwards.
+
+`examples/overview.exs` has dropped the `border_style/1` helper it used as a
+stand-in — a workaround referenced from its own comment, this section, and the
+v0.4 R2 review.
 
 ---
 

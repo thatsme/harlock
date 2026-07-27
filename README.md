@@ -223,7 +223,7 @@ Anything `@moduledoc false` is internal and free to change.
 | Undo / redo (`Harlock.UndoStack`, app-held) | ✓ (v0.5) |
 | Push-shaped `Sub` kinds (`telemetry` / `logger` / `pubsub` / `file` / `signal` / `port`) | v0.6 |
 | `sparkline` widget | ✓ (unreleased) |
-| `box(focus_proxy: id)` (visual focus mirroring) | v0.6 |
+| `box(focus_proxy: id)` (visual focus mirroring) | ✓ (unreleased) |
 
 See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 

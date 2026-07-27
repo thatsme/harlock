@@ -90,11 +90,35 @@ defmodule Harlock.Elements do
     * `:padding` — non-negative integer (uniform), `{v, h}`, or `{top, right, bottom, left}`
     * `:focusable`, `:focus_style` — when focused, the focus style replaces
       the border style (the child is left alone)
+    * `:focus_proxy` — mirror another element's focus for styling only
 
   For multiple children, wrap them in `vbox/1` or `hbox/1` and pass the
   result as `:child`. The box reserves one cell on each side for the border
   (unless `:border` is `:none`); when the region is smaller than that the
   border is skipped and the child takes the full region.
+
+  ## `:focus_proxy`
+
+  With focus-aware key routing, `:focusable` belongs on the interactive widget —
+  the viewport, the tabs, the text input — because that is what has to receive
+  the keys. But the box is what a user looks at, so its border goes visually dead
+  exactly when its contents have focus.
+
+  `focus_proxy:` names a child id to watch, and applies the focus style when
+  *that* id is focused:
+
+      box(
+        title: "Log",
+        focus_proxy: :log,
+        child: viewport(focusable: :log, offset: m.offset, content_height: n, child: body)
+      )
+
+  The box does not become focusable. Focus traversal collects on `:focusable`
+  alone, so a proxy is invisible to Tab by construction rather than by being
+  filtered out afterwards — and `Harlock.Focus.current/0` still reports the child.
+
+  Setting both `:focusable` and `:focus_proxy` on one element is not useful;
+  `:focusable` wins.
   """
   @spec box(keyword()) :: Element.t()
   def box(opts) when is_list(opts) do
