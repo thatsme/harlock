@@ -1,0 +1,12 @@
+# Normalise line endings so a Windows checkout matches CI.
+#
+# Without this, `core.autocrlf` leaves CRLF in the working tree while the repo
+# stores LF. Git hides the difference, but tools that read files directly do
+# not: `mix credo --strict` fails locally on "windows line endings" while the
+# same commit passes on Linux CI. Forcing eol=lf keeps the local gate honest.
+* text=auto eol=lf
+
+# Binary assets must never be touched.
+*.jpg binary
+*.png binary
+*.gif binary

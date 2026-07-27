@@ -10,7 +10,7 @@ defmodule Harlock.MixProject do
       version: @version,
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
-      compilers: [:elixir_make] ++ Mix.compilers(),
+      compilers: nif_compilers() ++ Mix.compilers(),
       make_targets: ["all"],
       make_clean: ["clean"],
       description: description(),
@@ -27,6 +27,26 @@ defmodule Harlock.MixProject do
     [
       extra_applications: [:logger]
     ]
+  end
+
+  @doc """
+  Whether the termios NIF build is skipped for this host.
+
+  The NIF is POSIX-only and needs a C toolchain. Skipping it lets the
+  pure-Elixir majority of the library compile and its tests run on a host
+  without one — notably Windows, where `/dev/tty` and termios don't exist and
+  only the `:test` backend is meaningful. `Harlock.Terminal.Termios` already
+  degrades to a logged warning when the NIF is absent, so the skip surfaces as
+  "terminal control unavailable" rather than a compile failure.
+
+  Set `HARLOCK_SKIP_NIF=1` to force the skip on a POSIX host too.
+  """
+  def skip_nif? do
+    System.get_env("HARLOCK_SKIP_NIF") in ["1", "true"] or match?({:win32, _}, :os.type())
+  end
+
+  defp nif_compilers do
+    if skip_nif?(), do: [], else: [:elixir_make]
   end
 
   defp description do

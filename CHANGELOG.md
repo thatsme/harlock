@@ -10,7 +10,66 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Readline-style editing in `Harlock.TextBuffer`.** Word motions
+  (`move_word_left/2`, `move_word_right/2`), kills that return the removed
+  text (`kill_word_backward/2`, `kill_word_forward/2`, `kill_to_end/2`,
+  `kill_to_bol/2`), and `yank/3`. A word is a run of alphanumeric graphemes;
+  everything else separates. All of it operates on grapheme indices, so CJK
+  and combining sequences behave.
+
+  `apply_key/3` gains the bindings these imply: `Alt-b` / `Alt-f` and
+  `Ctrl-←` / `Ctrl-→` for word motion, `Ctrl-a` / `Ctrl-e` for line motion,
+  `Ctrl-w` / `Alt-d` / `Ctrl-k` / `Ctrl-u` for kills, `Ctrl-d` for delete
+  forward. Every one of these already arrives through the legacy parser — no
+  kitty keyboard protocol needed.
+
+- **`Harlock.TextBuffer.apply_key/4`** threads a kill ring so `Ctrl-y` works,
+  returning `{:edit, value, cursor, kill_ring}`. The ring is capped at 16
+  entries and a kill that removes nothing leaves it untouched. `apply_key/3`
+  is unchanged in shape and threads an empty ring, so R2 auto-routing keeps
+  the existing `{:harlock_edit, id, {value, cursor}}` contract exactly.
+  Undo/redo is deliberately not included: the app model owns `:value` and can
+  rewrite it without this module seeing it, so a buffer-held history would
+  silently desync.
+
+### Changed
+
+- **A focused `text_input` now consumes the editing keys above.** Previously
+  any `ctrl`- or `alt`-modified character was `:noop` and fell through to
+  `update/2`; an app binding `Ctrl-k` globally will no longer see it while an
+  input has focus. Set `handle_keys: false` on the element to keep them. Keys
+  that leave value and cursor unchanged still fall through, so `Ctrl-a` on an
+  empty input reaches `update/2` as before.
+
+- **The termios NIF build is now skipped on hosts that can't support it** —
+  `:win32`, or any host with `HARLOCK_SKIP_NIF=1`. `mix.exs` selects the
+  `:elixir_make` compiler through `Harlock.MixProject.skip_nif?/0` instead of
+  running it unconditionally. `Harlock.Terminal.Termios` already degraded to a
+  logged warning when the NIF was absent, so the skip surfaces as "terminal
+  control unavailable" rather than a compile failure. This makes the
+  pure-Elixir majority of the library — renderer, layout, widgets, parser, and
+  the `:test` backend — compile and test on a host without a C toolchain.
+
+  `test_helper.exs` probes whether the NIF actually loaded and excludes
+  `[:nif]`-tagged tests when it hasn't. Where the NIF *was* expected to build,
+  a missing NIF raises instead of quietly dropping coverage, so a broken
+  toolchain on CI can't turn into a green run.
+
+- Telemetry duration assertions accept `0`. Durations are `:native` units from
+  `:telemetry.span/3`, and a host with a coarse monotonic clock legitimately
+  reports `0` when work finishes inside one tick — asserting `> 0` tested the
+  host clock rather than the measurement.
+
 ### Fixed
+
+- **Added `.gitattributes` with `* text=auto eol=lf`.** With `core.autocrlf`
+  and no attributes file, a Windows checkout left CRLF in the working tree
+  while the repo stored LF. Git hid the difference, but tools reading files
+  directly did not: `mix credo --strict` reported 29 "windows line endings"
+  issues locally on a commit that passed CI. Binary assets are marked so they
+  are never touched.
 
 - The README's `examples/overview.exs` link used a relative path. `examples/`
   is not an ex_doc extra, so while the link worked on GitHub it resolved to a

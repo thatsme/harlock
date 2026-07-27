@@ -49,7 +49,11 @@ defmodule Harlock.TelemetryTest do
     h = Harlock.Test.start_app(TickApp, nil, rows: 5, cols: 20)
 
     assert_received {:telemetry, [:harlock, :frame, :render, :stop], measurements, metadata}
-    assert measurements.duration > 0
+    # Durations are :native units from :telemetry.span/3. A host with a coarse
+    # monotonic clock (Windows) legitimately reports 0 when the work finishes
+    # inside one tick, so the contract is a non-negative integer — asserting
+    # > 0 would be asserting the host clock is fast, not that we measured.
+    assert is_integer(measurements.duration) and measurements.duration >= 0
     assert metadata.rows == 5
     assert metadata.cols == 20
     assert metadata.app == TickApp
@@ -69,7 +73,11 @@ defmodule Harlock.TelemetryTest do
     assert_receive {:telemetry, [:harlock, :input, :dispatch, :stop], measurements, metadata},
                    500
 
-    assert measurements.duration > 0
+    # Durations are :native units from :telemetry.span/3. A host with a coarse
+    # monotonic clock (Windows) legitimately reports 0 when the work finishes
+    # inside one tick, so the contract is a non-negative integer — asserting
+    # > 0 would be asserting the host clock is fast, not that we measured.
+    assert is_integer(measurements.duration) and measurements.duration >= 0
     assert metadata.event == {:key, {:char, ?+}, []}
     assert metadata.app == TickApp
 
@@ -84,7 +92,11 @@ defmodule Harlock.TelemetryTest do
 
     assert_receive {:telemetry, [:harlock, :cmd, :dispatch], %{count: 1}, %{kind: :fun}}, 500
     assert_receive {:telemetry, [:harlock, :cmd, :complete], measurements, metadata}, 500
-    assert measurements.duration > 0
+    # Durations are :native units from :telemetry.span/3. A host with a coarse
+    # monotonic clock (Windows) legitimately reports 0 when the work finishes
+    # inside one tick, so the contract is a non-negative integer — asserting
+    # > 0 would be asserting the host clock is fast, not that we measured.
+    assert is_integer(measurements.duration) and measurements.duration >= 0
     assert metadata.status == :ok
 
     Harlock.Test.stop(h)

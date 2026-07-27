@@ -1,6 +1,10 @@
 defmodule Harlock.Terminal.TermiosTest do
   use ExUnit.Case, async: true
 
+  # Needs the built NIF; skipped on hosts without a C toolchain. See
+  # test_helper.exs.
+  @moduletag :nif
+
   alias Harlock.Terminal.Termios
 
   describe "open/0 in non-tty environments" do
