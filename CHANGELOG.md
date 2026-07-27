@@ -10,6 +10,36 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **`Harlock.Bench` — frame timing for element trees.** Measures both halves of a
+  frame's cost: turning a tree into a `Frame`, and diffing two frames into ANSI.
+  Five canonical scenarios (`text_rows`, `nested_boxes`, `table_rows`,
+  `tree_expanded`, `textarea_wrapped`) make a baseline reproducible.
+
+  Reports percentiles rather than a mean, because a frame budget is about the
+  slow frames — a p99 that misses 60 Hz is visible stutter even when the mean
+  looks fine, and means hide the GC pauses percentiles expose.
+
+  Public rather than dev-only, since the more useful question is usually about
+  your own view: `Harlock.Bench.render(my_view(model), rows: 50, cols: 120)`.
+
+  Three findings from the first baseline, each previously an assumption:
+
+  A **wrapped textarea already misses a 60 Hz budget** — 19 148µs at p50 against
+  ~16 700µs available — and the cost is linear in content (n=50 → 4 198µs,
+  n=800 → 56 115µs), confirming that rewrapping the whole value on every render
+  is the cause rather than a suspect.
+
+  An **unchanged frame is not free**: diffing two identical 200×80 frames costs
+  about as much as rendering a 200-row view, because the comparison walks all
+  16 000 cells with no early-out. Not a live cost while the runtime only diffs
+  when dirty, but it bounds how cheap a redraw can be.
+
+  The **layout solver is not the bottleneck** — 24 levels of nested boxes cost
+  less than half a wrapped textarea — which redirects optimisation away from
+  where it might plausibly have gone first.
+
 ## [0.6.0] — 2026-07-27
 
 The event-source seam. `Sub` had one kind, `:interval`, and it is a *timer* — the

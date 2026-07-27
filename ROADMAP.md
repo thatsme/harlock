@@ -718,8 +718,39 @@ incrementally from a running total.
 - **Property-based tests** for layout solver (StreamData): for any list of
   constraints summing to ≥ 0, output sizes are non-negative and sum to
   total. For any frame diff: replay produces equivalent frame.
-- **Benchmarks**: `Harlock.Bench` — render a 200×80 frame with N elements,
-  measure µs per frame. Establish baseline, prevent regressions.
+- **Benchmarks** ✓ — `Harlock.Bench` measures render and diff over five
+  canonical scenarios, reporting percentiles rather than a mean because a frame
+  budget is about the slow frames. Public rather than dev-only, so app authors
+  can measure their own views.
+
+  First baseline, 200×80, 100 samples, one dev machine — useful for comparison
+  against itself, not as an absolute:
+
+  | scenario | p50 | p99 |
+  |---|---|---|
+  | `text_rows` | 3 481µs | 4 403µs |
+  | `nested_boxes` | 8 499µs | 10 035µs |
+  | `table_rows` | 11 878µs | 12 697µs |
+  | `tree_expanded` | 12 083µs | 13 312µs |
+  | `textarea_wrapped` | 19 148µs | 22 425µs |
+
+  Three things this establishes, all of which were assumptions before:
+
+  **A wrapped textarea already misses a 60 Hz budget.** ~16 700µs per frame is
+  the target and p50 is 19 148µs. Scaling confirms the cause is rewrapping the
+  whole value: n=50 → 4 198µs, n=200 → 20 275µs, n=800 → 56 115µs, roughly
+  linear in content. That is the number the incremental-rewrap item below now
+  has to beat, rather than a suspicion.
+
+  **An unchanged frame is not free.** Diffing two identical 200×80 frames costs
+  3 072µs at p50 — comparable to rendering `text_rows` outright, because the
+  comparison walks all 16 000 cells with no early-out. The dirty-flag runtime
+  only diffs when something changed, so this is not currently a live cost, but
+  it caps how cheap a redraw can ever be.
+
+  **The layout solver is not the bottleneck.** 24 levels of nested boxes cost
+  less than half a wrapped textarea, which redirects optimisation effort away
+  from where it might otherwise have gone first.
 - **Incremental rewrap for `textarea`**, behind those benchmarks. Every motion
   and every render calls `visual_rows/2`, which rewraps the whole value — fine
   at a few hundred lines, poor at tens of thousands. The fix is to cache the
