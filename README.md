@@ -221,7 +221,8 @@ Anything `@moduledoc false` is internal and free to change.
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
 | Goal-column memory for `textarea` vertical motion | ✓ (v0.4.3) |
 | Undo / redo (`Harlock.UndoStack`, app-held) | ✓ (v0.5) |
-| Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.6 |
+| Push-shaped `Sub` kinds (`telemetry` / `logger` / `pubsub` / `file` / `signal` / `port`) | v0.6 |
+| `sparkline` widget | v0.6 |
 | `box(focus_proxy: id)` (visual focus mirroring) | v0.6 |
 
 See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.

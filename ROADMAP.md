@@ -58,8 +58,10 @@ What works:
 
 What's stubbed / missing — the honest list:
 
-- `Sub`: only `:interval` exists. Richer kinds (`pubsub` / `file` / `signal` /
-  `port`) are v0.6.
+- `Sub`: only `:interval` exists, and it is a timer rather than a subscription —
+  push-shaped sources (`telemetry` / `logger` / `pubsub` / `file` / `signal` /
+  `port`) all wait on the v0.6 event-source seam.
+- No `sparkline`; `progress` shows a fraction, not a history.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No `box(focus_proxy: id)` visual focus mirroring — v0.6.
@@ -573,23 +575,89 @@ as a change. `examples/notes.exs` wires it to `Ctrl-Z` / `Ctrl-R`.
 
 ---
 
-## v0.6 — subscriptions and focus polish (next)
+## v0.6 — the event-source seam (next)
 
-Split out of v0.5 so that milestone can close on the widget set alone.
-Neither of these is a widget, and holding `tree` / `menu` / `select` back
-until `Phoenix.PubSub` integration is also done would leave finished work
+Split out of v0.5 so that milestone could close on the widget set alone.
+Nothing here is a widget, and holding `tree` / `menu` / `select` back until
+`Phoenix.PubSub` integration was also done would have left finished work
 unpublished for no reason.
 
-### Richer Sub kinds
+`Sub` currently has one kind, `:interval`, which is a *timer* — the runtime
+wakes itself up. Everything else worth subscribing to is the opposite shape:
+an **external source pushes**, and the runtime has to receive without the
+source knowing anything about rendering. That is one seam, and the milestone
+is organised around building it once rather than five times.
+
+The ordering below is deliberate. `Sub.telemetry` and `Sub.logger` come first
+not because they are the most requested but because they are the same seam
+with two genuinely different consumers, which is the only way to find out
+whether the abstraction holds before four more callers depend on it.
+
+### Sub.telemetry — the integration that pays for the seam
+
+`:telemetry` is how the entire serious Elixir ecosystem already reports on
+itself: Phoenix, Ecto, Oban, Broadway, Finch, Bandit. Integrate with that one
+thing and a Harlock app gets an ops UI for all of them. Attaching
+`[:ecto, :repo, :query]` and `[:oban, :job, :stop]` should be a working
+dashboard in about twenty lines.
+
+    Sub.telemetry([:ecto, :repo, :query], &{:query, &1.query_time})
+
+Three constraints that shape the design rather than decorate it:
+
+- **Handlers execute in the emitting process.** The handler must do the
+  minimum — build a message and send it — or it slows down the very system it
+  is measuring. All aggregation happens on the runtime side.
+- **Handlers are global.** They must detach when the app stops, or a restarted
+  app leaks a handler that sends to a dead pid.
+- **Attach a named module function, not a closure.** `:telemetry` warns about
+  anonymous handlers for real performance reasons; Harlock's own test suite
+  prints that warning today, which is the mistake to avoid making publicly.
+
+Needs a **windowed aggregator** — counts, rates, and percentiles over a
+trailing window — because raw events are useless in a table and something has
+to hold that state between frames.
+
+### Sub.logger — the same seam, proving it generalises
+
+A `:logger` handler that forwards log events into `update/2`, giving a log
+viewer with level filtering and metadata search. Small, and it is the demo
+that needs no explanation.
+
+It exists in this milestone mainly as the second consumer. If the seam built
+for telemetry also carries logging without special-casing, it will carry
+`pubsub` and `port` too. If it does not, better to learn that here than after
+the fourth caller.
+
+Same detach-on-shutdown requirement, same do-not-block rule: a handler that
+blocks slows every log call in the system.
+
+### sparkline
+
+A one-line trend widget, because a numeric column is not a dashboard and a
+`progress` bar shows a fraction rather than a history. Takes a list of numbers
+and draws them with block glyphs, auto-scaled, degrading to ASCII where the
+caps say so. Needed by the telemetry work above rather than desirable
+alongside it.
+
+### The remaining Sub kinds
+
+Once the seam is settled, these follow its shape rather than inventing their
+own:
 
 - `Sub.pubsub(pubsub_mod, topic, transform_fn)` — subscribes via
-  `Phoenix.PubSub`. The killer integration for Phoenix-based ops
-  dashboards. Deferred from v0.4 because R2 took the cycle.
-- `Sub.file(path, opts)` — watch via `:fs` if available, polling
-  fallback.
-- `Sub.signal(:sigusr1, msg)` — wraps `:os.set_signal/2`.
-- `Sub.port(cmd, args)` — long-running external process, stdout lines
-  as events.
+  `Phoenix.PubSub`. Deferred from v0.4 because R2 took the cycle; deferred
+  again here only because telemetry proves the seam against a harder case.
+- `Sub.file(path, opts)` — watch via `:fs` if available, polling fallback.
+- `Sub.signal(:sigusr1, msg)` — wraps `:os.set_signal/2`. Note the NIF
+  already handles SIGWINCH separately; this is for app-level signals.
+- `Sub.port(cmd, args)` — long-running external process, stdout lines as
+  events.
+
+Their relative order should be decided by whichever real app needs one first,
+not guessed here. That was the mistake this section corrects: `Sub.pubsub` led
+the previous version of this list because it was written first, not because
+anything needed it.
 
 ### `box(focus_proxy: :child_id)`
 
@@ -621,6 +689,18 @@ styles its boxes' borders off `Focus.current()` by hand as a workaround
   the benchmark: a wrap cache adds an invalidation boundary, which is exactly
   where wrap bugs hide, and it should not be added to chase an unmeasured
   number.
+- **Windowed data access for `table`**, alongside the benchmarks that would
+  justify it. Drawing is already O(viewport) — `visible_rows/4` drops and takes
+  to the body height — but the element materialises its `:rows` enumerable in
+  full to find that window, then scans it again to locate the focused row. A
+  table backed by a query or an infinite stream therefore needs `table` to
+  *pull* a window (`{offset, limit} -> rows`) instead of consuming an
+  enumerable. Two consequences worth designing for rather than discovering:
+  keyset pagination has no row *index*, so `:focused_row` has to be identified
+  by cursor; and the total row count may be unknown, so the scrollbar and any
+  position readout must tolerate not knowing how far down they are. This is the
+  prerequisite for an `Ecto.Queryable`-backed table, which is otherwise the
+  shortest path from Harlock to an admin panel.
 - **Documentation**: every public function has `@doc` + example. Module
   guides (`guides/getting_started.md`, `guides/widgets.md`,
   `guides/testing.md`, `guides/embedding.md`).
