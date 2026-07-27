@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.4.4/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.5.0/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -217,10 +217,10 @@ Anything `@moduledoc false` is internal and free to change.
 | Modified arrows / Home / End / F-keys (parser) | ✓ |
 | Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
-| `tree` / `menu` / `select` widgets | ✓ (unreleased) |
+| `tree` / `menu` / `select` widgets | ✓ (v0.5) |
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
 | Goal-column memory for `textarea` vertical motion | ✓ (v0.4.3) |
-| Undo / redo (`Harlock.UndoStack`, app-held) | ✓ (unreleased) |
+| Undo / redo (`Harlock.UndoStack`, app-held) | ✓ (v0.5) |
 | Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.6 |
 | `box(focus_proxy: id)` (visual focus mirroring) | v0.6 |
 

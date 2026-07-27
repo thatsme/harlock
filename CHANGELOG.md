@@ -10,6 +10,19 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-27
+
+The widget set. `menu`, `select` and `tree` were deferred out of v0.4 so they
+could be built as native consumers of the R2 routing contract rather than
+against the manual-dispatch idiom it replaced; that contract shipped in v0.4 and
+`textarea` proved it on the hardest case across v0.4.2–v0.4.3, so this closes
+the milestone on the three of them plus the undo helper.
+
+The whole set added **one** routed message — `{:harlock_toggle, …}`, which only
+`tree` needed. Everything else reuses `{:harlock_select, …}` and
+`{:harlock_submit, …}`, so an app that already handles `tabs` or `text_input`
+has most of the vocabulary.
+
 ### Added
 
 - **`menu/1` — a vertical menu**, backed by the new `Harlock.Menu`. Arrow keys
@@ -846,7 +859,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/thatsme/harlock/releases/tag/v0.5.0
 [0.4.4]: https://github.com/thatsme/harlock/releases/tag/v0.4.4
 [0.4.3]: https://github.com/thatsme/harlock/releases/tag/v0.4.3
 [0.4.2]: https://github.com/thatsme/harlock/releases/tag/v0.4.2

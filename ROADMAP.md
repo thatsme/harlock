@@ -4,10 +4,10 @@ A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan through v1.0 (stable API). It's a living
-document — revised as the design settles. v0.4.4 is current and published
+document — revised as the design settles. v0.5.0 is current and published
 on Hex.
 
-## Status snapshot (v0.4.4, current)
+## Status snapshot (v0.5.0, current)
 
 What works:
 
@@ -37,7 +37,12 @@ What works:
   (row-id identity, single/multi selection, header), `text_input`, `textarea`
   (multi-line, opt-in word wrap), `viewport`
   (render-then-clip + scroll-into-view + cursor remap), `progress`, `spinner`,
-  `statusbar`, `keybar`, `tabs`.
+  `statusbar`, `keybar`, `tabs`, `menu`, `select` (dropdown that flips rather
+  than clipping near a margin), `tree` (flat projection, id-keyed expansion,
+  lazily loaded children).
+- Undo / redo via `Harlock.UndoStack` — bounded snapshots the app holds in its
+  model, with coalescing that breaks on a newline, a cursor jump, or a delete
+  after an insert.
 - Wide-grapheme width (CJK, emoji, ZWJ sequences, flags).
 - SIGWINCH resize via an `ioctl(TIOCGWINSZ)` NIF — terminal resize reflows.
 - Input parser handles CSI/SS3, bracketed paste, XTerm focus reporting,
@@ -57,8 +62,9 @@ What's stubbed / missing — the honest list:
   `port`) are v0.6.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
-- No `tree`, `menu` / `select` widgets — v0.5.
 - No `box(focus_proxy: id)` visual focus mirroring — v0.6.
+- `table` draws only the visible rows but materialises the whole enumerable to
+  find them, so a queryable-backed table needs windowed data access first.
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
 
 ## Guiding principles
@@ -446,7 +452,7 @@ not self-locking.
 
 ---
 
-## v0.5 — widgets on the new contract (next)
+## v0.5 — widgets on the new contract ✓ (shipped as v0.5.0)
 
 The work originally listed under v0.4 that was deferred so it could
 ship as the **first consumer of the R2 routing contract** instead of
@@ -567,7 +573,7 @@ as a change. `examples/notes.exs` wires it to `Ctrl-Z` / `Ctrl-R`.
 
 ---
 
-## v0.6 — subscriptions and focus polish
+## v0.6 — subscriptions and focus polish (next)
 
 Split out of v0.5 so that milestone can close on the widget set alone.
 Neither of these is a widget, and holding `tree` / `menu` / `select` back
