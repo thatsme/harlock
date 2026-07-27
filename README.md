@@ -236,6 +236,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
 ./scripts/run.sh explorer   # tree + select + menu, with async-loaded nodes
+./scripts/run.sh dashboard  # telemetry + logger subscriptions into a sparkline
 ```
 
 The `scripts/run.sh` wrapper is in the GitHub repo — clone the repo to
@@ -253,6 +254,16 @@ that uses scroll-into-view to keep the focused field visible, a
 widget gallery with animated progress/spinner/statusbar/keybar, and a
 key-event inspector you can use to try out modified arrows
 (Ctrl-Up, Shift-Right, etc.).
+
+`dashboard` wires both v0.6 subscriptions into one screen: `Sub.telemetry`
+feeds job durations to a `sparkline`, `Sub.logger` turns log calls into
+`update/2` messages, and `Sub.interval` drives the workload. It emits its own
+telemetry because a standalone example has nothing else to listen to — but the
+work runs inside a `Cmd`, so the handler fires in a different process from the
+UI exactly as it would for a real query. Point the same subscription at
+`[:ecto, :repo, :query]` and nothing else changes. Pausing removes only the
+interval from `subs/1`, so you can watch the runtime stop one subscription and
+leave the others running.
 
 `explorer` puts `tree`, `select` and `menu` in one app. Its `deps` node
 starts with nothing loaded: expanding it marks the node in flight, returns

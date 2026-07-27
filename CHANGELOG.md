@@ -56,6 +56,27 @@ changes are called out in the relevant release notes.
   starting an app is racing the attach. `interval/2` is unaffected; it starts its
   own clock.
 
+- **`examples/dashboard.exs`** — both subscriptions and the sparkline on one
+  screen, so v0.6's seam ships with something runnable rather than only
+  documented. `Sub.telemetry` feeds job durations to a `sparkline`, `Sub.logger`
+  turns log calls into `update/2` messages, and `Sub.interval` drives the
+  workload.
+
+  It emits its own telemetry, since a standalone example has no Ecto or Oban to
+  listen to — but the work runs inside a `Cmd`, so the handler fires in a
+  *different process* from the UI, which is the real topology. Pointing the same
+  subscription at `[:ecto, :repo, :query]` changes nothing else.
+
+  Pausing removes only the interval from `subs/1`, which makes the runtime's
+  subscription diffing visible: one subscription stops, the other two keep
+  running, and a paused dashboard still shows whatever the rest of the system
+  emits.
+
+  Also a small finding for the roadmap's windowed-aggregator item: counts, mean,
+  min and max over a bounded list are three lines of `Enum` in the model. The
+  aggregator is worth building for rates and percentiles over time, not for
+  these.
+
 - **`sparkline/1` — a one-line trend**, the piece that makes a telemetry
   subscription worth looking at. `progress/1` shows one fraction; this shows a
   history. One cell per value using `▁▂▃▄▅▆▇█`, **right-aligned** so the newest
