@@ -76,11 +76,103 @@ defmodule Harlock.TextAreaTest do
       assert TextArea.move_down(@sample, 5) == 7
     end
 
-    test "no goal-column memory: down then up does not restore the column" do
-      # documented limitation, pinned so a future goal-column change is deliberate
+    test "the bare motions carry no goal column, so down then up truncates" do
+      # move_up/3 and move_down/3 have nowhere to keep a goal, so a short row
+      # permanently truncates the column. Goal-column memory lives in
+      # apply_key/6 instead — see the "goal column" block below. Pinned so the
+      # split between the two paths stays deliberate.
       down = TextArea.move_down(@sample, 5)
       assert TextArea.position(@sample, down) == {2, 1}
       assert TextArea.position(@sample, TextArea.move_up(@sample, down)) == {1, 1}
+    end
+  end
+
+  describe "goal column" do
+    @up {:key, :up, []}
+    @down {:key, :down, []}
+
+    test "descending through a short row and back restores the start column" do
+      # rows "ab" / "cd" / "e"; start at row 0 column 2, and row 2 is one column
+      # wide, so the middle of the run is where a goal-less motion would lose it.
+      assert TextArea.position(@sample, 2) == {0, 2}
+
+      {:edit, v, c1, _ring, g1} = TextArea.apply_key(@down, @sample, 2, [], nil, nil)
+      {:edit, ^v, c2, _ring, g2} = TextArea.apply_key(@down, v, c1, [], nil, g1)
+      assert TextArea.position(v, c2) == {2, 1}
+
+      {:edit, ^v, c3, _ring, g3} = TextArea.apply_key(@up, v, c2, [], nil, g2)
+      {:edit, ^v, c4, _ring, _g} = TextArea.apply_key(@up, v, c3, [], nil, g3)
+
+      assert c4 == 2
+      assert TextArea.position(v, c4) == {0, 2}
+    end
+
+    test "dropping the goal between motions is what produces the drift" do
+      # same keys, goal thrown away each time — the failure the run above avoids
+      {:edit, v, c1, _ring, _g} = TextArea.apply_key(@down, @sample, 2, [], nil, nil)
+      {:edit, ^v, c2, _ring, _g} = TextArea.apply_key(@down, v, c1, [], nil, nil)
+      {:edit, ^v, c3, _ring, _g} = TextArea.apply_key(@up, v, c2, [], nil, nil)
+      {:edit, ^v, c4, _ring, _g} = TextArea.apply_key(@up, v, c3, [], nil, nil)
+
+      assert TextArea.position(v, c4) == {0, 1}
+      refute c4 == 2
+    end
+
+    test "the goal survives a motion that cannot move" do
+      # ↑ on the first row moves nothing but still owns the column, so the
+      # cursor can come back to it
+      {:edit, _v, cursor, _ring, goal} = TextArea.apply_key(@up, @sample, 2, [], nil, nil)
+      assert cursor == 2
+      assert goal == 2
+    end
+
+    test "any other key resets the goal to nil" do
+      for event <- [{:key, {:char, ?x}, []}, {:key, :left, []}, {:key, :end, []}] do
+        assert {:edit, _v, _c, _ring, nil} =
+                 TextArea.apply_key(event, @sample, 2, [], nil, 7)
+      end
+    end
+
+    test "the goal is a display column, so it clears wide graphemes" do
+      # row 0 is "日本" (4 columns), row 1 "x", row 2 "abcd". Column 4 on row 0
+      # must survive the one-column row in between.
+      value = "日本\nx\nabcd"
+      # visual_position reports display cells; position/2 reports graphemes, and
+      # the goal is a display column — 4 cells here, not 2 graphemes.
+      assert TextArea.visual_position(value, 2, nil) == {0, 4}
+
+      {:edit, v, c1, _ring, g1} = TextArea.apply_key(@down, value, 2, [], nil, nil)
+      {:edit, ^v, c2, _ring, g2} = TextArea.apply_key(@down, v, c1, [], nil, g1)
+      assert TextArea.visual_position(v, c2, nil) == {2, 4}
+
+      {:edit, ^v, c3, _ring, g3} = TextArea.apply_key(@up, v, c2, [], nil, g2)
+      {:edit, ^v, c4, _ring, _g} = TextArea.apply_key(@up, v, c3, [], nil, g3)
+      assert c4 == 2
+    end
+  end
+
+  describe "expand_tabs" do
+    test "advances to the next tab stop rather than emitting a fixed run" do
+      assert TextArea.expand_tabs("a\tb", 4) == "a   b"
+      assert TextArea.expand_tabs("abc\td", 4) == "abc d"
+      assert TextArea.expand_tabs("abcd\te", 4) == "abcd    e"
+    end
+
+    test "stops are measured in display cells, not graphemes" do
+      # 日 is two columns, so the tab after it advances from column 2 to 4
+      assert TextArea.expand_tabs("日\tx", 4) == "日  x"
+    end
+
+    test "each line gets its own stops" do
+      assert TextArea.expand_tabs("a\tb\ncc\td", 4) == "a   b\ncc  d"
+    end
+
+    test "a tab landing exactly on a stop advances a full stop" do
+      assert TextArea.expand_tabs("\tx", 4) == "    x"
+    end
+
+    test "leaves tab-free values untouched" do
+      assert TextArea.expand_tabs(@sample, 4) == @sample
     end
   end
 

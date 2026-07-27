@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.4.2/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.4.3/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -219,6 +219,8 @@ Anything `@moduledoc false` is internal and free to change.
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | `tree` / `menu` / `select` widgets | v0.5 |
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
+| Goal-column memory for `textarea` vertical motion | ✓ (v0.4.3) |
+| Undo / redo | v0.5 |
 | Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.5 |
 | `box(focus_proxy: id)` (visual focus mirroring) | v0.5 |
 
@@ -231,6 +233,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh sysmon     # live BEAM process monitor
 ./scripts/run.sh contacts   # contact manager: search, list, modal forms, async save
 ./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys
+./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
 ```
 
 The `scripts/run.sh` wrapper is in the GitHub repo — clone the repo to

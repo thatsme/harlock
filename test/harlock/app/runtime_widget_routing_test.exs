@@ -346,6 +346,49 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
       assert Harlock.Test.model(h).cursor == 5
     end
 
+    test "a run of vertical motion keeps the goal column across keypresses", %{h: h} do
+      # "abcd\nx\nabcd" — the one-column middle row is where a goal-less
+      # implementation would truncate and never recover.
+      for ch <- ~c"abcd", do: Harlock.Test.send_key(h, {:char, ch})
+      Harlock.Test.send_key(h, :enter)
+      Harlock.Test.send_key(h, {:char, ?x})
+      Harlock.Test.send_key(h, :enter)
+      for ch <- ~c"abcd", do: Harlock.Test.send_key(h, {:char, ch})
+
+      assert Harlock.Test.model(h).body == "abcd\nx\nabcd"
+      assert Harlock.Test.model(h).cursor == 11
+
+      Harlock.Test.send_key(h, :up)
+      # clamped onto the short row
+      assert Harlock.Test.model(h).cursor == 6
+
+      Harlock.Test.send_key(h, :up)
+      # column 4 restored rather than inherited from the clamp (which would be 1)
+      assert Harlock.Test.model(h).cursor == 4
+
+      Harlock.Test.send_key(h, :down)
+      Harlock.Test.send_key(h, :down)
+      assert Harlock.Test.model(h).cursor == 11
+    end
+
+    test "editing between vertical motions restarts the goal", %{h: h} do
+      for ch <- ~c"abcd", do: Harlock.Test.send_key(h, {:char, ch})
+      Harlock.Test.send_key(h, :enter)
+      Harlock.Test.send_key(h, {:char, ?x})
+      Harlock.Test.send_key(h, :enter)
+      for ch <- ~c"abcd", do: Harlock.Test.send_key(h, {:char, ch})
+
+      Harlock.Test.send_key(h, :up)
+      assert Harlock.Test.model(h).cursor == 6
+
+      # typing on the short row makes *that* column the new goal
+      Harlock.Test.send_key(h, {:char, ?y})
+      assert Harlock.Test.model(h).body == "abcd\nxy\nabcd"
+
+      Harlock.Test.send_key(h, :up)
+      assert Harlock.Test.model(h).cursor == 2
+    end
+
     test "Up on the first line is a no-op that falls through as a raw key", %{h: h} do
       Harlock.Test.send_key(h, {:char, ?a})
       Harlock.Test.send_key(h, :up)

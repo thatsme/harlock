@@ -214,6 +214,19 @@ defmodule Harlock.TextBufferTest do
                {:edit, "hello world", 11, ["world"]}
     end
 
+    test "Alt-Backspace kills the word backward, like Ctrl-W" do
+      alt = TextBuffer.apply_key({:key, :backspace, [:alt]}, "hello world", 11, [])
+      ctrl = TextBuffer.apply_key({:key, {:char, ?w}, [:ctrl]}, "hello world", 11, [])
+
+      assert alt == {:edit, "hello ", 6, ["world"]}
+      assert alt == ctrl
+    end
+
+    test "unmodified Backspace still deletes one grapheme" do
+      assert TextBuffer.apply_key({:key, :backspace, []}, "hello world", 11, []) ==
+               {:edit, "hello worl", 10, []}
+    end
+
     test "successive kills stack most-recent-first" do
       {:edit, v, c, r1} = TextBuffer.apply_key({:key, {:char, ?k}, [:ctrl]}, "abc def", 4, [])
       assert {v, c, r1} == {"abc ", 4, ["def"]}

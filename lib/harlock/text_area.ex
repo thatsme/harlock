@@ -70,6 +70,23 @@ defmodule Harlock.TextArea do
   """
   @type wrap_width :: pos_integer() | nil
 
+  @typedoc """
+  Display column a run of vertical motions is aiming for, or `nil` when no run
+  is in progress.
+
+  Vertical motion clamps the cursor to the target row, so deriving the column
+  from the cursor on every keypress lets a short row truncate it permanently —
+  down three rows and back up three lands left of where it started. Carrying
+  the goal across the run fixes that: the clamp affects where the cursor sits,
+  never what the next motion aims for.
+
+  `nil` means "derive from the cursor," which is what every non-vertical key
+  resets it to. Resetting lazily rather than recomputing the column on each
+  insertion matters: the column costs a full rewrap to compute, and paying
+  that per keystroke is the cost vertical motion alone should bear.
+  """
+  @type goal_column :: non_neg_integer() | nil
+
   @doc "Split the value into its lines. A trailing newline yields a final empty line."
   @spec lines(String.t()) :: [String.t()]
   def lines(value) when is_binary(value), do: String.split(value, "\n")
@@ -353,6 +370,55 @@ defmodule Harlock.TextArea do
     do: TextBuffer.insert(value, cursor, "\n")
 
   @doc """
+  Replace tabs with spaces, advancing each tab to the next multiple of `stop`.
+
+  A tab is zero-width as far as `Harlock.Width` is concerned — every codepoint
+  below `0x20` is — so a `\\t` left in a value occupies a cursor index while
+  consuming no display cell. Wrapping does not account for it, and every index
+  after it maps one cell short of where it renders.
+
+  The keyboard cannot produce one: the runtime consumes `Tab` for focus
+  traversal before a widget sees it. Tabs arrive from bracketed paste, which
+  reaches `update/2` as `{:paste, text}`, or from an app assigning `:value`
+  directly. Both are app-side, so normalising is app-side too:
+
+      def update({:paste, text}, model) do
+        clean = Harlock.TextArea.expand_tabs(text)
+        %{model | body: TextBuffer.insert(model.body, model.cursor, clean)}
+      end
+
+  Stops are measured in display cells, so a tab following `日` advances from
+  column 2, not column 1.
+
+  Columns are counted from the start of each line *of the string given*, not
+  from wherever it is about to be spliced. Pasting mid-line can therefore
+  produce stops that do not align with the destination line's columns; the
+  tabs are still gone, which is the property that matters for rendering.
+  """
+  @spec expand_tabs(String.t(), pos_integer()) :: String.t()
+  def expand_tabs(value, stop \\ 4) when is_binary(value) and stop > 0 do
+    value
+    |> String.split("\n")
+    |> Enum.map_join("\n", &expand_line(&1, stop))
+  end
+
+  defp expand_line(line, stop) do
+    {acc, _column} =
+      line
+      |> String.graphemes()
+      |> Enum.reduce({[], 0}, fn
+        "\t", {acc, column} ->
+          pad = stop - rem(column, stop)
+          {[String.duplicate(" ", pad) | acc], column + pad}
+
+        grapheme, {acc, column} ->
+          {[grapheme | acc], column + Width.width(grapheme)}
+      end)
+
+    acc |> Enum.reverse() |> IO.iodata_to_binary()
+  end
+
+  @doc """
   Map a raw `{:key, key, mods}` event to an edit.
 
   Returns `{:edit, value, cursor}` or `:noop`. Unlike
@@ -446,6 +512,56 @@ defmodule Harlock.TextArea do
   # on a flat cursor.
   def apply_key(event, value, cursor, ring, _width) do
     TextBuffer.apply_key(event, value, cursor, ring)
+  end
+
+  @doc """
+  As `apply_key/5`, but carries a `t:goal_column/0` so a run of `↑` / `↓`
+  keeps aiming at the column it started from.
+
+  Returns `{:edit, value, cursor, ring, goal_column}` — the extra element is the
+  goal to hand back on the next call. Vertical motion preserves it (deriving it
+  from the cursor when it arrives as `nil`); every other key resets it to `nil`,
+  which is what makes the *next* vertical run start from wherever editing left
+  the cursor.
+
+  The runtime threads this automatically for a focused `textarea`, so apps
+  relying on R2 auto-routing get goal-column behaviour without holding the
+  column themselves. `apply_key/5` and below stay goal-less: a single motion is
+  unaffected, and drift only appears across a run that a caller would have to
+  hold state for anyway.
+  """
+  @spec apply_key(
+          {:key, any(), [atom()]},
+          String.t(),
+          cursor(),
+          TextBuffer.kill_ring(),
+          wrap_width(),
+          goal_column()
+        ) ::
+          {:edit, String.t(), cursor(), TextBuffer.kill_ring(), goal_column()} | :noop
+  def apply_key({:key, :up, _mods}, value, cursor, ring, width, goal) do
+    {row, column} = visual_position(value, cursor, width)
+    goal = goal || column
+    cursor = if row == 0, do: cursor, else: visual_cursor_at(value, row - 1, goal, width)
+    {:edit, value, cursor, ring, goal}
+  end
+
+  def apply_key({:key, :down, _mods}, value, cursor, ring, width, goal) do
+    {row, column} = visual_position(value, cursor, width)
+    goal = goal || column
+    last_row = length(visual_rows(value, width)) - 1
+
+    cursor =
+      if row >= last_row, do: cursor, else: visual_cursor_at(value, row + 1, goal, width)
+
+    {:edit, value, cursor, ring, goal}
+  end
+
+  def apply_key(event, value, cursor, ring, width, _goal) do
+    case apply_key(event, value, cursor, ring, width) do
+      {:edit, v, c, r} -> {:edit, v, c, r, nil}
+      other -> other
+    end
   end
 
   # Remove graphemes in [from, to), leaving the cursor at new_cursor and

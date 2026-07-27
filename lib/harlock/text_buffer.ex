@@ -392,6 +392,12 @@ defmodule Harlock.TextBuffer do
     end
   end
 
+  # Alt-Backspace is the other conventional backward-kill-word chord; readline
+  # binds it alongside Ctrl-w. Must precede the unmodified clause below, which
+  # ignores mods.
+  def apply_key({:key, :backspace, [:alt]}, value, cursor, ring),
+    do: killed(kill_word_backward(value, cursor), ring)
+
   def apply_key({:key, :backspace, _mods}, value, cursor, ring) do
     {v, c} = delete_backward(value, cursor)
     {:edit, v, c, ring}

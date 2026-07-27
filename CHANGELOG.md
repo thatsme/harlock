@@ -10,6 +10,75 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-07-27
+
+Finishes the textarea shipped in v0.4.2 rather than extending it. No new
+widgets, and the routed-message contract is unchanged.
+
+### Added
+
+- **Goal-column memory for `textarea/1` vertical motion**, closing the gap
+  v0.4.2 documented as open. Moving down through a short line and back now
+  returns to the column you started in; previously each motion re-derived the
+  column from the cursor, so one short row truncated it permanently and
+  `↓↓↑↑` drifted left.
+
+  The column lives in runtime state, keyed by focus, and is discarded on focus
+  change. That keeps it out of the public message contract entirely —
+  `{:harlock_edit, id, {value, cursor}}` is unchanged, and an app relying on
+  R2 auto-routing gets the behaviour without holding the column itself. It is
+  interaction state, not model state: the app model owns the value, and a
+  goal column has no meaning to restore after the app rewrites it.
+
+  `Harlock.TextArea.apply_key/6` is the goal-aware entry point, returning
+  `{:edit, value, cursor, ring, goal_column}`. Vertical motion carries the
+  goal, deriving it from the cursor when it arrives as `nil`; every other key
+  resets it, which is what makes the next run start from wherever editing left
+  off. Resetting lazily rather than recomputing the column per keystroke is
+  deliberate — the column costs a full rewrap, and vertical motion should be
+  the only thing paying for it.
+
+  `move_up/3` and `move_down/3` stay goal-less: a single motion is unaffected,
+  and a caller threading a run has state to hold anyway.
+
+- **`Harlock.TextArea.expand_tabs/2`** — replaces tabs with spaces, advancing
+  each to the next multiple of the given stop, measured in display cells so a
+  tab after `日` advances from column 2.
+
+  A tab is zero-width to `Harlock.Width` (every codepoint under `0x20` is), so
+  a `\t` left in a value occupies a cursor index while consuming no display
+  cell: wrapping ignores it and every index after it maps one column short of
+  where it renders. The keyboard cannot produce one — the runtime consumes
+  `Tab` for focus traversal before a widget sees it — so tabs arrive only from
+  bracketed paste, which reaches `update/2` as `{:paste, text}`, or from an app
+  assigning `:value`. Both are app-side, so normalising is offered as a helper
+  rather than enforced at insert.
+
+- **`Alt-Backspace` kills the word backward** in `text_input` and `textarea`,
+  the other conventional chord for what `Ctrl-W` already did. Previously the
+  backspace clause ignored modifiers, so it deleted a single grapheme.
+
+- **`examples/notes.exs`** — a note editor built on `textarea`, the first
+  runnable demo of the widget. Covers the single `update/2` clause that
+  handles every edit, a wrap toggle, and normalising tabs out of pasted text.
+  Picked up automatically by `scripts/run.sh notes`.
+
+### Changed
+
+- Widget key routing carries runtime state back to the caller, so a key that
+  changes interaction state without changing value or cursor can record it and
+  still fall through to `update/2` — an `↑` on the first row moves nothing but
+  owns the column it aimed at. The runtime module is internal
+  (`@moduledoc false`); no app-visible behaviour change beyond goal columns.
+
+### Fixed
+
+- `ROADMAP.md` no longer lists a missing `row.ex` helper among the project's
+  limitations. `Harlock.Element.Column` is a table-column spec built by
+  `column/1`, not a layout container, so `row` had no counterpart to be
+  missing — horizontal layout is `hbox`, and per-row appearance is the table
+  style cascade added in v0.4.
+
 ## [0.4.2] — 2026-07-27
 
 ### Added
@@ -603,7 +672,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/thatsme/harlock/releases/tag/v0.4.3
 [0.4.2]: https://github.com/thatsme/harlock/releases/tag/v0.4.2
 [0.4.1]: https://github.com/thatsme/harlock/releases/tag/v0.4.1
 [0.4.0]: https://github.com/thatsme/harlock/releases/tag/v0.4.0

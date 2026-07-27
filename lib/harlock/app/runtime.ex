@@ -72,6 +72,7 @@ defmodule Harlock.App.Runtime do
         focus_stack: [],
         routed_widgets: %{},
         widget_metrics: %{},
+        goal_column: nil,
         subs: %{},
         pending_cmd: init_cmd
       }
@@ -97,9 +98,11 @@ defmodule Harlock.App.Runtime do
         {:noreply, render(state)}
 
       :pass ->
+        # Routing can carry state back: a textarea's goal column has to survive
+        # between keypresses, and it is interaction state the app never sees.
         case maybe_route_widget(event, state) do
-          {:routed, routed_event} -> apply_update(state, routed_event)
-          :pass -> apply_update(state, event)
+          {:routed, routed_event, state} -> apply_update(state, routed_event)
+          {:pass, state} -> apply_update(state, event)
         end
     end
   end
@@ -186,16 +189,20 @@ defmodule Harlock.App.Runtime do
   # viewport without :offset/:content_height) so misuse surfaces as a
   # render error in the user's code, not as a runtime crash on the
   # spine's handle_info path.
+  # Every result carries state back, including `:pass`. A key can leave value
+  # and cursor untouched while still changing interaction state — an `↑` on the
+  # first row owns the goal column it could not move to — and that key must
+  # still reach update/2, so `{:pass, state}` is a real outcome, not a no-op.
   defp maybe_route_widget({:key, _, _} = event, state) do
     with focus_id when not is_nil(focus_id) <- state.focused,
          {:ok, %Element{} = el} <- Map.fetch(state.routed_widgets, focus_id) do
       route_to_widget(el, event, focus_id, state)
     else
-      _ -> :pass
+      _ -> {:pass, state}
     end
   end
 
-  defp maybe_route_widget(_event, _state), do: :pass
+  defp maybe_route_widget(_event, state), do: {:pass, state}
 
   defp route_to_widget(%Element{type: :viewport} = el, {:key, key, _}, focus_id, state) do
     if key in [:up, :down, :page_up, :page_down, :home, :end] do
@@ -211,28 +218,28 @@ defmodule Harlock.App.Runtime do
         new_offset = Harlock.Viewport.apply_key(offset, content_height, viewport_h, key)
 
         if new_offset == offset do
-          :pass
+          {:pass, state}
         else
-          {:routed, {:harlock_scroll, focus_id, new_offset}}
+          {:routed, {:harlock_scroll, focus_id, new_offset}, state}
         end
       else
-        _ -> :pass
+        _ -> {:pass, state}
       end
     else
-      :pass
+      {:pass, state}
     end
   end
 
-  defp route_to_widget(%Element{type: :tabs} = el, event, focus_id, _state) do
+  defp route_to_widget(%Element{type: :tabs} = el, event, focus_id, state) do
     with {:ok, items} <- Keyword.fetch(el.opts, :items),
          {:ok, active} <- Keyword.fetch(el.opts, :active) do
       case Harlock.Tabs.apply_key(event, active, items) do
-        {:select, ^active} -> :pass
-        {:select, new_id} -> {:routed, {:harlock_select, focus_id, new_id}}
-        :noop -> :pass
+        {:select, ^active} -> {:pass, state}
+        {:select, new_id} -> {:routed, {:harlock_select, focus_id, new_id}, state}
+        :noop -> {:pass, state}
       end
     else
-      _ -> :pass
+      _ -> {:pass, state}
     end
   end
 
@@ -247,55 +254,63 @@ defmodule Harlock.App.Runtime do
       # freshness argument as viewport_h above.
       wrap_width = get_in(state.widget_metrics, [focus_id, :textarea_wrap_width])
 
-      case Harlock.TextArea.apply_key(event, value, cursor, [], wrap_width) do
-        {:edit, ^value, ^cursor, _ring} ->
-          :pass
+      case Harlock.TextArea.apply_key(event, value, cursor, [], wrap_width, state.goal_column) do
+        # Unchanged still records the goal — an ↑ on the first row moves nothing
+        # but owns the column, which is what lets ↓↓↑↑ come back to it. The key
+        # itself still falls through to update/2, as it did before routing
+        # carried state.
+        {:edit, ^value, ^cursor, _ring, goal} ->
+          {:pass, %{state | goal_column: goal}}
 
-        {:edit, new_value, new_cursor, _ring} ->
-          {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}}}
+        {:edit, new_value, new_cursor, _ring, goal} ->
+          {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}},
+           %{state | goal_column: goal}}
 
         :noop ->
-          :pass
+          {:pass, %{state | goal_column: nil}}
       end
     else
-      _ -> :pass
+      _ -> {:pass, state}
     end
   end
 
-  defp route_to_widget(%Element{type: :text_input} = el, event, focus_id, _state) do
+  defp route_to_widget(%Element{type: :text_input} = el, event, focus_id, state) do
     with {:ok, value} <- Keyword.fetch(el.opts, :value),
          {:ok, cursor} <- Keyword.fetch(el.opts, :cursor) do
       case Harlock.TextBuffer.apply_key(event, value, cursor) do
         {:edit, ^value, ^cursor} ->
-          :pass
+          {:pass, state}
 
         {:edit, new_value, new_cursor} ->
-          {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}}}
+          {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}}, state}
 
         :submit ->
-          {:routed, {:harlock_submit, focus_id}}
+          {:routed, {:harlock_submit, focus_id}, state}
 
         :noop ->
-          :pass
+          {:pass, state}
       end
     else
-      _ -> :pass
+      _ -> {:pass, state}
     end
   end
 
-  defp route_to_widget(_el, _event, _focus_id, _state), do: :pass
+  defp route_to_widget(_el, _event, _focus_id, state), do: {:pass, state}
 
+  # Focus moves discard the goal column: it belongs to a run of vertical motion
+  # in one widget, and leaking it into the next textarea would start that
+  # widget's first ↑ aiming at a column the user never set there.
   defp focus_next(state) do
     case active_ids(state) do
       [] -> state
-      ids -> %{state | focused: cycle(ids, state.focused, 1)}
+      ids -> %{state | focused: cycle(ids, state.focused, 1), goal_column: nil}
     end
   end
 
   defp focus_prev(state) do
     case active_ids(state) do
       [] -> state
-      ids -> %{state | focused: cycle(ids, state.focused, -1)}
+      ids -> %{state | focused: cycle(ids, state.focused, -1), goal_column: nil}
     end
   end
 

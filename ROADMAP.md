@@ -4,10 +4,10 @@ A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan through v1.0 (stable API). It's a living
-document — revised as the design settles. v0.4.2 is current and published
+document — revised as the design settles. v0.4.3 is current and published
 on Hex.
 
-## Status snapshot (v0.4.2, current)
+## Status snapshot (v0.4.3, current)
 
 What works:
 
@@ -45,7 +45,7 @@ What works:
 - `:telemetry` events for frame render, input dispatch, cmd, and reader.
 - Headless `IO.Test` backend selectable via `backend: :test` for
   deterministic tests without a TTY, plus the `Harlock.Test` helper API.
-- Examples: `counter`, `sysmon`, `contacts`, `showcase`, `overview`. Smoke
+- Examples: `counter`, `sysmon`, `contacts`, `showcase`, `overview`, `notes`. Smoke
   tests driven by `script(1)` (handles BSD vs util-linux flag differences).
 - Packaging and quality gates: Hex package metadata, published hexdocs, CI,
   Dialyzer, and Credo all wired in.
@@ -58,7 +58,6 @@ What's stubbed / missing — the honest list:
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No `tree`, `menu` / `select` widgets — v0.5.
 - No `box(focus_proxy: id)` visual focus mirroring — v0.5.
-- No `row.ex` helper (only `column.ex`).
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
 
 ## Guiding principles
@@ -467,7 +466,7 @@ arrive as native R2 widgets from day one.
   the open state). Same routed-select shape.
 
 Each gets its own `apply_key/n` pure helper plus a per-type clause in
-`Harlock.App.Runtime.route_to_widget/4`; no new mechanism, just three
+the runtime's `route_to_widget/4`; no new mechanism, just three
 new consumers.
 
 ### Multi-line text_area ✓ (shipped in v0.4.2)
@@ -491,9 +490,30 @@ apps write one clause for both. The visual-vs-logical distinction the plan
 anticipated lives in `visual_rows/2` instead of in the cursor type, which
 keeps it out of the public message contract.
 
-Still open: goal-column memory. Vertical motion clamps the column to the
-target row, so moving down through a short row loses the original column
-instead of restoring it on the next long one.
+Goal-column memory landed in v0.4.3. The column is held in runtime state,
+keyed by focus and discarded on focus change, so it stays out of the routed
+message contract — `apply_key/6` threads it, and vertical motion is the only
+thing that pays for computing it.
+
+### Undo / redo as an app-held helper
+
+A textarea without undo is the gap users hit first, and more sharply than in a
+single-line input where retyping is cheap. It cannot live in the widget: the
+app model owns `:value` and may rewrite it — loading a file, clearing a form,
+applying a `Cmd` result — without the widget seeing it, so a buffer-held
+history desyncs and starts restoring text the user never typed.
+
+So it ships as a pure helper the app holds in its model and threads
+explicitly: bounded snapshots of `{cursor, text}` with coalescing, ring-capped
+around 100 entries. Snapshots rather than a command stack — for a buffer this
+size they are simpler and fast enough.
+
+Coalescing is the part that has to be right, and it is contract, not
+implementation detail. A run of insertions collapses into one step, and the run
+**breaks** on a newline, on any cursor jump, and on a delete following an
+insert. Get it wrong and a user types a paragraph, presses undo expecting to
+lose a word, and loses the paragraph — worse than shipping no undo at all,
+because it destroys work rather than merely failing to restore it.
 
 ### Richer Sub kinds
 
@@ -528,6 +548,14 @@ styles its boxes' borders off `Focus.current()` by hand as a workaround
   total. For any frame diff: replay produces equivalent frame.
 - **Benchmarks**: `Harlock.Bench` — render a 200×80 frame with N elements,
   measure µs per frame. Establish baseline, prevent regressions.
+- **Incremental rewrap for `textarea`**, behind those benchmarks. Every motion
+  and every render calls `visual_rows/2`, which rewraps the whole value — fine
+  at a few hundred lines, poor at tens of thousands. The fix is to cache the
+  line-break index and invalidate from the edited logical line forward, since
+  everything above the edit is unchanged by construction. Deliberately after
+  the benchmark: a wrap cache adds an invalidation boundary, which is exactly
+  where wrap bugs hide, and it should not be added to chase an unmeasured
+  number.
 - **Documentation**: every public function has `@doc` + example. Module
   guides (`guides/getting_started.md`, `guides/widgets.md`,
   `guides/testing.md`, `guides/embedding.md`).
