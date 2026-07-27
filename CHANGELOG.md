@@ -56,6 +56,39 @@ changes are called out in the relevant release notes.
   starting an app is racing the attach. `interval/2` is unaffected; it starts its
   own clock.
 
+- **`Sub.logger/1` — subscribe to log events**, the seam's second consumer. Takes
+  `:level` (filtered by `:logger` before Harlock sees it), `:metadata` (keys to
+  keep, or `:all`), and an optional `:transform`; delivers `{:log, entry}` where
+  an entry is `%{level:, msg:, meta:}`.
+
+  `Harlock.Sub.Logger.text/1` renders an entry, handling all three shapes
+  `:logger` produces — `{:string, chardata}`, `{:report, term}`, and
+  `{format, args}` — and degrading to `inspect/1` rather than raising on a
+  malformed one, since a log viewer that dies on one bad entry is worse than one
+  showing a placeholder.
+
+  Messages arrive **unformatted on purpose**. A handler runs inside the process
+  that called `Logger.info/1`, so formatting there bills the caller for the UI's
+  work; `text/1` is meant to be called from `update/2`, where the cost lands on
+  the runtime.
+
+  Documented hazard with no equivalent in `telemetry/2`: **an app must not log
+  from `update/2`**. Handling a delivered log event by logging produces another
+  delivery, and it loops. Erlang's own recursion guard does not help, because the
+  log originates in the runtime rather than inside the handler.
+
+  Narrowing `:metadata` matters on a busy system — every entry is copied into the
+  runtime's mailbox, and metadata can carry stacktraces and large structs.
+
+  Worth recording for anyone building metadata search on top of this: the raw
+  `:logger` event carries only `:domain`, `:gl`, `:pid` and `:time`. It does *not*
+  carry `:module` or `:line` — Elixir adds those at formatting time, not into the
+  event — so a search feature cannot assume they exist.
+
+  The seam needed no changes to accommodate it, which was the point of building
+  telemetry and logger as two deliberately different consumers rather than
+  generalising from one.
+
 - `Harlock.Sub`'s moduledoc now documents that specs are compared **structurally**,
   and the consequence for subs carrying functions: a closure built at a fixed
   code location with equal captures compares equal, so it does not churn — but a

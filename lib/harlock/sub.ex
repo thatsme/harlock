@@ -30,11 +30,13 @@ defmodule Harlock.Sub do
   stable, and derive the rest inside `update/2`.
   """
 
+  alias Harlock.Sub.Logger, as: LoggerSub
   alias Harlock.Sub.Telemetry
 
   @type t ::
           {:interval, pos_integer(), any()}
           | {:telemetry, [[atom()]], function()}
+          | {:logger, atom(), [atom()] | :all, function() | nil}
 
   @doc """
   Send `msg` to the runtime every `ms` milliseconds. The first fire happens
@@ -94,6 +96,58 @@ defmodule Harlock.Sub do
   defp normalize_events([head | _] = events) when is_list(head), do: events
   defp normalize_events(event) when is_list(event), do: [event]
 
+  @doc """
+  Subscribe to log events, delivering each one to `update/2`.
+
+  Options:
+
+    * `:level` — minimum level, filtered by `:logger` before Harlock sees it
+      (default `:info`)
+    * `:metadata` — metadata keys to keep, or `:all` (default `:all`)
+    * `:transform` — turn an entry into the app's message; without one the app
+      receives `{:log, entry}`
+
+  An entry is `%{level: level, msg: raw_msg, meta: metadata}`. The message stays
+  in Erlang's raw form; call `Harlock.Sub.Logger.text/1` in `update/2` to render
+  it:
+
+      def subs(_m), do: [Sub.logger(level: :warning)]
+
+      def update({:log, entry}, m) do
+        %{m | lines: [Harlock.Sub.Logger.text(entry) | m.lines]}
+      end
+
+  ## Do not log from `update/2`
+
+  A `:logger` handler runs **inside the process that called `Logger.info/1`**.
+  If handling a delivered log event causes another log call, that call is
+  delivered too, and the app loops until something falls over. Erlang's own
+  recursion guard does not help here, because the log originates in the runtime
+  rather than inside the handler.
+
+  The same reasoning bounds the rest: the handler must not block, since it
+  stalls the caller, and it must not raise, since `:logger` removes a handler
+  that does. So it builds one term and sends it — nothing else. Formatting is
+  the app's job precisely because it allocates.
+
+  Narrowing `:metadata` is worth doing on a busy system. Every entry is copied
+  into the runtime's mailbox, and log metadata can carry stacktraces and large
+  structs, so `metadata: [:module, :line, :request_id]` moves materially less
+  than `:all`.
+
+  Attachment timing matches `telemetry/2`: the handler is added on the first
+  render, so logs emitted before that are not delivered.
+  """
+  @spec logger(keyword()) :: t()
+  def logger(opts \\ []) do
+    {
+      :logger,
+      Keyword.get(opts, :level, :info),
+      Keyword.get(opts, :metadata, :all),
+      Keyword.get(opts, :transform)
+    }
+  end
+
   @doc false
   def start({:interval, ms, msg}, target) do
     spawn_link(fn -> interval_loop(ms, msg, target) end)
@@ -101,6 +155,10 @@ defmodule Harlock.Sub do
 
   def start({:telemetry, events, transform}, target) do
     Telemetry.start_link(events, transform, target)
+  end
+
+  def start({:logger, level, metadata, transform}, target) do
+    LoggerSub.start_link(level, metadata, transform, target)
   end
 
   defp interval_loop(ms, msg, target) do
