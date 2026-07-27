@@ -10,6 +10,28 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **`menu/1` — a vertical menu**, backed by the new `Harlock.Menu`. Arrow keys
+  move the highlight (wrapping at both ends), Home / End jump to the ends, and
+  Enter commits. First of the three widgets v0.5 closes on.
+
+  Movement and commitment are separate events, because they are separate
+  intentions: arrows route `{:harlock_select, focus_id, id}` and Enter routes
+  `{:harlock_submit, focus_id}`. An app that only wants the final choice
+  ignores the first; one that previews as the highlight moves acts on both.
+  Both tuples already existed — `tabs` produces the first, `text_input` the
+  second — so the widget adds **no new message shape** to the routed contract.
+
+  A key that would not move the highlight returns `:noop` and falls through to
+  `update/2` as a raw key, rather than arriving as a message that selects what
+  is already selected.
+
+  Longer menus clip rather than scroll, matching `list/2`; wrap one in a
+  `viewport/1` when it can outgrow its region. An unfocused menu keeps its
+  highlight visible via the `:selection` token rather than dropping to the base
+  style — losing focus should not lose your place.
+
 ## [0.4.4] — 2026-07-27
 
 Input-parser fixes. Both bugs were reachable only from real terminal bytes,

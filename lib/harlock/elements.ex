@@ -458,5 +458,46 @@ defmodule Harlock.Elements do
     %Element{type: :tabs, opts: opts, children: []}
   end
 
+  @doc """
+  Vertical menu: a list of labels with one highlighted.
+
+  Required options:
+    * `:items`  — list of `{id, label}` tuples
+    * `:active` — id of the currently highlighted item
+
+  Optional:
+    * `:focusable`    — focus id; when focused the runtime routes `Up` / `Down` /
+      `Home` / `End` as `{:harlock_select, focus_id, id}` and `Enter` as
+      `{:harlock_submit, focus_id}`
+    * `:style`        — `%Style{}` for unhighlighted items (default
+      `Theme.get(:primary)`)
+    * `:active_style` — `%Style{}` for the highlighted item (default
+      `Theme.get(:focus)` when focused, `Theme.get(:selection)` otherwise)
+    * `:align`        — `:left` (default) | `:right` | `:center`
+
+  One row per item, top-aligned in the region. Longer menus clip rather than
+  scroll — wrap in a `viewport/1` when the list can outgrow its space.
+
+      menu(
+        items: [{:save, "Save"}, {:reload, "Reload"}, {:quit, "Quit"}],
+        active: m.action,
+        focusable: :actions
+      )
+
+  Moving the highlight and committing it are separate events, so an app can
+  preview on movement and act on Enter. See `Harlock.Menu` for the bindings and
+  for using `apply_key/3` directly.
+  """
+  @spec menu(keyword()) :: Element.t()
+  def menu(opts) when is_list(opts) do
+    for required <- [:items, :active] do
+      unless Keyword.has_key?(opts, required) do
+        raise ArgumentError, "menu/1 requires #{inspect(required)}"
+      end
+    end
+
+    %Element{type: :menu, opts: opts, children: []}
+  end
+
   defp default_constraints(children), do: Enum.map(children, fn _ -> {:fill, 1} end)
 end

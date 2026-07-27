@@ -243,6 +243,23 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  # A menu splits movement from commitment: arrows deliver {:harlock_select, …}
+  # as the highlight moves, Enter delivers {:harlock_submit, …}. Both tuples
+  # already exist — tabs produces the first, text_input the second — so the
+  # widget adds no new message shape.
+  defp route_to_widget(%Element{type: :menu} = el, event, focus_id, state) do
+    with {:ok, items} <- Keyword.fetch(el.opts, :items),
+         {:ok, active} <- Keyword.fetch(el.opts, :active) do
+      case Harlock.Menu.apply_key(event, active, items) do
+        {:select, new_id} -> {:routed, {:harlock_select, focus_id, new_id}, state}
+        :submit -> {:routed, {:harlock_submit, focus_id}, state}
+        :noop -> {:pass, state}
+      end
+    else
+      _ -> {:pass, state}
+    end
+  end
+
   # A textarea produces the same {:harlock_edit, id, {value, cursor}} message a
   # text_input does — both own a (value, cursor) pair, so the app writes one
   # clause either way. It never submits: Enter inserts a newline.

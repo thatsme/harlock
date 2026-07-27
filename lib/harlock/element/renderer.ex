@@ -201,6 +201,30 @@ defmodule Harlock.Element.Renderer do
     render_tabs(frame, region, items, active, separator, inactive_style, active_style, sep_style)
   end
 
+  defp render_element(%Element{type: :menu} = el, region, frame, focused) do
+    items = Keyword.fetch!(el.opts, :items)
+    active = Keyword.fetch!(el.opts, :active)
+    align = Keyword.get(el.opts, :align, :left)
+    is_focused? = Keyword.get(el.opts, :focusable) == focused
+
+    base = el.opts |> Keyword.get(:style, Theme.get(:primary)) |> Style.from()
+
+    active_style =
+      el.opts
+      |> Keyword.get(:active_style, default_menu_active_style(is_focused?))
+      |> Style.from()
+
+    # One row per item, top-aligned; anything past the region's height clips,
+    # matching list/2. A menu that can outgrow its space belongs in a viewport.
+    items
+    |> Enum.take(region.h)
+    |> Enum.with_index()
+    |> Enum.reduce(frame, fn {{id, label}, index}, acc ->
+      style = if id == active, do: active_style, else: base
+      render_cell(acc, region.row + index, region.col, region.w, label, align, style)
+    end)
+  end
+
   defp render_element(%Element{type: :vbox} = el, region, frame, focused) do
     constraints = Keyword.fetch!(el.opts, :constraints)
     rects = Layout.split(region, :vertical, constraints)
@@ -516,6 +540,11 @@ defmodule Harlock.Element.Renderer do
 
   defp default_tabs_active_style(true), do: Theme.get(:focus)
   defp default_tabs_active_style(false), do: Theme.get(:header)
+
+  # Unfocused menus keep the highlight visible via :selection rather than
+  # dropping to the base style — losing focus should not lose your place.
+  defp default_menu_active_style(true), do: Theme.get(:focus)
+  defp default_menu_active_style(false), do: Theme.get(:selection)
 
   defp mask(value) do
     value
