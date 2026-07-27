@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.5.0/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.6.0/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -93,8 +93,6 @@ defmodule Overview do
   defp update_tasks(_, m), do: m
 
   def view(m) do
-    here = Focus.current()
-
     vbox(
       constraints: [fill: 1, length: 1],
       children: [
@@ -104,7 +102,8 @@ defmodule Overview do
             box(
               title: "Tasks",
               border: :rounded,
-              border_style: border_style(here == :tasks),
+              border_style: [dim: true],
+              focus_style: [fg: :cyan, bold: true],
               focusable: :tasks,
               child:
                 table(
@@ -121,7 +120,11 @@ defmodule Overview do
             box(
               title: "Log",
               border: :rounded,
-              border_style: border_style(here == :log),
+              border_style: [dim: true],
+              focus_style: [fg: :cyan, bold: true],
+              # :log lives on the viewport, because that is what receives the
+              # scroll keys. focus_proxy: lights the box up with it.
+              focus_proxy: :log,
               child:
                 viewport(
                   focusable: :log,
@@ -141,8 +144,6 @@ defmodule Overview do
     )
   end
 
-  defp border_style(true), do: [fg: :cyan, bold: true]
-  defp border_style(false), do: [dim: true]
 end
 
 Harlock.run(Overview)
@@ -152,7 +153,7 @@ Harlock.run(Overview)
 
 ```elixir
 def deps do
-  [{:harlock, "~> 0.4"}]
+  [{:harlock, "~> 0.6"}]
 end
 ```
 
@@ -190,7 +191,7 @@ Compared to alternatives:
 
 ## Status
 
-Harlock is `v0.4`. The API is intentionally narrow and stable for the
+Harlock is `v0.6`. The API is intentionally narrow and stable for the
 primitives it ships; widgets and ergonomics are still landing.
 Anything `@moduledoc false` is internal and free to change.
 
@@ -222,8 +223,8 @@ Anything `@moduledoc false` is internal and free to change.
 | Goal-column memory for `textarea` vertical motion | ✓ (v0.4.3) |
 | Undo / redo (`Harlock.UndoStack`, app-held) | ✓ (v0.5) |
 | Push-shaped `Sub` kinds (`telemetry` / `logger` / `pubsub` / `file` / `signal` / `port`) | v0.6 |
-| `sparkline` widget | ✓ (unreleased) |
-| `box(focus_proxy: id)` (visual focus mirroring) | ✓ (unreleased) |
+| `sparkline` widget | ✓ (v0.6) |
+| `box(focus_proxy: id)` (visual focus mirroring) | ✓ (v0.6) |
 
 See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 

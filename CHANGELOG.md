@@ -10,6 +10,24 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-27
+
+The event-source seam. `Sub` had one kind, `:interval`, and it is a *timer* — the
+runtime wakes itself. Everything else worth subscribing to is the opposite shape:
+an external source pushes, and the runtime receives without that source knowing
+anything about rendering.
+
+`Sub.telemetry` and `Sub.logger` were built as two deliberately different
+consumers of that one seam rather than generalising from a single case. Neither
+needed a change to `Sub.start/2`'s contract or to the runtime's subscription
+diffing, so the remaining kinds (`pubsub`, `file`, `signal`, `port`) are
+additions rather than design work — they moved to v0.7 instead of holding this
+release.
+
+Telemetry leads because it is the integration that pays for the seam: Phoenix,
+Ecto, Oban, Broadway, Finch and Bandit all already emit `:telemetry`, so
+integrating with that one thing covers the ecosystem rather than one library.
+
 ### Added
 
 - **`Sub.telemetry/2` — subscribe to `:telemetry` events**, the first push-shaped
@@ -1015,7 +1033,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/thatsme/harlock/releases/tag/v0.6.0
 [0.5.0]: https://github.com/thatsme/harlock/releases/tag/v0.5.0
 [0.4.4]: https://github.com/thatsme/harlock/releases/tag/v0.4.4
 [0.4.3]: https://github.com/thatsme/harlock/releases/tag/v0.4.3

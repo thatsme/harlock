@@ -4,10 +4,10 @@ A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan through v1.0 (stable API). It's a living
-document — revised as the design settles. v0.5.0 is current and published
+document — revised as the design settles. v0.6.0 is current and published
 on Hex.
 
-## Status snapshot (v0.5.0, current)
+## Status snapshot (v0.6.0, current)
 
 What works:
 
@@ -21,8 +21,12 @@ What works:
 - Focus traversal (`Tab` / `Shift-Tab`), focus traps for modals with
   automatic stash/restore on open/close.
 - Focus-aware key routing (v0.4): the runtime dispatches navigation keys
-  straight to the focused `viewport` / `tabs` / `text_input` and delivers the
-  result as a message, so apps no longer hand-wire `apply_key` helpers.
+  straight to the focused `viewport` / `tabs` / `text_input` / `textarea` /
+  `menu` / `select` / `tree` and delivers the result as a message, so apps no
+  longer hand-wire `apply_key` helpers. `box(focus_proxy:)` lets a container
+  mirror a child's focus for styling without joining traversal.
+- Push-shaped subscriptions: `Sub.telemetry` and `Sub.logger` turn `:telemetry`
+  events and log calls into `update/2` messages, plus `sparkline` for trends.
 - Constraint layout solver: `:length`, `:percentage`, `:fill`, `:min`, `:max`.
   Deterministic round-off absorption; graceful truncation on over-constraint
   (logs warning, never crashes).
@@ -58,9 +62,9 @@ What works:
 
 What's stubbed / missing — the honest list:
 
-- `Sub`: only `:interval` exists, and it is a timer rather than a subscription —
-  push-shaped sources (`telemetry` / `logger` / `pubsub` / `file` / `signal` /
-  `port`) all wait on the v0.6 event-source seam.
+- `Sub`: `:interval`, `:telemetry` and `:logger` exist. The remaining
+  push-shaped kinds (`pubsub` / `file` / `signal` / `port`) are v0.7 — the seam
+  they need is built, so they are additions rather than design work.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - `table` draws only the visible rows but materialises the whole enumerable to
@@ -644,24 +648,18 @@ one would mean guessing — a mono terminal renders block elements perfectly
 well, so colour depth is not a proxy for it. Passing an ASCII ramp explicitly
 is honest and follows `spinner`'s `:frames`.
 
-### The remaining Sub kinds
+### The remaining Sub kinds — moved to v0.7
 
-Once the seam is settled, these follow its shape rather than inventing their
-own:
+v0.6.0 shipped without `pubsub`, `file`, `signal` and `port`. The milestone's
+point was the seam, and the seam is done and proven against two deliberately
+different consumers, so holding a finished release for four additions that need
+no design work would have been holding it for nothing.
 
-- `Sub.pubsub(pubsub_mod, topic, transform_fn)` — subscribes via
-  `Phoenix.PubSub`. Deferred from v0.4 because R2 took the cycle; deferred
-  again here only because telemetry proves the seam against a harder case.
-- `Sub.file(path, opts)` — watch via `:fs` if available, polling fallback.
-- `Sub.signal(:sigusr1, msg)` — wraps `:os.set_signal/2`. Note the NIF
-  already handles SIGWINCH separately; this is for app-level signals.
-- `Sub.port(cmd, args)` — long-running external process, stdout lines as
-  events.
-
-Their relative order should be decided by whichever real app needs one first,
-not guessed here. That was the mistake this section corrects: `Sub.pubsub` led
-the previous version of this list because it was written first, not because
-anything needed it.
+They are listed under v0.7 rather than becoming a v0.6.x series: each adds a
+public function to `Harlock.Sub`, and additive-in-a-patch is the tension this
+project already hit in v0.4.2. They sit alongside the hardening work rather than
+displacing it — that work is what v1.0 waits on, and it should not keep sliding
+to make room for small features.
 
 ### `box(focus_proxy: :child_id)` ✓
 
@@ -683,7 +681,37 @@ v0.4 R2 review.
 
 ---
 
-## v0.7 — pre-1.0 hardening (~3 weeks)
+## v0.7 — remaining subscriptions, then pre-1.0 hardening
+
+### The rest of the Sub kinds
+
+Additive, and each follows the seam v0.6 established — a linked process owning
+the registration, a handler that only builds and sends, detach on the way out.
+No new design work, which is why they did not gate v0.6.0.
+
+- `Sub.pubsub(pubsub_mod, topic, transform_fn)` — subscribes via
+  `Phoenix.PubSub`. Deferred from v0.4 because R2 took the cycle, then from v0.6
+  because telemetry proved the seam against a harder case.
+- `Sub.file(path, opts)` — watch via `:fs` if available, polling fallback.
+- `Sub.signal(:sigusr1, msg)` — wraps `:os.set_signal/2`. The NIF already
+  handles SIGWINCH separately; this is for app-level signals.
+- `Sub.port(cmd, args)` — long-running external process, stdout lines as events.
+
+Their relative order should be decided by whichever real app needs one first,
+not guessed here. That is the mistake the v0.6 list originally made:
+`Sub.pubsub` led it because it was written first, not because anything needed
+it.
+
+### Windowed aggregation for metrics
+
+Rates and percentiles over a trailing window, for `Sub.telemetry` consumers.
+Deliberately scoped *down* by `examples/dashboard.exs`: counts, mean, min and
+max over a bounded list turned out to be three lines of `Enum` in the model,
+with nothing worth abstracting. What a helper is actually for is the part that
+needs time — per-second rates, and percentiles that cannot be computed
+incrementally from a running total.
+
+### Hardening
 
 - **Dialyzer clean** at `:underspecs` + `:overspecs`. Strict specs on all
   public functions.
