@@ -14,7 +14,7 @@ defmodule Harlock.Element.Focusables do
   #   walking the list backward.
   # * `routed_widgets` — `%{focus_id => element}` for focusable elements
   #   whose type opts in to R2 auto-routing (currently `:viewport`,
-  #   `:tabs`, `:text_input`) and that have not explicitly set
+  #   `:tabs`, `:text_input`, `:textarea`) and that have not explicitly set
   #   `handle_keys: false`. Used by `Harlock.App.Runtime` to look up the
   #   focused widget at key-dispatch time without re-walking the tree.
   #
@@ -27,7 +27,7 @@ defmodule Harlock.Element.Focusables do
 
   @type id :: any()
 
-  @auto_routed_types [:viewport, :tabs, :text_input]
+  @auto_routed_types [:viewport, :tabs, :text_input, :textarea]
 
   @spec collect(Element.t()) :: {[id()], [[id()]], %{id() => Element.t()}}
   def collect(%Element{} = root) do

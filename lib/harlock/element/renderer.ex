@@ -12,6 +12,7 @@ defmodule Harlock.Element.Renderer do
   alias Harlock.Render.Frame
   alias Harlock.Render.Style
   alias Harlock.Render.StyleTable
+  alias Harlock.TextArea
   alias Harlock.TextBuffer
   alias Harlock.Theme
   alias Harlock.Width
@@ -90,6 +91,50 @@ defmodule Harlock.Element.Renderer do
       end
 
     frame
+  end
+
+  defp render_element(%Element{type: :textarea} = el, region, frame, focused) do
+    value = Keyword.fetch!(el.opts, :value)
+    cursor = Keyword.fetch!(el.opts, :cursor)
+    id = Keyword.fetch!(el.opts, :focusable)
+    scroll = Keyword.get(el.opts, :scroll, 0)
+
+    is_focused? = id == focused
+    show_placeholder? = value == "" and not is_focused?
+
+    if show_placeholder? do
+      ph_style = el.opts |> Keyword.get(:placeholder_style, %Style{dim: true}) |> Style.from()
+      placeholder = Keyword.get(el.opts, :placeholder, "")
+      Frame.write(frame, region.row, region.col, clip(placeholder, region.w), ph_style)
+    else
+      style = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
+      lines = TextArea.lines(value)
+      {cursor_line, cursor_column} = TextArea.position(value, cursor)
+      top = TextArea.scroll_to_reveal(scroll, value, cursor, region.h)
+
+      frame =
+        lines
+        |> Enum.slice(top, region.h)
+        |> Enum.with_index()
+        |> Enum.reduce(frame, fn {line, i}, f ->
+          Frame.write(f, region.row + i, region.col, clip(line, region.w), style)
+        end)
+
+      if is_focused? do
+        # The cursor's display column is the width of its line's prefix — the
+        # same computation a text_input does, applied to one line of many.
+        line = Enum.at(lines, cursor_line, "")
+        column = TextBuffer.cursor_column(line, cursor_column)
+
+        frame
+        |> Frame.set_focus_rect(rect_of(region))
+        |> Frame.set_cursor(
+          {region.row + (cursor_line - top), region.col + min(column, region.w - 1)}
+        )
+      else
+        frame
+      end
+    end
   end
 
   defp render_element(%Element{type: :progress} = el, region, frame, _focused) do

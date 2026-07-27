@@ -282,4 +282,111 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
       assert [{:key, :backspace, []}] = Harlock.Test.model(h).raw_keys
     end
   end
+
+  defmodule TextareaApp do
+    @moduledoc false
+    use Harlock.App
+
+    def init(_), do: %{body: "", cursor: 0, raw_keys: [], submits: 0}
+
+    def update({:harlock_edit, :body, {v, c}}, m), do: %{m | body: v, cursor: c}
+
+    def update({:harlock_submit, :body}, m), do: %{m | submits: m.submits + 1}
+
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+
+    def update(_, m), do: m
+
+    def view(m), do: textarea(focusable: :body, value: m.body, cursor: m.cursor)
+  end
+
+  describe "textarea auto-routing" do
+    setup do
+      h = Harlock.Test.start_app(TextareaApp, nil, rows: 10, cols: 20)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "typing routes as :harlock_edit, same message a text_input produces", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?h})
+      Harlock.Test.send_key(h, {:char, ?i})
+
+      assert Harlock.Test.model(h).body == "hi"
+      assert Harlock.Test.model(h).cursor == 2
+      assert Harlock.Test.model(h).raw_keys == []
+    end
+
+    test "Enter inserts a newline and never submits", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?a})
+      Harlock.Test.send_key(h, :enter)
+      Harlock.Test.send_key(h, {:char, ?b})
+
+      assert Harlock.Test.model(h).body == "a\nb"
+      assert Harlock.Test.model(h).submits == 0
+    end
+
+    test "Up / Down move between lines", %{h: h} do
+      for ch <- ~c"ab" do
+        Harlock.Test.send_key(h, {:char, ch})
+      end
+
+      Harlock.Test.send_key(h, :enter)
+
+      for ch <- ~c"cd" do
+        Harlock.Test.send_key(h, {:char, ch})
+      end
+
+      # cursor is at end of line 1 (index 5 in "ab\ncd")
+      assert Harlock.Test.model(h).cursor == 5
+
+      Harlock.Test.send_key(h, :up)
+      assert Harlock.Test.model(h).cursor == 2
+
+      Harlock.Test.send_key(h, :down)
+      assert Harlock.Test.model(h).cursor == 5
+    end
+
+    test "Up on the first line is a no-op that falls through as a raw key", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?a})
+      Harlock.Test.send_key(h, :up)
+
+      assert Harlock.Test.model(h).cursor == 1
+      assert [{:key, :up, []}] = Harlock.Test.model(h).raw_keys
+    end
+
+    test "Home / End are line-relative", %{h: h} do
+      for ch <- ~c"ab" do
+        Harlock.Test.send_key(h, {:char, ch})
+      end
+
+      Harlock.Test.send_key(h, :enter)
+
+      for ch <- ~c"cd" do
+        Harlock.Test.send_key(h, {:char, ch})
+      end
+
+      Harlock.Test.send_key(h, :home)
+      assert Harlock.Test.model(h).cursor == 3
+
+      Harlock.Test.send_key(h, :end)
+      assert Harlock.Test.model(h).cursor == 5
+    end
+
+    test "Backspace at a line start joins the lines", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?a})
+      Harlock.Test.send_key(h, :enter)
+      Harlock.Test.send_key(h, {:char, ?b})
+      Harlock.Test.send_key(h, :home)
+
+      assert Harlock.Test.model(h).body == "a\nb"
+
+      Harlock.Test.send_key(h, :backspace)
+      assert Harlock.Test.model(h).body == "ab"
+    end
+
+    test "Tab still moves focus rather than being consumed as input", %{h: h} do
+      Harlock.Test.send_key(h, :tab)
+      assert Harlock.Test.model(h).body == ""
+    end
+  end
 end

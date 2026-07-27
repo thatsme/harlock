@@ -297,6 +297,43 @@ defmodule Harlock.Elements do
   end
 
   @doc """
+  Multi-line text area.
+
+  Required options:
+    * `:value`     — the current contents, lines separated by `\\n` (caller-owned)
+    * `:cursor`    — flat grapheme index of the cursor (0..length)
+    * `:focusable` — id for focus traversal
+
+  Optional:
+    * `:scroll`           — index of the first visible line (default `0`)
+    * `:placeholder`      — shown when value is empty and the area isn't focused
+    * `:style`            — `%Style{}` for the text
+    * `:placeholder_style`— `%Style{}` for the placeholder
+
+  Like `text_input/1` this is a dumb renderer: the app's `update/2` owns the
+  value and cursor, and `Harlock.TextArea.apply_key/3` maps key events onto
+  them. When the area is focused the runtime routes keys automatically and
+  delivers `{:harlock_edit, focus_id, {value, cursor}}` — the same message a
+  `text_input` produces, because both use the same `(value, cursor)` shape.
+
+  Lines longer than the region are clipped, not wrapped. `:scroll` is
+  app-owned in the same way `viewport/1` owns `:offset`; the renderer adjusts
+  it by the minimum needed to keep the cursor on screen, so passing nothing
+  still draws a usable cursor. See `Harlock.TextArea.scroll_to_reveal/4` for
+  threading it back onto the model.
+  """
+  @spec textarea(keyword()) :: Element.t()
+  def textarea(opts) when is_list(opts) do
+    for required <- [:value, :cursor, :focusable] do
+      unless Keyword.has_key?(opts, required) do
+        raise ArgumentError, "textarea/1 requires #{inspect(required)}"
+      end
+    end
+
+    %Element{type: :textarea, opts: opts, children: []}
+  end
+
+  @doc """
   Single-line horizontal progress bar.
 
   Required options:

@@ -12,6 +12,32 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **`textarea/1` — a multi-line text area**, backed by the new
+  `Harlock.TextArea`. Hard line breaks, vertical motion, line-relative Home /
+  End, and Enter inserting a newline instead of submitting. Horizontal editing
+  delegates to `Harlock.TextBuffer`, so both widgets share one implementation
+  and one set of key bindings.
+
+  The cursor is a flat grapheme index rather than a `{line, column}` pair —
+  the roadmap anticipated widening the type, but keeping it flat makes
+  cross-line motion fall out for free (moving left from a line start lands on
+  the newline ending the previous line; deleting there joins them) and lets
+  the runtime deliver textarea edits through the *same*
+  `{:harlock_edit, id, {value, cursor}}` message a `text_input` produces. Apps
+  write one `update/2` clause for either widget.
+
+  `Ctrl-k` and `Ctrl-u` are line-relative here, unlike their `TextBuffer`
+  counterparts which act on the whole value; `Ctrl-k` at end-of-line kills the
+  newline and joins, matching emacs `kill-line`.
+
+  Not yet implemented: word wrap (long lines clip) and goal-column memory
+  (vertical motion clamps the column to the target line rather than restoring
+  the original on the next long line). Both are noted in `ROADMAP.md`.
+
+- **`Harlock.TextBuffer.push_kill/2`** — pushes killed text onto a ring,
+  dropping empty kills and applying the depth cap. Exposed so `TextArea` can
+  build line-relative kills on the same ring policy rather than duplicating it.
+
 - **Readline-style editing in `Harlock.TextBuffer`.** Word motions
   (`move_word_left/2`, `move_word_right/2`), kills that return the removed
   text (`kill_word_backward/2`, `kill_word_forward/2`, `kill_to_end/2`,

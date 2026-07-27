@@ -201,7 +201,7 @@ Anything `@moduledoc false` is internal and free to change.
 | Cmd executor (`Cmd.from`, `Cmd.batch`, `Cmd.map`) | ✓ |
 | Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ |
 | Focus traversal + focus_trap overlays | ✓ |
-| Focus-aware widget key routing (`viewport` / `tabs` / `text_input`) | ✓ (v0.4) |
+| Focus-aware widget key routing (`viewport` / `tabs` / `text_input` / `textarea`) | ✓ (v0.4) |
 | Wide-grapheme width (CJK, emoji, ZWJ, flags) | ✓ |
 | Theme tokens (`:header`, `:focus`, `:selection`, `:border`, `:primary`, `:accent`, `:muted`, `:error`) | ✓ (full set in v0.4) |
 | Built-in themes (`:default` / `:dark` / `:high_contrast`) | ✓ (v0.4) |
@@ -210,6 +210,7 @@ Anything `@moduledoc false` is internal and free to change.
 | `:default` theme byte-identical to v0.3 (golden-frame pin) | ✓ (v0.4) |
 | SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
+| Readline editing in `text_input` / `textarea` (word motions, kill ring, yank) | ✓ (unreleased) |
 | `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ |
 | `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ |
 | `:telemetry` events (frame render, input dispatch, cmd, reader) | ✓ |
@@ -217,7 +218,7 @@ Anything `@moduledoc false` is internal and free to change.
 | Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | `tree` / `menu` / `select` widgets | v0.5 |
-| Multi-line `text_area` | v0.5 |
+| Multi-line `textarea` (hard line breaks; no word wrap yet) | ✓ (unreleased) |
 | Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.5 |
 | `box(focus_proxy: id)` (visual focus mirroring) | v0.5 |
 

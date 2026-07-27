@@ -469,13 +469,28 @@ Each gets its own `apply_key/n` pure helper plus a per-type clause in
 `Harlock.App.Runtime.route_to_widget/4`; no new mechanism, just three
 new consumers.
 
-### Multi-line text_area
+### Multi-line text_area ✓ (partial)
 
-Builds on `text_input` + `viewport`. Word wrap, soft/hard line breaks,
-proper cursor across wraps. Word movement (`Ctrl-Left`/`Ctrl-Right`),
-line movement (`Up`/`Down` preserving visual column). Routed-edit
-message stays `{:harlock_edit, focus_id, {value, cursor}}` — the
-cursor type widens slightly to accommodate `{line, col}`.
+Shipped as `textarea/1` + `Harlock.TextArea`. Hard line breaks, vertical
+motion, line-relative Home / End and kills, and Enter inserting a newline
+rather than submitting. Horizontal editing delegates to
+`Harlock.TextBuffer`, so both widgets share one key-binding set.
+
+Two deviations from the plan above, both deliberate:
+
+- **The cursor stayed a flat grapheme index** rather than widening to
+  `{line, col}`. Cross-line motion then falls out for free — moving left
+  from a line start lands on the newline ending the previous line, and
+  deleting there joins them — and the routed-edit message is byte-identical
+  to the one `text_input` produces, so apps write one clause for both.
+- **Word wrap is not implemented.** Long lines clip rather than wrap, so
+  "proper cursor across wraps" is moot for now. Soft wrapping is the
+  remaining work, and it is the part that needs the visual-vs-logical line
+  distinction the original plan anticipated.
+
+Also still open: goal-column memory. Vertical motion clamps the column to
+the target line, so moving down through a short line loses the original
+column instead of restoring it on the next long line.
 
 ### Richer Sub kinds
 

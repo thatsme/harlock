@@ -15,6 +15,7 @@ defmodule Harlock.Element do
   @type type ::
           :text
           | :text_input
+          | :textarea
           | :vbox
           | :hbox
           | :spacer

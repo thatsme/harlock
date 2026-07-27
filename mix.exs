@@ -116,6 +116,7 @@ defmodule Harlock.MixProject do
           Harlock.Focus,
           Harlock.Theme,
           Harlock.TextBuffer,
+          Harlock.TextArea,
           Harlock.Elements,
           Harlock.Element.Column
         ],

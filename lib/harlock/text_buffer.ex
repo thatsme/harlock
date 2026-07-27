@@ -259,6 +259,18 @@ defmodule Harlock.TextBuffer do
   end
 
   @doc """
+  Push killed text onto a ring.
+
+  An empty kill is dropped rather than pushed, so a stray `Ctrl-k` at
+  end-of-line doesn't shadow the previous kill, and the ring is capped so a
+  long-lived session doesn't accumulate one indefinitely. Exposed so
+  `Harlock.TextArea` can build line-relative kills on the same ring policy.
+  """
+  @spec push_kill(kill_ring(), String.t()) :: kill_ring()
+  def push_kill(ring, ""), do: ring
+  def push_kill(ring, text), do: Enum.take([text | ring], @kill_ring_limit)
+
+  @doc """
   Insert the most recent kill at the cursor. An empty ring is a no-op.
   """
   @spec yank(String.t(), cursor(), kill_ring()) :: {String.t(), cursor()}
@@ -398,10 +410,5 @@ defmodule Harlock.TextBuffer do
 
   def apply_key(_event, _value, _cursor, _ring), do: :noop
 
-  # A kill that removed nothing leaves the ring alone, so a stray Ctrl-K at
-  # end-of-line doesn't push an empty string and shadow the previous kill.
-  defp killed({value, cursor, ""}, ring), do: {:edit, value, cursor, ring}
-
-  defp killed({value, cursor, text}, ring),
-    do: {:edit, value, cursor, Enum.take([text | ring], @kill_ring_limit)}
+  defp killed({value, cursor, text}, ring), do: {:edit, value, cursor, push_kill(ring, text)}
 end

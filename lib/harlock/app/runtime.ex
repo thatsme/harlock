@@ -236,6 +236,27 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  # A textarea produces the same {:harlock_edit, id, {value, cursor}} message a
+  # text_input does — both own a (value, cursor) pair, so the app writes one
+  # clause either way. It never submits: Enter inserts a newline.
+  defp route_to_widget(%Element{type: :textarea} = el, event, focus_id, _state) do
+    with {:ok, value} <- Keyword.fetch(el.opts, :value),
+         {:ok, cursor} <- Keyword.fetch(el.opts, :cursor) do
+      case Harlock.TextArea.apply_key(event, value, cursor) do
+        {:edit, ^value, ^cursor} ->
+          :pass
+
+        {:edit, new_value, new_cursor} ->
+          {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}}}
+
+        :noop ->
+          :pass
+      end
+    else
+      _ -> :pass
+    end
+  end
+
   defp route_to_widget(%Element{type: :text_input} = el, event, focus_id, _state) do
     with {:ok, value} <- Keyword.fetch(el.opts, :value),
          {:ok, cursor} <- Keyword.fetch(el.opts, :cursor) do
