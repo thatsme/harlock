@@ -30,9 +30,42 @@ changes are called out in the relevant release notes.
   counterparts which act on the whole value; `Ctrl-k` at end-of-line kills the
   newline and joins, matching emacs `kill-line`.
 
-  Not yet implemented: word wrap (long lines clip) and goal-column memory
-  (vertical motion clamps the column to the target line rather than restoring
-  the original on the next long line). Both are noted in `ROADMAP.md`.
+  Not yet implemented: goal-column memory — vertical motion clamps the column
+  to the target row rather than restoring the original on the next long row.
+  Noted in `ROADMAP.md`.
+
+- **Opt-in word wrap for `textarea/1`** via `wrap: true`. Long lines break at
+  word boundaries across display rows, packing as many whole words as fit and
+  hard-breaking a word longer than the width. Breaks are measured in display
+  cells through `Harlock.Width`, so CJK wraps where the text actually reaches
+  the edge rather than where its grapheme count does.
+
+  With wrapping on, `↑` / `↓` and Home / End follow *display rows* rather than
+  logical lines — pressing `↓` inside a wrapped paragraph moves down one
+  visual row instead of past the whole paragraph — and `:scroll` counts
+  display rows. Kills stay logical-line relative: `Ctrl-k` kills to the end of
+  the line, not to the next wrap boundary, because that boundary isn't in the
+  text. Wrapping is off by default, so existing textareas clip exactly as
+  before.
+
+  New pure helpers on `Harlock.TextArea`: `wrap_line/2`, `visual_rows/2`,
+  `visual_position/3`, `visual_cursor_at/4`. Wrapped rows concatenate back to
+  the original value exactly, which is what lets a flat cursor index map onto
+  them without a translation table. `move_up/3`, `move_down/3`, `line_home/3`,
+  `line_end/3` and `scroll_to_reveal/5` take an optional wrap width; passing
+  `nil` keeps the previous logical-line behaviour, so the lower arities are
+  unchanged.
+
+  Vertical motion now preserves the *display* column rather than the grapheme
+  index. This is a behaviour change for values containing wide graphemes even
+  without wrapping — moving up a column of CJK text now lands where it looks
+  like it should.
+
+- `Harlock.Element.WidgetMetrics.record/2` generalises the previously
+  viewport-only metrics scratchpad, so the renderer can hand a textarea's
+  rendered wrap width back to the runtime for key routing.
+  `record_viewport/2` is retained and delegates to it. Internal
+  (`@moduledoc false`).
 
 - **`Harlock.TextBuffer.push_kill/2`** — pushes killed text onto a ring,
   dropping empty kills and applying the depth cap. Exposed so `TextArea` can

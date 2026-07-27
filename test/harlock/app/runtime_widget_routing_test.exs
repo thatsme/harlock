@@ -389,4 +389,53 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
       assert Harlock.Test.model(h).body == ""
     end
   end
+
+  defmodule WrapApp do
+    @moduledoc false
+    use Harlock.App
+
+    # At cols: 10 this wraps into ["aaa bbb ", "ccc"] — one logical line, two
+    # display rows.
+    def init(_), do: %{body: "aaa bbb ccc", cursor: 0, raw_keys: []}
+
+    def update({:harlock_edit, :body, {v, c}}, m), do: %{m | body: v, cursor: c}
+
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+
+    def update(_, m), do: m
+
+    def view(m), do: textarea(focusable: :body, value: m.body, cursor: m.cursor, wrap: true)
+  end
+
+  describe "textarea wrapping routes vertical motion by display row" do
+    setup do
+      h = Harlock.Test.start_app(WrapApp, nil, rows: 10, cols: 10)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "Down moves to the next wrapped row of the same logical line", %{h: h} do
+      # Without the wrap width reaching the runtime this would be a no-op,
+      # because there is only one logical line to move to.
+      Harlock.Test.send_key(h, :down)
+      assert Harlock.Test.model(h).cursor == 8
+      assert Harlock.Test.model(h).raw_keys == []
+    end
+
+    test "Up returns to the previous wrapped row", %{h: h} do
+      Harlock.Test.send_key(h, :down)
+      Harlock.Test.send_key(h, :up)
+      assert Harlock.Test.model(h).cursor == 0
+    end
+
+    test "End goes to the end of the wrapped row, not the logical line", %{h: h} do
+      Harlock.Test.send_key(h, :end)
+      assert Harlock.Test.model(h).cursor == 8
+    end
+
+    test "Ctrl-End still goes to the end of the whole value", %{h: h} do
+      Harlock.Test.send_key(h, :end, [:ctrl])
+      assert Harlock.Test.model(h).cursor == 11
+    end
+  end
 end

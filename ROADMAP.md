@@ -469,28 +469,30 @@ Each gets its own `apply_key/n` pure helper plus a per-type clause in
 `Harlock.App.Runtime.route_to_widget/4`; no new mechanism, just three
 new consumers.
 
-### Multi-line text_area ✓ (partial)
+### Multi-line text_area ✓
 
-Shipped as `textarea/1` + `Harlock.TextArea`. Hard line breaks, vertical
-motion, line-relative Home / End and kills, and Enter inserting a newline
-rather than submitting. Horizontal editing delegates to
+Shipped as `textarea/1` + `Harlock.TextArea`. Hard and soft line breaks,
+vertical motion, display-row Home / End, logical-line kills, and Enter
+inserting a newline rather than submitting. Horizontal editing delegates to
 `Harlock.TextBuffer`, so both widgets share one key-binding set.
 
-Two deviations from the plan above, both deliberate:
+Word wrap is opt-in per element (`wrap: true`) and breaks at word
+boundaries, measuring display cells so CJK wraps where it actually reaches
+the edge. When wrapping, `↑` / `↓` and Home / End follow display rows;
+kills stay logical-line relative, because a wrap boundary isn't in the text.
 
-- **The cursor stayed a flat grapheme index** rather than widening to
-  `{line, col}`. Cross-line motion then falls out for free — moving left
-  from a line start lands on the newline ending the previous line, and
-  deleting there joins them — and the routed-edit message is byte-identical
-  to the one `text_input` produces, so apps write one clause for both.
-- **Word wrap is not implemented.** Long lines clip rather than wrap, so
-  "proper cursor across wraps" is moot for now. Soft wrapping is the
-  remaining work, and it is the part that needs the visual-vs-logical line
-  distinction the original plan anticipated.
+One deviation from the plan above, deliberate: **the cursor stayed a flat
+grapheme index** rather than widening to `{line, col}`. Cross-line motion
+then falls out for free — moving left from a line start lands on the
+newline ending the previous line, and deleting there joins them — and the
+routed-edit message is byte-identical to the one `text_input` produces, so
+apps write one clause for both. The visual-vs-logical distinction the plan
+anticipated lives in `visual_rows/2` instead of in the cursor type, which
+keeps it out of the public message contract.
 
-Also still open: goal-column memory. Vertical motion clamps the column to
-the target line, so moving down through a short line loses the original
-column instead of restoring it on the next long line.
+Still open: goal-column memory. Vertical motion clamps the column to the
+target row, so moving down through a short row loses the original column
+instead of restoring it on the next long one.
 
 ### Richer Sub kinds
 

@@ -218,7 +218,7 @@ Anything `@moduledoc false` is internal and free to change.
 | Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | `tree` / `menu` / `select` widgets | v0.5 |
-| Multi-line `textarea` (hard line breaks; no word wrap yet) | ✓ (unreleased) |
+| Multi-line `textarea` with opt-in word wrap | ✓ (unreleased) |
 | Richer `Sub` kinds (`pubsub` / `file` / `signal` / `port`) | v0.5 |
 | `box(focus_proxy: id)` (visual focus mirroring) | v0.5 |
 

@@ -108,28 +108,30 @@ defmodule Harlock.Element.Renderer do
       Frame.write(frame, region.row, region.col, clip(placeholder, region.w), ph_style)
     else
       style = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
-      lines = TextArea.lines(value)
-      {cursor_line, cursor_column} = TextArea.position(value, cursor)
-      top = TextArea.scroll_to_reveal(scroll, value, cursor, region.h)
+      wrap_width = if Keyword.get(el.opts, :wrap, false) and region.w > 0, do: region.w
+
+      # The runtime needs the wrap width to route vertical motion by display
+      # row rather than logical line. nil when wrapping is off, which is
+      # exactly what TextArea.apply_key/5 expects.
+      WidgetMetrics.record(Keyword.get(el.opts, :focusable), %{textarea_wrap_width: wrap_width})
+
+      rows = TextArea.visual_rows(value, wrap_width)
+      {cursor_row, cursor_column} = TextArea.visual_position(value, cursor, wrap_width)
+      top = TextArea.scroll_to_reveal(scroll, value, cursor, region.h, wrap_width)
 
       frame =
-        lines
+        rows
         |> Enum.slice(top, region.h)
         |> Enum.with_index()
-        |> Enum.reduce(frame, fn {line, i}, f ->
-          Frame.write(f, region.row + i, region.col, clip(line, region.w), style)
+        |> Enum.reduce(frame, fn {{_start, text}, i}, f ->
+          Frame.write(f, region.row + i, region.col, clip(text, region.w), style)
         end)
 
       if is_focused? do
-        # The cursor's display column is the width of its line's prefix — the
-        # same computation a text_input does, applied to one line of many.
-        line = Enum.at(lines, cursor_line, "")
-        column = TextBuffer.cursor_column(line, cursor_column)
-
         frame
         |> Frame.set_focus_rect(rect_of(region))
         |> Frame.set_cursor(
-          {region.row + (cursor_line - top), region.col + min(column, region.w - 1)}
+          {region.row + (cursor_row - top), region.col + min(cursor_column, region.w - 1)}
         )
       else
         frame

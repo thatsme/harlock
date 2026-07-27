@@ -305,7 +305,9 @@ defmodule Harlock.Elements do
     * `:focusable` — id for focus traversal
 
   Optional:
-    * `:scroll`           — index of the first visible line (default `0`)
+    * `:wrap`             — when true, wrap long lines at the rendered width
+      (default `false`, which clips instead)
+    * `:scroll`           — index of the first visible display row (default `0`)
     * `:placeholder`      — shown when value is empty and the area isn't focused
     * `:style`            — `%Style{}` for the text
     * `:placeholder_style`— `%Style{}` for the placeholder
@@ -316,11 +318,14 @@ defmodule Harlock.Elements do
   delivers `{:harlock_edit, focus_id, {value, cursor}}` — the same message a
   `text_input` produces, because both use the same `(value, cursor)` shape.
 
-  Lines longer than the region are clipped, not wrapped. `:scroll` is
-  app-owned in the same way `viewport/1` owns `:offset`; the renderer adjusts
-  it by the minimum needed to keep the cursor on screen, so passing nothing
-  still draws a usable cursor. See `Harlock.TextArea.scroll_to_reveal/4` for
-  threading it back onto the model.
+  With `wrap: true` long lines break across display rows at word boundaries,
+  and `↑` / `↓` / Home / End follow those rows rather than logical lines.
+  Without it, long lines are clipped.
+
+  `:scroll` is app-owned in the same way `viewport/1` owns `:offset`, and
+  counts display rows; the renderer adjusts it by the minimum needed to keep
+  the cursor on screen, so passing nothing still draws a usable cursor. See
+  `Harlock.TextArea.scroll_to_reveal/5` for threading it back onto the model.
   """
   @spec textarea(keyword()) :: Element.t()
   def textarea(opts) when is_list(opts) do

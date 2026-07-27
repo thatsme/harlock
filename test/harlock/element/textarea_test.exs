@@ -10,6 +10,8 @@ defmodule Harlock.Element.TextareaTest do
     for col <- 0..(width - 1), into: "" do
       case Buffer.get(frame.buffer, row, col).char do
         nil -> " "
+        # second cell of a wide grapheme — the glyph was emitted by the first
+        :continuation -> ""
         ch -> <<ch::utf8>>
       end
     end
@@ -109,6 +111,52 @@ defmodule Harlock.Element.TextareaTest do
       frame = Renderer.render(el, 1, 4, :other)
 
       assert frame.cursor == nil
+    end
+
+    test "wrap: true breaks long lines across rows" do
+      el = textarea(value: "aaa bbb ccc", cursor: 0, wrap: true, focusable: :body)
+      frame = Renderer.render(el, 3, 8)
+
+      # "aaa bbb " fills the width exactly; the trailing space is clipped
+      assert row_text(frame, 0, 8) == "aaa bbb "
+      assert row_text(frame, 1, 8) == "ccc     "
+    end
+
+    test "wrap: false (the default) clips instead" do
+      el = textarea(value: "aaa bbb ccc", cursor: 0, focusable: :body)
+      frame = Renderer.render(el, 3, 8)
+
+      assert row_text(frame, 0, 8) == "aaa bbb "
+      assert row_text(frame, 1, 8) == "        "
+    end
+
+    test "wrapped rows carry the cursor onto the right row and column" do
+      # cursor 8 is the start of the second wrapped row
+      el = textarea(value: "aaa bbb ccc", cursor: 8, wrap: true, focusable: :body)
+      frame = Renderer.render(el, 3, 8, :body)
+
+      assert frame.cursor == {1, 0}
+    end
+
+    test "scrolling counts display rows when wrapping" do
+      # wraps at 8 into ["aaa bbb ", "ccc ddd ", "eee"]; a 2-row region with the
+      # cursor at the end shows the last two rows
+      value = "aaa bbb ccc ddd eee"
+      el = textarea(value: value, cursor: String.length(value), wrap: true, focusable: :body)
+      frame = Renderer.render(el, 2, 8, :body)
+
+      assert row_text(frame, 0, 8) == "ccc ddd "
+      assert row_text(frame, 1, 8) == "eee     "
+      assert frame.cursor == {1, 3}
+    end
+
+    test "wrapping respects display width for wide graphemes" do
+      el = textarea(value: "日本語", cursor: 0, wrap: true, focusable: :body)
+      frame = Renderer.render(el, 2, 5)
+
+      # two 2-column graphemes fit in 5; the third wraps
+      assert row_text(frame, 0, 5) == "日本 "
+      assert row_text(frame, 1, 5) == "語   "
     end
 
     test "shows the placeholder only when empty and unfocused" do

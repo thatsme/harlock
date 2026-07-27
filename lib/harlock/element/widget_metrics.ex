@@ -17,16 +17,19 @@ defmodule Harlock.Element.WidgetMetrics do
     :ok
   end
 
-  @spec record_viewport(any(), non_neg_integer()) :: :ok
-  def record_viewport(focus_id, viewport_h) when not is_nil(focus_id) do
-    metrics = Process.get(@key, %{})
-    Process.put(@key, Map.put(metrics, focus_id, %{viewport_h: viewport_h}))
+  @spec record(any(), map()) :: :ok
+  def record(focus_id, metrics) when not is_nil(focus_id) and is_map(metrics) do
+    all = Process.get(@key, %{})
+    Process.put(@key, Map.update(all, focus_id, metrics, &Map.merge(&1, metrics)))
     :ok
   end
 
-  def record_viewport(_nil_id, _h), do: :ok
+  def record(_nil_id, _metrics), do: :ok
 
-  @spec consume() :: %{any() => %{viewport_h: non_neg_integer()}}
+  @spec record_viewport(any(), non_neg_integer()) :: :ok
+  def record_viewport(focus_id, viewport_h), do: record(focus_id, %{viewport_h: viewport_h})
+
+  @spec consume() :: %{any() => map()}
   def consume do
     metrics = Process.get(@key, %{})
     Process.delete(@key)

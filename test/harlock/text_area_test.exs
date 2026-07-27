@@ -183,6 +183,140 @@ defmodule Harlock.TextAreaTest do
     end
   end
 
+  describe "wrap_line" do
+    test "packs as many whole words as fit" do
+      # "aaa bbb" fills the width exactly, so the row keeps both words and
+      # takes the separating space rather than breaking at the earlier one
+      assert TextArea.wrap_line("aaa bbb ccc", 7) == ["aaa bbb ", "ccc"]
+      assert TextArea.wrap_line("the quick brown fox", 9) == ["the quick ", "brown fox"]
+    end
+
+    test "breaks at the last space that fits when the boundary falls mid-word" do
+      assert TextArea.wrap_line("aaa bbb", 4) == ["aaa ", "bbb"]
+    end
+
+    test "keeps the break space on the preceding row so rows rejoin exactly" do
+      for {line, width} <- [{"aaa bbb ccc", 7}, {"the quick brown fox", 9}, {"a b c d", 3}] do
+        assert TextArea.wrap_line(line, width) |> Enum.join() == line
+      end
+    end
+
+    test "hard-breaks a word longer than the width" do
+      assert TextArea.wrap_line("abcdefgh", 3) == ["abc", "def", "gh"]
+    end
+
+    test "a line that fits is one row" do
+      assert TextArea.wrap_line("abc", 3) == ["abc"]
+      assert TextArea.wrap_line("abc", 99) == ["abc"]
+    end
+
+    test "an empty line is one empty row" do
+      assert TextArea.wrap_line("", 5) == [""]
+    end
+
+    test "measures display width, so CJK costs two columns" do
+      # each of 日本語 is 2 columns wide, so only two fit in 5
+      assert TextArea.wrap_line("日本語", 5) == ["日本", "語"]
+    end
+
+    test "a width too narrow for one grapheme still makes progress" do
+      assert TextArea.wrap_line("日本", 1) == ["日", "本"]
+    end
+  end
+
+  describe "visual_rows" do
+    test "with nil width is just the logical lines" do
+      assert TextArea.visual_rows(@sample, nil) == [{0, "ab"}, {3, "cd"}, {6, "e"}]
+    end
+
+    test "reports the flat cursor each wrapped row starts at" do
+      # "aaa bbb" wrapped at 4 -> ["aaa ", "bbb"], then line "z"
+      assert TextArea.visual_rows("aaa bbb\nz", 4) == [{0, "aaa "}, {4, "bbb"}, {8, "z"}]
+    end
+  end
+
+  describe "visual_position / visual_cursor_at" do
+    test "maps a cursor onto the wrapped row it sits in" do
+      v = "aaa bbb"
+      assert TextArea.visual_position(v, 0, 4) == {0, 0}
+      assert TextArea.visual_position(v, 3, 4) == {0, 3}
+      # cursor 4 is exactly the wrap boundary -> start of the next row
+      assert TextArea.visual_position(v, 4, 4) == {1, 0}
+      assert TextArea.visual_position(v, 7, 4) == {1, 3}
+    end
+
+    test "columns are display cells, not graphemes" do
+      assert TextArea.visual_position("日x", 1, nil) == {0, 2}
+    end
+
+    test "round-trips through visual_cursor_at" do
+      v = "aaa bbb\nz"
+
+      for c <- 0..String.length(v) do
+        {row, col} = TextArea.visual_position(v, c, 4)
+        assert TextArea.visual_cursor_at(v, row, col, 4) == c
+      end
+    end
+
+    test "clamps out-of-range rows and columns" do
+      v = "aaa bbb"
+      assert TextArea.visual_cursor_at(v, 99, 0, 4) == 4
+      assert TextArea.visual_cursor_at(v, 0, 99, 4) == 4
+      assert TextArea.visual_cursor_at(v, -1, -1, 4) == 0
+    end
+  end
+
+  describe "motion with wrapping" do
+    # "aaa bbb" wraps at 4 into ["aaa ", "bbb"]
+    test "down moves to the next visual row, not past the paragraph" do
+      assert TextArea.move_down("aaa bbb", 1, 4) == 5
+    end
+
+    test "up moves to the previous visual row" do
+      assert TextArea.move_up("aaa bbb", 5, 4) == 1
+    end
+
+    test "up on the first visual row is a no-op" do
+      assert TextArea.move_up("aaa bbb", 1, 4) == 1
+    end
+
+    test "down on the last visual row is a no-op" do
+      assert TextArea.move_down("aaa bbb", 5, 4) == 5
+    end
+
+    test "home / end act on the visual row" do
+      assert TextArea.line_home("aaa bbb", 6, 4) == 4
+      assert TextArea.line_end("aaa bbb", 5, 4) == 7
+      # first row ends after its trailing space
+      assert TextArea.line_end("aaa bbb", 1, 4) == 4
+    end
+
+    test "without a width the same calls stay logical" do
+      assert TextArea.move_down("aaa bbb", 1, nil) == 1
+      assert TextArea.line_end("aaa bbb", 1, nil) == 7
+    end
+
+    test "vertical motion preserves the display column across wide graphemes" do
+      # row 0 is "日本" (4 columns), row 1 is "ab"; column 2 on row 0 is
+      # after 日, which maps to column 2 on row 1 -> after "ab"[0..1]
+      v = "日本\nab"
+      cursor = TextArea.move_down(v, 1, nil)
+      assert TextArea.visual_position(v, cursor, nil) == {1, 2}
+    end
+  end
+
+  describe "scroll_to_reveal with wrapping" do
+    test "counts display rows, not logical lines" do
+      # "aaa bbb ccc" wraps at 4 into 3 rows; cursor on the last one
+      v = "aaa bbb ccc"
+      assert TextArea.scroll_to_reveal(0, v, String.length(v), 2, 4) == 1
+    end
+
+    test "unwrapped counts logical lines" do
+      assert TextArea.scroll_to_reveal(0, "a\nb\nc", 4, 2, nil) == 1
+    end
+  end
+
   describe "multi-byte graphemes" do
     test "positions are measured in graphemes, not bytes" do
       v = "日本\n語"
