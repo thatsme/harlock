@@ -10,7 +10,7 @@ model / update / view loop on top of OTP, with first-class focus
 traversal, layout constraints, ANSI cell-diff rendering, and a small
 termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.6.0/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.7.0/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -153,7 +153,7 @@ Harlock.run(Overview)
 
 ```elixir
 def deps do
-  [{:harlock, "~> 0.6"}]
+  [{:harlock, "~> 0.7"}]
 end
 ```
 
@@ -191,7 +191,7 @@ Compared to alternatives:
 
 ## Status
 
-Harlock is `v0.6`. The API is intentionally narrow and stable for the
+Harlock is `v0.7`. The API is intentionally narrow and stable for the
 primitives it ships; widgets and ergonomics are still landing.
 Anything `@moduledoc false` is internal and free to change.
 
@@ -222,9 +222,9 @@ Anything `@moduledoc false` is internal and free to change.
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
 | Goal-column memory for `textarea` vertical motion | ✓ (v0.4.3) |
 | Undo / redo (`Harlock.UndoStack`, app-held) | ✓ (v0.5) |
-| Push-shaped `Sub` kinds (`telemetry` / `logger` / `source`) | ✓ (unreleased) |
-| `Sub` kinds with real logic (`file` / `port`) | v0.7 |
-| Windowed `table` rows (`fn offset, limit -> rows`) | ✓ (unreleased) |
+| Push-shaped `Sub` kinds (`telemetry` / `logger` / `source`) | ✓ (v0.7) |
+| `Sub` kinds with real logic (`file` / `port`) | v0.8 |
+| Windowed `table` rows (`fn offset, limit -> rows`) | ✓ (v0.7) |
 | `sparkline` widget | ✓ (v0.6) |
 | `box(focus_proxy: id)` (visual focus mirroring) | ✓ (v0.6) |
 

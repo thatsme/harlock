@@ -4,10 +4,10 @@ A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan through v1.0 (stable API). It's a living
-document — revised as the design settles. v0.6.0 is current and published
+document — revised as the design settles. v0.7.0 is current and published
 on Hex.
 
-## Status snapshot (v0.6.0, current)
+## Status snapshot (v0.7.0, current)
 
 What works:
 
@@ -26,7 +26,13 @@ What works:
   longer hand-wire `apply_key` helpers. `box(focus_proxy:)` lets a container
   mirror a child's focus for styling without joining traversal.
 - Push-shaped subscriptions: `Sub.telemetry` and `Sub.logger` turn `:telemetry`
-  events and log calls into `update/2` messages, plus `sparkline` for trends.
+  events and log calls into `update/2` messages, `Sub.source` subscribes to
+  anything that sends to its subscriber (Phoenix.PubSub, registries, `:global`
+  groups), plus `sparkline` for trends.
+- `table` takes a `fn offset, limit -> rows` window function as well as an
+  enumerable, so a query- or stream-backed table is asked only for what fits.
+- `Harlock.Bench` measures render and diff cost over five scenarios, reporting
+  percentiles. Layout solver covered by property tests as well as examples.
 - Constraint layout solver: `:length`, `:percentage`, `:fill`, `:min`, `:max`.
   Deterministic round-off absorption; graceful truncation on over-constraint
   (logs warning, never crashes).
@@ -62,9 +68,11 @@ What works:
 
 What's stubbed / missing — the honest list:
 
-- `Sub`: `:interval`, `:telemetry` and `:logger` exist. The remaining
-  push-shaped kinds (`pubsub` / `file` / `signal` / `port`) are v0.7 — the seam
-  they need is built, so they are additions rather than design work.
+- `Sub`: `:interval`, `:telemetry`, `:logger` and the generic `:source` exist.
+  `file` and `port` are v0.8 — the seam is built, so they are additions rather
+  than design work. `pubsub` is not coming: `source/3` covers it.
+- No windowed aggregation for metrics (rates, percentiles over a trailing
+  window) — v0.8. Counts and means are a few lines of `Enum` in the model.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No mouse-driven interaction; `table` has no auto-routing, so a windowed table
@@ -79,7 +87,9 @@ What's stubbed / missing — the honest list:
    shipped in v0.2 is the one allowed exception, strictly scoped to
    /dev/tty control; new NIFs require the same level of justification.
 3. **Phoenix devs feel at home.** `update/view/subs` mirrors LiveView's
-   mental model on purpose. `Sub.pubsub` should be a first-class citizen.
+   mental model on purpose, and subscribing to a `Phoenix.PubSub` topic is a
+   one-liner — via `Sub.source/3` rather than a named `Sub.pubsub`, because
+   principle 7 says the dependency belongs in the app rather than here.
 4. **Headless-testable.** Every new widget gets `IO.Test`-driven coverage.
    No "works on my terminal" features.
 5. **Terminal restoration is sacred.** Any new IO path must survive crashes
@@ -689,13 +699,43 @@ v0.4 R2 review.
 
 ---
 
-## v0.7 — remaining subscriptions, then pre-1.0 hardening
+## v0.7 — measurement, data access, and the generic seam ✓ (shipped as v0.7.0)
+
+Not the milestone originally planned under this number. What shipped is the work
+that turned out to be ready: a benchmark harness, the textarea speedup it
+justified, windowed table rows, `Sub.source/3`, and property tests for the
+layout solver.
+
+Three of those five changed a plan rather than executing one. The benchmark
+rescoped incremental rewrap *downwards*; measuring the table showed windowing was
+never a rendering optimisation; and `Sub.source/3` deleted `Sub.pubsub` from the
+roadmap instead of implementing it.
+
+### Harlock.Bench ✓
+
+### Textarea wrap memoisation ✓
+
+### Windowed `table` rows ✓
+
+### `Sub.source/3` ✓
+
+### Layout solver property tests ✓
+
+---
+
+## v0.8 — pre-1.0 hardening (next)
+
+Everything below is what stands between here and a 1.0 API freeze. It is the
+third time this work has been renumbered — v0.6, then v0.7, now v0.8 — because
+each time something finishable arrived first. That is defensible individually
+and a bad trend collectively, so this milestone gets nothing added to it: new
+features go to v0.9 or later, and 1.0 waits on this list alone.
 
 ### The rest of the Sub kinds
 
 Additive, and each follows the seam v0.6 established — a linked process owning
 the registration, a handler that only builds and sends, detach on the way out.
-No new design work, which is why they did not gate v0.6.0.
+No new design work, which is why they did not gate v0.6.0 or v0.7.0.
 
 - ~~`Sub.pubsub(pubsub_mod, topic, transform_fn)`~~ — **dropped, not deferred.**
   `Sub.source/3` covers it: Phoenix.PubSub delivers to whichever process called
@@ -763,7 +803,7 @@ incrementally from a running total.
 
   **The frame-diff half is not done, and needs a prerequisite.** "Replay produces
   an equivalent frame" requires interpreting the ANSI the differ emits, and
-  nothing in the tree can do that — `Harlock.IO.Test.Writer` captures a cell
+  nothing in the tree can do that — the test backend's writer captures a cell
   buffer written *through* the renderer, not a terminal emulator that consumes
   escape sequences. Either a minimal ANSI interpreter gets written for tests
   only, or this property gets dropped as costing more than it proves. Deciding

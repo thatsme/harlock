@@ -10,6 +10,21 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-28
+
+Measurement, data access, and the generic seam.
+
+Not the milestone originally planned under this number — what shipped is the
+work that turned out to be ready. Three of the five items changed a plan rather
+than executing one, which is what a benchmark is for: `Harlock.Bench` rescoped
+incremental rewrap *downwards*, measuring `table` showed windowing was never a
+rendering optimisation, and `Sub.source/3` deleted `Sub.pubsub` from the roadmap
+instead of implementing it.
+
+Remaining pre-1.0 hardening moves to v0.8, which is deliberately closed to new
+features: this is the third renumbering of that work, and 1.0 should not keep
+receding to make room.
+
 ### Added
 
 - **Property-based tests for the layout solver** (twelve properties, `stream_data`
@@ -1156,7 +1171,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/thatsme/harlock/releases/tag/v0.7.0
 [0.6.0]: https://github.com/thatsme/harlock/releases/tag/v0.6.0
 [0.5.0]: https://github.com/thatsme/harlock/releases/tag/v0.5.0
 [0.4.4]: https://github.com/thatsme/harlock/releases/tag/v0.4.4
