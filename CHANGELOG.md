@@ -10,6 +10,38 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **`examples/nodes.exs` — a BEAM node explorer.** Process list, supervision
+  trees, and memory over time; `observer` for people on SSH. The largest example,
+  and the first application built *on* the API rather than a demonstration of one
+  widget — which is what v0.8 asks for before a 1.0 freeze.
+
+  It shows the two patterns real data needs. The process table uses a window
+  function, because enumerating pids is one cheap list while `Process.info/2` on
+  all of them is not, so only the rows about to be drawn get hydrated. The
+  supervision tree loads children through a `Cmd` on expansion, because
+  `which_children/1` is a call into another process.
+
+  Building it found two API facts, now recorded rather than latent:
+
+  **The window function is called during rendering.** Fine for a list, ETS or
+  `Process.info/2`; not fine for a query or a remote node, because rendering
+  would block on IO. Documented on `table/1`, and flagged in the roadmap as a
+  genuine freeze question — the alternative is an async fetch protocol, which is
+  considerably more API.
+
+  **`table` has no auto-routing,** so every scrollable table hand-writes the six
+  key clauses `viewport` gets for free. `nodes.exs` has them verbatim. Adding
+  `:table` to the auto-routed types would reuse the existing
+  `{:harlock_scroll, id, offset}` message and add no public surface; whether that
+  belongs in a milestone with no features is a decision, not an oversight.
+
+### Changed
+
+- `table/1` documents that a window function runs during rendering, and what
+  therefore belongs in it.
+
 ## [0.7.0] — 2026-07-28
 
 Measurement, data access, and the generic seam.

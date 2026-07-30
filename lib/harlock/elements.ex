@@ -224,6 +224,14 @@ defmodule Harlock.Elements do
   function, so the cost is one fetch of viewport size no matter how much sits
   behind it. Returning fewer rows than `limit` simply means the end.
 
+  **The function is called during rendering**, which bounds what belongs in it.
+  Reading from a list, an ETS table, or `Process.info/2` is fine. A database
+  query or a call to another node is not: rendering would block on IO, and on a
+  remote node, on the network. For those, fetch into the model with a `Cmd` and
+  let the window function slice what has already arrived — the same arrangement
+  `examples/nodes.exs` uses for its process list, which hydrates locally in the
+  function but fetches supervisor children through a `Cmd`.
+
   Two consequences worth planning for. Auto-centring is impossible — with cursor
   or keyset pagination there is no row *index* to centre on — so `:offset` is
   app-owned, the same way `viewport/1` owns its own. And `:focused_row` still

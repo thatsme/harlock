@@ -240,6 +240,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
 ./scripts/run.sh explorer   # tree + select + menu, with async-loaded nodes
 ./scripts/run.sh dashboard  # telemetry + logger subscriptions into a sparkline
+./scripts/run.sh nodes      # BEAM node explorer: windowed table, lazy supervision tree
 ```
 
 The `scripts/run.sh` wrapper is in the GitHub repo — clone the repo to
@@ -257,6 +258,15 @@ that uses scroll-into-view to keep the focused field visible, a
 widget gallery with animated progress/spinner/statusbar/keybar, and a
 key-event inspector you can use to try out modified arrows
 (Ctrl-Up, Shift-Right, etc.).
+
+`nodes` is a BEAM node explorer — `observer` for people on SSH — and the
+largest example: a process list, supervision trees, and memory over time. It
+shows the two patterns that matter for real data. The process table uses a
+window function, because enumerating pids is one cheap list while
+`Process.info/2` on all of them is not, so only the rows about to be drawn get
+hydrated. The supervision tree loads children through a `Cmd` on expansion,
+because `which_children/1` is a call into another process and the window
+function runs during rendering.
 
 `dashboard` wires both v0.6 subscriptions into one screen: `Sub.telemetry`
 feeds job durations to a `sparkline`, `Sub.logger` turns log calls into

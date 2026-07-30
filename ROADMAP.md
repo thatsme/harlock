@@ -61,7 +61,7 @@ What works:
 - Headless `IO.Test` backend selectable via `backend: :test` for
   deterministic tests without a TTY, plus the `Harlock.Test` helper API.
 - Examples: `counter`, `sysmon`, `contacts`, `showcase`, `overview`, `notes`,
-  `explorer`, `dashboard`. Smoke
+  `explorer`, `dashboard`, `nodes`. Smoke
   tests driven by `script(1)` (handles BSD vs util-linux flag differences).
 - Packaging and quality gates: Hex package metadata, published hexdocs, CI,
   Dialyzer, and Credo all wired in.
@@ -758,6 +758,25 @@ filter that left directories looking like leaves. `examples/dashboard.exs`
 exposed a log pane that was permanently empty and a sparkline showing timer
 jitter. Three for three. Freezing an API that no application has exercised
 would be the one avoidable mistake left.
+
+**`examples/nodes.exs` is the first pass at this** — a BEAM node explorer with a
+windowed process table, a lazily loaded supervision tree, and memory sampled on
+a timer. It found two things, both now decisions rather than surprises:
+
+1. **`table`'s window function is called during rendering.** Fine for a list,
+   ETS, or `Process.info/2`; not fine for a query or a remote node, because
+   rendering would block on IO. Now documented on `table/1`. Whether that is the
+   right shape to freeze is a genuine question — the alternative is an async
+   fetch protocol, which is considerably more API.
+2. **`table` has no auto-routing**, so every scrollable table hand-writes the
+   same six key clauses that `viewport` gets for free. `nodes.exs` has them
+   verbatim. Adding `:table` to the auto-routed types would reuse the existing
+   `{:harlock_scroll, id, offset}` message and add no public surface — the
+   question is whether that counts as a feature in a milestone that has none.
+   It is an ergonomic gap found by use, which is what this item is for.
+
+Still wanted before the freeze: an application built by someone other than the
+author of the framework, which is the only test of whether the docs say enough.
 
 ### Freeze decisions to make explicitly
 
