@@ -768,12 +768,27 @@ a timer. It found two things, both now decisions rather than surprises:
    rendering would block on IO. Now documented on `table/1`. Whether that is the
    right shape to freeze is a genuine question — the alternative is an async
    fetch protocol, which is considerably more API.
-2. **`table` has no auto-routing**, so every scrollable table hand-writes the
-   same six key clauses that `viewport` gets for free. `nodes.exs` has them
-   verbatim. Adding `:table` to the auto-routed types would reuse the existing
-   `{:harlock_scroll, id, offset}` message and add no public surface — the
-   question is whether that counts as a feature in a milestone that has none.
-   It is an ergonomic gap found by use, which is what this item is for.
+2. **`table` had no auto-routing** — fixed. Every scrollable table used to
+   hand-write the six key clauses `viewport` gets for free; `nodes.exs` had them
+   verbatim and `overview.exs` had a `Focus.current()` dispatch plus three
+   clauses of index arithmetic. Both are gone.
+
+   Which state the arrows move depends on the rows source, because the two modes
+   have different things to move: enumerable rows move `:focused_row` and deliver
+   `{:harlock_select, …}`; a window function moves `:offset` and delivers
+   `{:harlock_scroll, …}`. No new message shape, and no new public function
+   beyond `Harlock.Table`'s two pure helpers.
+
+   The awkward part was the end of the data. A window function is never asked for
+   a total, so there is no maximum offset to clamp against, and `:down` at the
+   bottom would otherwise scroll into empty space forever. A fetch returning
+   fewer rows than requested is the only end signal available, so the renderer
+   records it and routing refuses to advance past it. `:end` stays a noop for the
+   same reason.
+
+   This was a behaviour change, not a pure addition: a focusable table now
+   consumes navigation keys that previously reached `update/2`. Opt out with
+   `handle_keys: false`.
 
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.

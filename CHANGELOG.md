@@ -37,8 +37,37 @@ changes are called out in the relevant release notes.
   `{:harlock_scroll, id, offset}` message and add no public surface; whether that
   belongs in a milestone with no features is a decision, not an oversight.
 
+- **`table` is now auto-routed**, closing the ergonomic gap `examples/nodes.exs`
+  exposed. `Harlock.Table` provides the two pure helpers.
+
+  Which state the arrows move depends on how rows were supplied, because the two
+  modes have different things to move:
+
+  | rows | arrows move | message |
+  |---|---|---|
+  | enumerable | `:focused_row` | `{:harlock_select, id, row_id}` |
+  | `fn offset, limit` | `:offset` | `{:harlock_scroll, id, offset}` |
+
+  No new message shape. Neither mode wraps — a table is read top-down and is
+  often long, unlike `menu`, whose lists are short enough for cyclic movement to
+  be the convention.
+
+  The end of the data was the awkward part. A window function is never asked for
+  a total, so there is no maximum offset to clamp against, and `:down` at the
+  bottom would scroll into empty space forever. A fetch returning fewer rows than
+  requested is the only end signal available, so the renderer records it and
+  routing refuses to advance past it. `:end` is a noop in windowed mode for the
+  same reason: it needs to know where the last row is.
+
+  `examples/nodes.exs` lost six key clauses and `examples/overview.exs` lost a
+  `Focus.current()` dispatch plus three clauses of index arithmetic.
+
 ### Changed
 
+- **A focusable `table` now consumes navigation keys** that previously reached
+  `update/2` as raw `{:key, …}` events. This is the same class of change R2 made
+  for `text_input` in v0.4. Set `handle_keys: false` on the element to keep the
+  old behaviour. Keys that would not move anything still fall through.
 - `table/1` documents that a window function runs during rendering, and what
   therefore belongs in it.
 

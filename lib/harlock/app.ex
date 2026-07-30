@@ -53,7 +53,7 @@ defmodule Harlock.App do
 
   Focus-aware widget routing (R2, v0.4). When a focusable widget
   (`viewport`, `tabs`, `text_input`, `textarea`, `menu`, `select`,
-  `tree`) carries a `:focusable` id and is focused, the runtime
+  `tree`, `table`) carries a `:focusable` id and is focused, the runtime
   translates relevant keys into widget-shaped messages **before**
   calling `update/2`. The raw `{:key, …}` is swallowed — apps see the
   routed message *or* the raw key, never both. Opt out per-element with
@@ -61,14 +61,16 @@ defmodule Harlock.App do
 
     * `{:harlock_scroll, focus_id, new_offset}` — focused `viewport`
       handled a scroll key (`:up`/`:down`/`:page_up`/`:page_down`/
-      `:home`/`:end`). The app's clause typically just writes the
+      `:home`/`:end`), or a focused `table` backed by a window function
+      moved its `:offset`. The app's clause typically just writes the
       offset back to the model:
 
           def update({:harlock_scroll, :log, n}, m),
             do: %{m | log_offset: n}
 
     * `{:harlock_select, focus_id, new_id}` — a focused `tabs`, `menu`,
-      `select`, or `tree` moved its selection or highlight:
+      `select`, `tree`, or list-backed `table` moved its selection,
+      highlight, or focused row:
 
           def update({:harlock_select, :nav, id}, m), do: %{m | tab: id}
 

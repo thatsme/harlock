@@ -66,23 +66,11 @@ defmodule Nodes do
 
   # -- process list ----------------------------------------------------------
   #
-  # The table owns no scroll state of its own, so :offset lives here — the same
-  # arrangement viewport has. Arrow keys are handled directly rather than routed,
-  # because `table` is not an auto-routed widget.
+  # The table owns no scroll state, so :offset lives here — the same arrangement
+  # viewport has, and the same routed message. Six hand-written key clauses used
+  # to sit here before `table` became auto-routed; this is what replaced them.
 
-  def update({:key, :down, []}, %{tab: :processes} = m),
-    do: %{m | proc_offset: min(m.proc_offset + 1, max(length(m.pids) - 1, 0))}
-
-  def update({:key, :up, []}, %{tab: :processes} = m),
-    do: %{m | proc_offset: max(m.proc_offset - 1, 0)}
-
-  def update({:key, :page_down, []}, %{tab: :processes} = m),
-    do: %{m | proc_offset: min(m.proc_offset + 20, max(length(m.pids) - 1, 0))}
-
-  def update({:key, :page_up, []}, %{tab: :processes} = m),
-    do: %{m | proc_offset: max(m.proc_offset - 20, 0)}
-
-  def update({:key, :home, []}, %{tab: :processes} = m), do: %{m | proc_offset: 0}
+  def update({:harlock_scroll, :procs, offset}, m), do: %{m | proc_offset: offset}
 
   # -- supervision tree ------------------------------------------------------
 
@@ -143,6 +131,7 @@ defmodule Nodes do
       border: :rounded,
       child:
         table(
+          focusable: :procs,
           columns: [
             column(title: "pid", width: {:length, 14}, render: & &1.pid),
             column(title: "name / initial call", width: {:fill, 2}, render: & &1.name),

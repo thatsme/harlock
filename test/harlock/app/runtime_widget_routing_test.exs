@@ -283,6 +283,125 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
     end
   end
 
+  defmodule ListTableApp do
+    @moduledoc false
+    use Harlock.App
+
+    def init(_), do: %{focused: 1, raw_keys: []}
+
+    def update({:harlock_select, :rows, id}, m), do: %{m | focused: id}
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+    def update(_, m), do: m
+
+    def view(m) do
+      table(
+        focusable: :rows,
+        columns: [column(title: "n", width: {:fill, 1}, render: &to_string(&1.id))],
+        rows: for(i <- 1..5, do: %{id: i}),
+        row_id: & &1.id,
+        focused_row: m.focused
+      )
+    end
+  end
+
+  defmodule WindowTableApp do
+    @moduledoc false
+    use Harlock.App
+
+    # 40 rows behind a window function, so scrolling has somewhere to go and an
+    # end to reach.
+    def init(_), do: %{offset: 0, raw_keys: []}
+
+    def update({:harlock_scroll, :rows, offset}, m), do: %{m | offset: offset}
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+    def update(_, m), do: m
+
+    def view(m) do
+      table(
+        focusable: :rows,
+        columns: [column(title: "n", width: {:fill, 1}, render: &to_string(&1.id))],
+        row_id: & &1.id,
+        offset: m.offset,
+        rows: fn offset, limit ->
+          for i <- offset..(offset + limit - 1), i < 40, do: %{id: i}
+        end
+      )
+    end
+  end
+
+  describe "table auto-routing: enumerable rows move focus" do
+    setup do
+      h = Harlock.Test.start_app(ListTableApp, nil, rows: 8, cols: 20)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "Down and Up move :focused_row", %{h: h} do
+      Harlock.Test.send_key(h, :down)
+      assert Harlock.Test.model(h).focused == 2
+
+      Harlock.Test.send_key(h, :up)
+      assert Harlock.Test.model(h).focused == 1
+      assert Harlock.Test.model(h).raw_keys == []
+    end
+
+    test "End jumps to the last row", %{h: h} do
+      Harlock.Test.send_key(h, :end)
+      assert Harlock.Test.model(h).focused == 5
+    end
+
+    test "movement past the end falls through as a raw key", %{h: h} do
+      Harlock.Test.send_key(h, :up)
+
+      assert Harlock.Test.model(h).focused == 1
+      assert [{:key, :up, []}] = Harlock.Test.model(h).raw_keys
+    end
+  end
+
+  describe "table auto-routing: a window function moves :offset" do
+    setup do
+      h = Harlock.Test.start_app(WindowTableApp, nil, rows: 8, cols: 20)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "Down scrolls rather than selecting", %{h: h} do
+      Harlock.Test.send_key(h, :down)
+      assert Harlock.Test.model(h).offset == 1
+      assert Harlock.Test.model(h).raw_keys == []
+    end
+
+    test "Up at the top falls through", %{h: h} do
+      Harlock.Test.send_key(h, :up)
+      assert Harlock.Test.model(h).offset == 0
+      assert [{:key, :up, []}] = Harlock.Test.model(h).raw_keys
+    end
+
+    test "paging uses the rendered body height", %{h: h} do
+      # 8 rows minus the header leaves 7 of body, so a page is 6
+      Harlock.Test.send_key(h, :page_down)
+      assert Harlock.Test.model(h).offset == 6
+    end
+
+    test "scrolling stops once a fetch comes back short", %{h: h} do
+      # walk to the end; the source has 40 rows and the body draws 7
+      for _ <- 1..12, do: Harlock.Test.send_key(h, :page_down)
+      settled = Harlock.Test.model(h).offset
+
+      Harlock.Test.send_key(h, :page_down)
+      assert Harlock.Test.model(h).offset == settled
+
+      # and the refused key reaches update/2 rather than vanishing
+      assert Enum.any?(Harlock.Test.model(h).raw_keys, &match?({:key, :page_down, []}, &1))
+    end
+
+    test "Home returns to the top from anywhere", %{h: h} do
+      Harlock.Test.send_key(h, :page_down)
+      Harlock.Test.send_key(h, :home)
+      assert Harlock.Test.model(h).offset == 0
+    end
+  end
+
   defmodule TreeApp do
     @moduledoc false
     use Harlock.App

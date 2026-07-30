@@ -555,6 +555,18 @@ defmodule Harlock.Element.Renderer do
 
     visible = table_window(rows_source, el.opts, focused_row, body_height, row_id_fn)
 
+    # Routing needs two facts it cannot work out for itself: how many rows the
+    # body can draw, and whether the last fetch came back short — which for a
+    # window function is the only available end-of-data signal, since nothing
+    # ever asks it for a total. Same last-frame freshness argument as viewport_h.
+    if id = Keyword.get(el.opts, :focusable) do
+      WidgetMetrics.record(id, %{
+        table_body_h: body_height,
+        table_at_end?: length(visible) < body_height,
+        table_windowed?: is_function(rows_source, 2)
+      })
+    end
+
     visible
     |> Enum.with_index()
     |> Enum.reduce(frame, fn {row, idx}, acc ->

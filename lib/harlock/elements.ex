@@ -203,6 +203,27 @@ defmodule Harlock.Elements do
     * `:offset`      — first visible row, for a window function (default `0`)
     * `:focusable`, `:focus_trap` — same as other elements
 
+  ## Auto-routing
+
+  A focused table has navigation keys routed for it, and *which* state they move
+  depends on how rows were supplied — because the two modes have different things
+  to move:
+
+    * **enumerable rows** — the row set is known and the window auto-centres on
+      `:focused_row`, so arrows move the focus and deliver
+      `{:harlock_select, focus_id, row_id}`, exactly as `tabs` and `menu` do.
+    * **a window function** — there is no row set to walk and no index to centre
+      on, so arrows move `:offset` and deliver
+      `{:harlock_scroll, focus_id, new_offset}`, exactly as `viewport` does.
+
+  Neither wraps: a table is read top-down and is often long. `Home` goes to the
+  top in both modes; `End` only works for enumerable rows, since a window
+  function is never asked where the last row is.
+
+  Scrolling stops when a fetch returns fewer rows than requested, which is the
+  only end-of-data signal a window function provides. Opt out of routing entirely
+  with `handle_keys: false`. See `Harlock.Table` for the pure helpers.
+
   ## Windowed rows
 
   An enumerable is walked, so its length is known and the visible window can be

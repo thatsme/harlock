@@ -9,7 +9,7 @@
 
 defmodule Overview do
   use Harlock.App
-  alias Harlock.{Cmd, Focus}
+  alias Harlock.Cmd
 
   def init(_) do
     %{
@@ -43,21 +43,11 @@ defmodule Overview do
   # only needs to write where the offset lives on the model.
   def update({:harlock_scroll, :log, new_offset}, m), do: %{m | log_offset: new_offset}
 
-  def update({:key, _, _} = ev, m) do
-    case Focus.current() do
-      :tasks -> update_tasks(ev, m)
-      _ -> m
-    end
-  end
+  # A focused table routes row movement the same way tabs and menu do. This
+  # replaced a Focus.current() dispatch plus three clauses of index arithmetic.
+  def update({:harlock_select, :tasks, id}, m), do: %{m | selected: id}
 
   def update(_, m), do: m
-
-  defp update_tasks({:key, :up, _}, m), do: %{m | selected: max(1, m.selected - 1)}
-
-  defp update_tasks({:key, :down, _}, m),
-    do: %{m | selected: min(length(m.tasks), m.selected + 1)}
-
-  defp update_tasks(_, m), do: m
 
   def view(m) do
     vbox(
@@ -71,9 +61,13 @@ defmodule Overview do
               border: :rounded,
               border_style: [dim: true],
               focus_style: [fg: :cyan, bold: true],
-              focusable: :tasks,
+              # :tasks lives on the table so the runtime can route row movement
+              # to it; the box mirrors its focus for the border, the same
+              # arrangement the Log box below uses for its viewport.
+              focus_proxy: :tasks,
               child:
                 table(
+                  focusable: :tasks,
                   columns: [
                     column(title: "#", width: {:length, 3}, render: &Integer.to_string(&1.id)),
                     column(title: "name", width: {:fill, 1}, render: & &1.name),
@@ -81,6 +75,7 @@ defmodule Overview do
                   ],
                   rows: m.tasks,
                   row_id: & &1.id,
+                  focused_row: m.selected,
                   selection: {:single, m.selected}
                 )
             ),

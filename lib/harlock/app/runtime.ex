@@ -248,6 +248,20 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  # A table routes whichever of its two movable things the rows source implies:
+  # enumerable rows move :focused_row (the window auto-centres on it), a window
+  # function moves :offset (there is no index to centre on). Both deliver an
+  # existing message, so no new shape was added for this.
+  defp route_to_widget(%Element{type: :table} = el, event, focus_id, state) do
+    metrics = get_in(state.widget_metrics, [focus_id]) || %{}
+
+    if metrics[:table_windowed?] do
+      route_windowed_table(el, event, focus_id, state, metrics)
+    else
+      route_list_table(el, event, focus_id, state)
+    end
+  end
+
   # A menu splits movement from commitment: arrows deliver {:harlock_select, …}
   # as the highlight moves, Enter delivers {:harlock_submit, …}. Both tuples
   # already exist — tabs produces the first, text_input the second — so the
@@ -356,6 +370,31 @@ defmodule Harlock.App.Runtime do
   end
 
   defp route_to_widget(_el, _event, _focus_id, state), do: {:pass, state}
+
+  defp route_windowed_table(el, event, focus_id, state, metrics) do
+    offset = el.opts |> Keyword.get(:offset, 0) |> max(0)
+    body_h = metrics[:table_body_h] || state.rows
+    at_end? = Map.get(metrics, :table_at_end?, false)
+
+    case Harlock.Table.scroll_key(event, offset, body_h, at_end?) do
+      {:scroll, new_offset} -> {:routed, {:harlock_scroll, focus_id, new_offset}, state}
+      :noop -> {:pass, state}
+    end
+  end
+
+  defp route_list_table(el, event, focus_id, state) do
+    with {:ok, rows} <- Keyword.fetch(el.opts, :rows),
+         {:ok, row_id} <- Keyword.fetch(el.opts, :row_id) do
+      ids = rows |> Enum.to_list() |> Enum.map(row_id)
+
+      case Harlock.Table.select_key(event, ids, Keyword.get(el.opts, :focused_row)) do
+        {:select, id} -> {:routed, {:harlock_select, focus_id, id}, state}
+        :noop -> {:pass, state}
+      end
+    else
+      _ -> {:pass, state}
+    end
+  end
 
   # Focus moves discard the goal column: it belongs to a run of vertical motion
   # in one widget, and leaking it into the next textarea would start that
