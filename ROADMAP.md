@@ -69,10 +69,11 @@ What works:
 What's stubbed / missing — the honest list:
 
 - `Sub`: `:interval`, `:telemetry`, `:logger` and the generic `:source` exist.
-  `file` and `port` are v0.8 — the seam is built, so they are additions rather
-  than design work. `pubsub` is not coming: `source/3` covers it.
+  `file` and `port` are 1.1+ — the seam is built, so they are additions to a
+  frozen API rather than design work. `pubsub` is not coming: `source/3` covers
+  it.
 - No windowed aggregation for metrics (rates, percentiles over a trailing
-  window) — v0.8. Counts and means are a few lines of `Enum` in the model.
+  window) — 1.1+. Counts and means are a few lines of `Enum` in the model.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No mouse-driven interaction; `table` has no auto-routing, so a windowed table
@@ -723,63 +724,60 @@ roadmap instead of implementing it.
 
 ---
 
-## v0.8 — pre-1.0 hardening (next)
+## v0.8 — freeze prep (next, and the last milestone before 1.0)
 
-Everything below is what stands between here and a 1.0 API freeze. It is the
-third time this work has been renumbered — v0.6, then v0.7, now v0.8 — because
-each time something finishable arrived first. That is defensible individually
-and a bad trend collectively, so this milestone gets nothing added to it: new
-features go to v0.9 or later, and 1.0 waits on this list alone.
+The only thing left between here and a frozen public API. Nothing in this
+milestone adds a feature.
 
-### The rest of the Sub kinds
+That constraint is deliberate and it is a correction. This work has been
+renumbered three times — v0.6, then v0.7, then v0.8 — because each time
+something finishable arrived first. Worse, the previous version of this section
+declared itself "closed to new features" while containing three: two `Sub` kinds
+and a metrics helper. Those have moved to 1.1+, below.
 
-Additive, and each follows the seam v0.6 established — a linked process owning
-the registration, a handler that only builds and sends, detach on the way out.
-No new design work, which is why they did not gate v0.6.0 or v0.7.0.
+The argument for moving them is not tidiness. Every feature added before 1.0 is
+another shape frozen permanently, and all three are purely *additive* — new
+`Sub` kinds and a metrics helper break nothing, which is precisely what minor
+releases after 1.0 exist for. Holding 1.0 for them means freezing a larger API
+later, in exchange for nothing.
 
-- ~~`Sub.pubsub(pubsub_mod, topic, transform_fn)`~~ — **dropped, not deferred.**
-  `Sub.source/3` covers it: Phoenix.PubSub delivers to whichever process called
-  `subscribe`, and `source/3` runs the caller's function inside the
-  subscription's own process for exactly that reason.
+### Build one real application first
 
-      Sub.source({:pubsub, "orders"}, fn ->
-        Phoenix.PubSub.subscribe(MyApp.PubSub, "orders")
-      end)
+The highest-value item here, and the one most likely to be skipped.
 
-  A named constructor would have added a `phoenix_pubsub` dependency to a
-  terminal UI library in order to deliver messages the seam already receives —
-  the case principle 7 exists for. The same shape covers `:global` groups,
-  registries, `GenStage` consumers, and anything else that sends to its
-  subscriber.
+`table`'s window function and `Sub.source/3` are days old with no real-world
+use, and 1.0 commits to their shape permanently. Something substantial has to be
+built on this API before it is frozen — the node/distribution explorer is the
+obvious candidate, since `tree` with lazy children already fits a supervision
+tree and `Sub.telemetry` can feed it live numbers.
 
-- `Sub.file(path, opts)` — watch via `:fs` if available, polling fallback. Stays
-  first-party: the polling fallback and change-detection are real logic, not a
-  seam.
-- `Sub.port(cmd, args)` — long-running external process, stdout lines as events.
-  Also stays: port lifecycle, partial-line buffering and exit handling are real
-  logic.
-- `Sub.signal(:sigusr1, msg)` — **blocked on a verification, not on effort.**
-  `Keeper`'s moduledoc claims `:os.set_signal(:sigwinch, :handle)` "routes
-  `{:signal, :sigwinch}` messages to the most recent caller". That is the
-  mechanism an app-level signal sub would build on, and it has not been checked
-  against OTP's actual delivery path — signals are documented as going to
-  `erl_signal_server`, which is global. Until someone confirms how Keeper really
-  receives them on a POSIX host, building a second signal consumer means
-  building on an unverified comment.
+The evidence for insisting: every single time a real consumer touched this code,
+it found something the tests did not. `examples/notes.exs` exposed that
+Alt-Backspace could not be delivered at all. `examples/explorer.exs` exposed a
+filter that left directories looking like leaves. `examples/dashboard.exs`
+exposed a log pane that was permanently empty and a sparkline showing timer
+jitter. Three for three. Freezing an API that no application has exercised
+would be the one avoidable mistake left.
 
-Their relative order should be decided by whichever real app needs one first,
-not guessed here. That is the mistake the v0.6 list originally made:
-`Sub.pubsub` led it because it was written first, not because anything needed
-it — and it turned out not to be needed at all.
+### Freeze decisions to make explicitly
 
-### Windowed aggregation for metrics
+Two calls that should be made in the audit rather than by default:
 
-Rates and percentiles over a trailing window, for `Sub.telemetry` consumers.
-Deliberately scoped *down* by `examples/dashboard.exs`: counts, mean, min and
-max over a bounded list turned out to be three lines of `Enum` in the model,
-with nothing worth abstracting. What a helper is actually for is the part that
-needs time — per-second rates, and percentiles that cannot be computed
-incrementally from a running total.
+- **`Harlock.Bench`** is public as of v0.7.0, which was right for letting app
+  authors measure their own views. "Public" and "frozen at 1.0" are different
+  commitments, though, and freezing a benchmark harness's shape is a poor
+  trade. Either exclude it from the freeze explicitly, or move it behind
+  `@moduledoc false` and keep it dev-facing.
+- **The caps struct** is `@moduledoc false` today, and the caps-refinement item
+  below says to document it as public. That is a freeze decision, not a
+  documentation task: making it public means committing to its fields. Decide
+  which, deliberately.
+
+### The rest of the Sub kinds — moved to 1.1+
+
+`Sub.file`, `Sub.port` and windowed aggregation were listed here and are now
+under **1.1+**, below. `Sub.pubsub` is dropped entirely — `Sub.source/3` covers
+it.
 
 ### Hardening
 
@@ -895,7 +893,10 @@ incrementally from a running total.
 - **Examples expansion**: filemgr (two-pane), todo (text_input + list),
   log_viewer (viewport + filter), git_branch_picker (tree).
 - **Caps refinement**: detect terminfo entries properly; fallback table for
-  common terminals. Document the `Caps` API as public.
+  common terminals. Whether the caps struct becomes public is a freeze decision
+  — see above — not a side effect of documenting it. The low-capability path
+  matters more than it looks: a serial console often reports no `TERM` at all,
+  which is also the Nerves case.
 - **Public API freeze candidate**: walk every `@moduledoc false`, decide
   stable-public vs internal-forever. Move stable parts to `@moduledoc`
   proper.
@@ -903,10 +904,71 @@ incrementally from a running total.
 ## v1.0 — stable API
 
 - Public API frozen per the `@moduledoc` decisions above.
-- All v0.7 hardening complete.
+- All v0.8 freeze prep complete, including at least one real application built
+  on the API.
 - Announcement post + Reddit/Elixir Forum thread.
 - Minimum supported: Elixir 1.19+, OTP 26+ — matching the `elixir: "~> 1.19"`
   requirement `mix.exs` already ships.
+
+---
+
+## 1.1+ — additive, deliberately after the freeze
+
+None of this breaks anything, which is why none of it belongs before 1.0. Each
+item is a new capability that a minor release can add to a frozen API without
+touching what is already there. Holding 1.0 for any of them would mean freezing
+a larger surface later in exchange for nothing.
+
+### The rest of the Sub kinds
+
+Each follows the seam v0.6 established — a linked process owning the
+registration, a handler that only builds and sends, teardown on the way out.
+No new design work.
+
+- `Sub.file(path, opts)` — watch via `:fs` if available, polling fallback.
+  First-party rather than a `source/3` one-liner because the polling fallback
+  and change detection are real logic.
+- `Sub.port(cmd, args)` — long-running external process, stdout lines as events.
+  Also real logic: port lifecycle, partial-line buffering, exit handling.
+- `Sub.signal(:sigusr1, msg)` — **blocked on a verification, not on effort.**
+  `Keeper`'s moduledoc claims `:os.set_signal(:sigwinch, :handle)` "routes
+  `{:signal, :sigwinch}` messages to the most recent caller". That is the
+  mechanism an app-level signal sub would build on, and it has never been
+  checked against OTP's actual delivery path — signals are documented as going
+  to the global `erl_signal_server`. Until someone confirms on a POSIX host how
+  Keeper really receives them, building a second consumer means building on an
+  unverified comment. Worth checking independently of this item: if the comment
+  is wrong, SIGWINCH reflow is working by accident.
+
+`Sub.pubsub` is **not** on this list. `Sub.source/3` covers it, and a named
+constructor would add a `phoenix_pubsub` dependency to a terminal UI library in
+order to receive messages the seam already handles.
+
+Relative order should follow whichever real application needs one first. That is
+the mistake the original list made: `Sub.pubsub` led it because it was written
+first, not because anything needed it — and it turned out not to be needed at
+all.
+
+### Windowed aggregation for metrics
+
+Rates and percentiles over a trailing window, for `Sub.telemetry` consumers.
+Scoped *down* by `examples/dashboard.exs`: counts, mean, min and max over a
+bounded list are three lines of `Enum` in the model with nothing worth
+abstracting. A helper earns its place only for what needs time — per-second
+rates, and percentiles that cannot be derived from a running total.
+
+### Deferred terminal capabilities
+
+- **Mouse runtime enabling.** The SGR parser exists; emitting the DECSET
+  sequences to turn reporting on does not. This is the only thing genuinely
+  gating click-to-open on `select` and `tree`.
+- **Kitty keyboard protocol push.** Parser only. Needed for chords the legacy
+  encoding cannot express, and not for Alt-modified letters, which already work.
+- **`:ssh` backend.** An IO seam addition rather than a redesign: the backend
+  seam already exists and `Harlock.IO.Test` proves a non-tty backend fits. It
+  also sidesteps the `user_drv` contention problem entirely, since an SSH
+  channel is not the controlling terminal. This is the prerequisite for Nerves
+  over SSH, where the console is an Erlang shell rather than a pty.
 
 ---
 
