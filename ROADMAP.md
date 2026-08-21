@@ -76,8 +76,7 @@ What's stubbed / missing — the honest list:
   window) — 1.1+. Counts and means are a few lines of `Enum` in the model.
 - Mouse events: SGR parser only — runtime enabling is deferred.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
-- No mouse-driven interaction; `table` has no auto-routing, so a windowed table
-  scrolls by app-handled keys writing `:offset`, as `viewport` did pre-R2.
+- No mouse-driven interaction: keyboard only.
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
 
 ## Guiding principles

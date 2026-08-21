@@ -13,10 +13,11 @@ defmodule Harlock.Element.Focusables do
   #   tree order so the runtime can pick the deepest active trap by
   #   walking the list backward.
   # * `routed_widgets` — `%{focus_id => element}` for focusable elements
-  #   whose type opts in to R2 auto-routing (currently `:viewport`,
-  #   `:tabs`, `:text_input`, `:textarea`, `:menu`) and that have not explicitly set
-  #   `handle_keys: false`. Used by `Harlock.App.Runtime` to look up the
-  #   focused widget at key-dispatch time without re-walking the tree.
+  #   whose type opts in to R2 auto-routing (`@auto_routed_types` below,
+  #   which is the single source of truth — don't restate the list here)
+  #   and that have not explicitly set `handle_keys: false`. Used by
+  #   `Harlock.App.Runtime` to look up the focused widget at key-dispatch
+  #   time without re-walking the tree.
   #
   # The id and routed-widget collection are folded into one walk
   # (`collect_ids_and_widgets/2`); traps remain a separate walk because

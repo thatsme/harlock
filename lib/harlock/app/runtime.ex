@@ -184,8 +184,8 @@ defmodule Harlock.App.Runtime do
   defp maybe_handle_focus(_event, _state), do: :pass
 
   # R2: focus-aware key routing. If the focused element is an auto-routable
-  # widget (viewport / tabs / text_input) and the key is one the widget
-  # handles, translate the raw key into a widget-shaped message that the
+  # widget (the types `Harlock.Element.Focusables` indexes) and the key is one
+  # the widget handles, translate it into a widget-shaped message that the
   # app's update/2 receives instead. Apps still own the model write — they
   # just write one generic clause per widget kind instead of N per-key
   # clauses.
