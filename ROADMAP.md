@@ -42,7 +42,7 @@ What works:
   (`:default` / `:dark` / `:high_contrast`), caps-aware colour downgrade
   (truecolor → 256 → 16 → mono), and a table style cascade. `:default`-theme
   output is pinned byte-for-byte against v0.3.0 by a golden-frame test.
-- Primitives: `text`, `vbox`, `hbox`, `spacer`, `box` (4 border styles +
+- Primitives: `text` (styled runs, `\n`, wrap, align), `vbox`, `hbox`, `spacer`, `box` (4 border styles +
   title + padding), `overlay` (5 anchors + focus trap), `table` / `list`
   (row-id identity, single/multi selection, header), `text_input`, `textarea`
   (multi-line, opt-in word wrap), `viewport`
@@ -54,10 +54,9 @@ What works:
   model, with coalescing that breaks on a newline, a cursor jump, or a delete
   after an insert.
 - Wide-grapheme width (CJK, emoji, ZWJ sequences, flags).
-- Resize handling in the runtime: `{:harlock_resize, rows, cols}` discards the
-  previous frame and reflows, and `Keeper.size/1` reads `ioctl(TIOCGWINSZ)`
-  through the NIF. **Resizing a real terminal does not reach it** — see the
-  first item under v0.8.
+- Terminal resize reflows: SIGWINCH reaches Keeper through a handler on
+  `erl_signal_server`, Keeper reads `ioctl(TIOCGWINSZ)` through the NIF, and the
+  runtime clears and redraws at the new size. Checked in a real pty in CI.
 - Input parser handles CSI/SS3, bracketed paste, XTerm focus reporting,
   modified arrows (`CSI 1;5A`), Home / End, and F-keys.
 - `:telemetry` events for frame render, input dispatch, cmd, and reader.
@@ -77,14 +76,12 @@ What's stubbed / missing — the honest list:
   it.
 - No windowed aggregation for metrics (rates, percentiles over a trailing
   window) — 1.1+. Counts and means are a few lines of `Enum` in the model.
-- Terminal resize is broken outside tests: `Keeper` waits for a message OTP
-  never sends. v0.8.
-- `text` is one line in one style, clipped, with no alignment. There is no way
-  to style part of a line or to display a wrapped paragraph without a
-  `textarea`. v0.8.
+- Styled runs are accepted by `text` only. Box titles, tab labels and table
+  cells still take a plain binary.
+- No button or checkbox widgets; a focusable `text` gets focus styling but not
+  Enter / Space routing. v0.8. (Choosing one of several is `select` / `menu`.)
 - No way to hand the terminal to another program (`$EDITOR`, a pager) and take
   it back, and no suspend on Ctrl-Z. v0.8.
-- No checkbox, radio or button widgets. v0.8.
 - Mouse events: SGR parser only — runtime enabling is v0.8.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No inline (non-alternate-screen) mode, clipboard, or hyperlinks — 1.1+.
@@ -120,7 +117,8 @@ What's stubbed / missing — the honest list:
 
 - **0.x** — API may break. We document breaking changes in CHANGELOG.
 - **1.0** — locked public API for `Harlock`, `Harlock.App`, `Harlock.Elements`,
-  `Harlock.Cmd`, `Harlock.Sub`, `Harlock.Render.Style`, `Harlock.Layout`.
+  `Harlock.Cmd`, `Harlock.Sub`, `Harlock.Render.Style`, `Harlock.Layout`,
+  `Harlock.Text`.
   Internal modules — Harlock.App.Runtime, the rest of Harlock.Terminal.\*,
   Harlock.Element.Renderer — stay `@moduledoc false` and remain free
   to change without notice.
@@ -755,69 +753,92 @@ contracts 1.0 would lock. So v0.8 has two halves, in this order.
 ### The missing basics
 
 In order. Each item says whether it changes an existing contract, because that
-is what decides whether it can wait for 1.1.
+is what decides whether it has to land before the freeze.
 
-1. **Terminal resize never reaches the runtime — a defect, not a feature.**
-   `Keeper` calls `:os.set_signal(:sigwinch, :handle)` and waits for
-   `{:signal, :sigwinch}`. OTP delivers handled signals to the `erl_signal_server`
-   event manager, never to the caller, so the message does not arrive.
+1. **Terminal resize never reached the runtime** ✓ — a defect, not a feature.
+   `Keeper` called `:os.set_signal(:sigwinch, :handle)` and waited for
+   `{:signal, :sigwinch}`, but OTP delivers handled signals to the
+   `erl_signal_server` event manager, never to the caller. Every resize test
+   injected `{:harlock_resize, …}` directly, below the broken step.
 
-   Verified on macOS in a real pty. A bare BEAM that calls `set_signal` receives
-   nothing when sent `SIGWINCH`, while a `:gen_event` handler added to
-   `erl_signal_server` receives `:sigwinch` from the same signal. A running
-   Harlock app, with the pty resized from 80×24 to 100×30, sees the signal reach
-   `erl_signal_server` and never redraws. Every resize test injects
-   `{:harlock_resize, …}` directly, which is below the broken step.
+   Fixed with a `:gen_event` handler on `erl_signal_server` that only forwards to
+   Keeper, supervised by Keeper so it cannot outlive it. Teardown no longer resets
+   the signal to `:default`, which would cut off every other handler, OTP's
+   `prim_tty_sighandler` included. The fix exposed a second bug the first had
+   hidden: the redraw after a resize assumed a blank screen and left the old
+   frame's borders behind.
 
-   The fix: a handler on `erl_signal_server` that only forwards to Keeper, removed
-   when Keeper terminates. Two things need care:
-   - `erl_signal_server` already carries OTP's `prim_tty_sighandler`. Keeper's
-     teardown resets the signal to `:default`, which may break the shell's own
-     resize handling after a Harlock app exits inside IEx.
-   - A handler that raises is silently removed by `gen_event`, so the forwarder
-     must not be able to fail.
+   `priv/resize_smoke.exs` resizes its own pty and checks the runtime follows, in
+   CI. This also unblocks `Sub.signal` (1.1+), which needs the same mechanism.
 
-   Tests need a real pty. The resize probe is a script: resize the pty, then check
-   that a frame is drawn at the new width.
+2. **Styled and wrapped text** ✓ in `text`; box titles, tab labels and table
+   cells later. `text/2` took one binary, one style, one line, and clipped it.
+   There was no way to bold one word or colour a value inside a sentence, and
+   `"\n"` was silently dropped. `tabs`, `keybar` and `statusbar` each draw mixed
+   styles with private code, so the library already needed styled runs and
+   rebuilt them per widget.
 
-   This also unblocks `Sub.signal` (1.1+), which needs the same mechanism.
+   Changes a contract: what `text` accepts. The shape chosen, over a separate
+   `paragraph` element:
 
-2. **Styled and wrapped text.** `text/2` takes one binary, one style, one line,
-   and clips it. There is no way to bold one word or colour a status value
-   inside a sentence. Apps fake it with an `hbox` of fixed-width `text`s, which
-   breaks on wide graphemes and resize. A wrapped read-only paragraph means
-   pressing `textarea` into service.
+   ```elixir
+   text("plain, as before")
+   text(["CPU ", {"92%", fg: :red, bold: true}, " of 8 cores"])
+   text(description, wrap: true, align: :center)
+   ```
 
-   Changes a contract: what `text` accepts, and whether styled runs are a new
-   element or a new content shape. Width measurement, clipping and wrapping
-   must operate on runs rather than a single binary, and the `textarea` wrap
-   memo is the obvious thing to share.
+   - A run is a binary or `{binary, style}`, where style is anything `:style`
+     already accepts. A run's style merges over the element's style and focus
+     style.
+   - A binary `content` keeps the existing render path, so its output stays
+     byte-identical — the golden-frame test holds that — and `Harlock.Bench`'s
+     `text_rows` must not regress.
+   - `"\n"` is always a line break.
+   - `wrap: true` reuses `textarea`'s word wrap. A run keeps its style across a
+     wrap. Text taller than its region is clipped at the bottom.
+   - `align: :left | :center | :right`, per line.
+   - `Harlock.Text.height(content, width)` is public. `viewport` takes an
+     app-supplied content height, and an app cannot know the height of wrapped
+     text without measuring it; without this, wrapped text cannot scroll.
 
-3. **Handing the terminal to another program, and suspend.** Opening `$EDITOR`
+   A separate element was rejected because it would not avoid designing the run
+   type — box titles, tab labels and table cells will want styled text too — and
+   because a binary inside `text` keeps its fast path anyway. Accepting runs in
+   those other places is a later, additive step.
+
+3. **Button and checkbox.** Additive, so not a freeze requirement, but wanted
+   before 1.0: they are small, a settings screen is the first thing a newcomer
+   builds, and a 1.0 without them reads as incomplete. After item 2, because a
+   label is a natural first consumer of styled runs.
+
+   Most of the need is already met, which keeps this small. `text` with
+   `:focusable` already gets focus styling; what is missing is routing, so today
+   an app checks `Focus.current()` in an `{:key, :enter, []}` clause. Enter on a
+   button and Space on a checkbox should arrive as `{:harlock_submit, id}` and
+   `{:harlock_toggle, id, …}` — no new message shapes.
+
+   A radio group is not on the list: `select` and `menu` already cover choosing
+   one of several. A checkbox *group* is `table` with `selection: {:multi, set}`,
+   which lacks only Space-to-toggle routing.
+
+4. **Handing the terminal to another program, and suspend.** Opening `$EDITOR`
    on a file, running a pager, or `git commit` needs the terminal released
    (leave alternate screen, restore termios, stop the reader) and reclaimed
    afterwards with a full redraw. Ctrl-Z / `SIGTSTP` is the same sequence around
-   a stop, and depends on item 1's signal path.
+   a stop, and uses item 1's signal path.
 
    Changes a contract: it is a `Cmd` whose execution suspends rendering and
    input, which the runtime currently has no state for. It also touches the
    restore-on-crash path, so a crash *while suspended* needs the same test the
    crash path already has.
 
-4. **Mouse runtime enabling** — moved from 1.1+. The SGR parser exists; the
+5. **Mouse runtime enabling** — moved from 1.1+. The SGR parser exists; the
    DECSET sequences that turn reporting on, and restoring them on exit, do not.
    Additive, but it gates click-to-open on `select` and `tree`, and building a
    real application (below) runs into its absence immediately.
 
-5. **Form widgets: checkbox, radio group, button.** Additive. Wanted before the
-   freeze for the same reason as mouse: settings screens and dialogs are the
-   first thing a real application needs, and today each app fakes them with
-   `text` and hand-written key clauses — the boilerplate v0.4 existed to remove.
-   They should follow the routed-widget contract (`{:harlock_toggle, …}`,
-   `{:harlock_select, …}`, `{:harlock_submit, …}`) with no new message shapes.
-
 The second half is freeze prep, below, and it does not start until these land —
-the freeze decisions depend on the shapes items 2 and 3 settle.
+the freeze decisions depend on the shapes items 2 and 4 settle.
 
 ### Build one real application first
 
@@ -1095,7 +1116,7 @@ than speculatively.
 - Bar chart and gauge, beside `sparkline`.
 - Horizontal scrolling for `viewport`, deliberately left out when it shipped
   vertical-only.
-- Resizable split panes, which want mouse drag from v0.8 item 4.
+- Resizable split panes, which want mouse drag from v0.8 item 5.
 
 ---
 
