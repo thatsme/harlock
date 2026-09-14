@@ -14,8 +14,15 @@ defmodule Harlock.App.Supervisor do
   # without a tty we have nothing to do); a Reader crash leaves Keeper +
   # Writer alive long enough to restore the terminal during shutdown.
   # TaskSupervisor sits BEFORE Runtime so it's available when Runtime
-  # dispatches its init-time cmd; a TaskSupervisor crash terminates
-  # Runtime (clean shutdown) but leaves IO alive long enough to restore.
+  # dispatches its init-time cmd.
+  #
+  # Runtime and TaskSupervisor are :transient, not :temporary. A temporary
+  # child that crashes is simply removed: nothing restarts, so max_restarts: 0
+  # never trips and the supervisor keeps Keeper, Writer and Reader running.
+  # That left a crashed app's terminal raw, on the alternate screen, with
+  # Harlock.run waiting forever. As :transient, a crash counts as a restart
+  # attempt, which max_restarts: 0 turns into a full shutdown — terminal
+  # restored — while a normal exit (the app quitting) still restarts nothing.
   #
   # The Keeper is the load-bearing process for "terminal restored on crash":
   # its terminate/2 fires even when the entire app dies, because the
@@ -119,20 +126,18 @@ defmodule Harlock.App.Supervisor do
              exec_stub: Keyword.get(opts, :exec_stub)
            ]
          ]},
-      restart: :temporary,
+      restart: :transient,
       shutdown: 1_000
     }
 
     # TaskSupervisor sits BEFORE Runtime so it's already up when Runtime's
-    # handle_continue tries to dispatch an init-time cmd. A TaskSupervisor
-    # crash terminates Runtime (rest_for_one) — Runtime is :temporary so it
-    # stays dead, IO survives long enough for the supervisor's terminate
-    # cascade to restore the terminal.
+    # handle_continue tries to dispatch an init-time cmd. :transient for the
+    # reason in the header: a crash here must shut the tree down.
     task_sup_child = %{
       id: :task_sup,
       start: {Task.Supervisor, :start_link, [[name: task_sup_name]]},
       type: :supervisor,
-      restart: :temporary,
+      restart: :transient,
       shutdown: 5_000
     }
 

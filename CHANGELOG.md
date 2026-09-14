@@ -42,7 +42,10 @@ changes are called out in the relevant release notes.
   VM is stopped), a helper process to collect the exit status (the BEAM ignores
   `SIGCHLD`), and closing the BEAM's descriptors before the program starts.
   Verified in real ptys on macOS and Linux by `priv/exec_native_smoke.exs` and
-  `priv/exec_runtime_smoke.exs`, both in CI.
+  `priv/exec_runtime_smoke.exs`, both in CI, and by `priv/exec_input_smoke.exs`,
+  which types into the pty and checks the keystrokes reach the program rather
+  than the paused app. `scripts/smoke.sh` pipes a smoke test's
+  `<name>.drive.sh`, when it has one, into the pty as typed input.
 
   **The build now produces a second binary,** `priv/harlock_exec`, next to the
   NIF. It is that helper, built by the same `Makefile` from
@@ -180,6 +183,27 @@ changes are called out in the relevant release notes.
   `text` relying on that joins its lines itself now.
 
 ### Fixed
+
+- **A crash in `update/2` now restores the terminal.** Previously the app's
+  runtime died and nothing else happened: the supervisor kept the terminal
+  processes running, `Harlock.run/3` kept waiting, and the terminal stayed raw
+  on the alternate screen with no app behind it — Ctrl-C does nothing in raw
+  mode, so closing the terminal window was the only way out. The same applied to
+  a crash of the task supervisor that runs cmds.
+
+  Both were `:temporary` children, and a temporary child that crashes is simply
+  removed; nothing restarts, so the supervisor's `max_restarts: 0` never
+  triggered the shutdown that restores the terminal. They are now `:transient`:
+  a crash counts as a restart attempt and shuts the tree down, while quitting
+  normally still restarts nothing.
+
+  Found while writing `priv/crash_smoke.exs`, which crashes an app on a real pty
+  — with and without a `Cmd.exec` program holding the terminal, and by killing
+  the supervisor outright — and checks the terminal comes back cooked, in the
+  foreground, with no program left running. It runs in `scripts/smoke.sh`.
+
+  Still open: `Harlock.run/3` is linked to the supervisor, so after such a
+  shutdown the calling process exits rather than receiving `{:error, reason}`.
 
 - **Resizing the terminal now reflows the app.** It never did outside tests,
   in any release since SIGWINCH support was added in v0.2.

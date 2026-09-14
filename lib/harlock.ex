@@ -43,7 +43,7 @@ defmodule Harlock do
 
         receive do
           {:harlock_done, reason} ->
-            Supervisor.stop(sup, :normal)
+            stop_supervisor(sup)
             {:ok, reason}
 
           {:DOWN, ^ref, :process, ^sup, reason} ->
@@ -53,6 +53,14 @@ defmodule Harlock do
       {:error, _} = err ->
         err
     end
+  end
+
+  # The runtime reports a render error and then crashes, and the crash already
+  # shuts the tree down; stopping it again can find it gone.
+  defp stop_supervisor(sup) do
+    Supervisor.stop(sup, :normal)
+  catch
+    :exit, _ -> :ok
   end
 
   @doc """
