@@ -81,11 +81,6 @@ What's stubbed / missing — the honest list:
 - Styled runs are accepted by `text` only. Box titles, tab labels and table
   cells still take a plain binary.
 - No suspend on Ctrl-Z (`Cmd.suspend/0`). v0.8, item 4.
-- `Harlock.run/3` documents `{:error, reason}` when the app's supervisor goes
-  down, but the supervisor is linked to the caller, so the caller exits with it
-  instead and that branch never runs. The terminal is restored either way; the
-  return contract needs a decision (trap exits for the duration, unlink, or
-  document the exit).
 - **Apps do not work under IEx.** IEx's terminal driver reads the same tty, and a
   Harlock app started from an IEx prompt received no keystrokes when tested.
   Run apps with `mix run`. Several example headers suggest starting them from

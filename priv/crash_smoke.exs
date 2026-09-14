@@ -1,14 +1,10 @@
 # Verifies that the terminal is restored when an app dies, including while
 # another program holds the terminal through Cmd.exec.
 #
-# Each case starts an app on a real pty, kills it one way or another, and
-# checks what a user would be left with: the caller of Harlock.run told the app
-# ended, the terminal back in cooked mode, this BEAM holding the foreground, and
-# no program left running.
-#
-# "Told" accepts either Harlock.run returning or its calling process exiting:
-# run links the supervisor it starts, so a tree shut down by a crash takes the
-# caller with it rather than returning {:error, reason}. Needs ps, stty and a pty — run through scripts/smoke.sh.
+# Each case starts an app on a real pty, ends it one way or another, and checks
+# what a user would be left with: what Harlock.run returned (and that its caller
+# is otherwise as it was), the terminal back in cooked mode, this BEAM holding
+# the foreground, and no program left running. Needs ps, stty and a pty — run through scripts/smoke.sh.
 
 alias Harlock.Terminal.Termios
 
@@ -46,6 +42,7 @@ defmodule CrashApp do
   def update({:run, program, args}, m),
     do: {m, Harlock.Cmd.exec(program, args) |> Harlock.Cmd.map(&{:ran, &1})}
 
+  def update(:quit, _m), do: :quit
   def update(_, m), do: m
 
   def view(_), do: text("crash smoke")
@@ -70,17 +67,31 @@ end
 
 runtime_name = :"Elixir.Harlock.App.Supervisor.Runtime"
 
-# Start the app; return the runtime pid and the (unnamed) supervisor pid.
-start = fn ->
+# Start the app from a caller process that reports what Harlock.run returned
+# and the state it was left in. `setup` runs in the caller first.
+# Returns the runtime pid, the (unnamed) supervisor pid, and a monitor ref on
+# the caller.
+start_with = fn setup ->
   parent = self()
-  caller = spawn(fn -> send(parent, {:run_returned, Harlock.run(CrashApp)}) end)
-  Process.monitor(caller)
+
+  caller =
+    spawn(fn ->
+      setup.(parent)
+      result = Harlock.run(CrashApp)
+      {:trap_exit, trapping} = Process.info(self(), :trap_exit)
+      {:messages, left} = Process.info(self(), :messages)
+      send(parent, {:run_returned, result, trapping, left})
+    end)
+
+  ref = Process.monitor(caller)
   S.eventually(fn -> Process.whereis(runtime_name) != nil end)
   runtime = Process.whereis(runtime_name)
   {:dictionary, dict} = Process.info(runtime, :dictionary)
   S.eventually(raw?)
-  {runtime, hd(dict[:"$ancestors"])}
+  {runtime, hd(dict[:"$ancestors"]), ref}
 end
+
+start = fn -> start_with.(fn _parent -> :ok end) end
 
 start_program = fn runtime ->
   send(runtime, {:harlock_event, {:run, "sleep", ["30"]}})
@@ -94,16 +105,25 @@ start_program = fn runtime ->
   pgid
 end
 
-expect_restored = fn label, pgid ->
-  ended =
-    receive do
-      {:run_returned, result} -> {:returned, result}
-      {:DOWN, _, :process, _, reason} -> {:caller_exited, reason}
-    after
-      5_000 -> :still_running
-    end
+# The caller sends its report and then exits normally, so a report is followed
+# by that DOWN; consume it so the next case does not mistake it for its own.
+ended = fn ref ->
+  receive do
+    {:run_returned, result, trapping, left} ->
+      receive do: ({:DOWN, ^ref, :process, _, _} -> :ok)
+      {:returned, result, trapping, left}
 
-  S.check("#{label}: the caller learns the app ended", ended != :still_running)
+    {:DOWN, ^ref, :process, _, reason} ->
+      {:caller_exited, reason}
+  after
+    5_000 -> :still_running
+  end
+end
+
+# `expected` matches what the caller should see: {:returned, result, trapping,
+# leftover messages} or {:caller_exited, reason}.
+expect_restored = fn label, ref, pgid, expected ->
+  S.check("#{label}", expected.(ended.(ref)))
   S.check("#{label}: terminal back in cooked mode", S.eventually(fn -> not raw?.() end))
   S.check("#{label}: BEAM holds the foreground", Termios.foreground?(probe))
 
@@ -111,25 +131,69 @@ expect_restored = fn label, pgid ->
     do: S.check("#{label}: the program is gone", S.eventually(fn -> not group_alive?.(pgid) end))
 end
 
+crash_returns_error = fn
+  {:returned, {:error, _}, false, []} -> true
+  other -> other
+end
+
 # 1. update/2 raises, no program running.
-{runtime, _sup} = start.()
+{runtime, _sup, ref} = start.()
 send(runtime, {:harlock_event, :boom})
-expect_restored.("crash in update/2", nil)
+expect_restored.("crash in update/2 returns an error", ref, nil, crash_returns_error)
 
 # 2. update/2 raises while a program holds the terminal.
-{runtime, _sup} = start.()
+{runtime, _sup, ref} = start.()
 pgid = start_program.(runtime)
 send(runtime, {:harlock_event, :boom})
-expect_restored.("crash during exec", pgid)
+expect_restored.("crash during exec returns an error", ref, pgid, crash_returns_error)
 
 # 3. The supervisor is killed outright while a program holds the terminal. Its
 #    children get an exit signal from their parent and run terminate/2.
 #    (:kill rather than :shutdown: a supervisor ignores exit signals from
 #    anything but its parent unless they are untrappable.)
-{runtime, sup} = start.()
+{runtime, sup, ref} = start.()
 pgid = start_program.(runtime)
 Process.exit(sup, :kill)
-expect_restored.("supervisor killed during exec", pgid)
+
+expect_restored.("supervisor killed during exec", ref, pgid, fn
+  {:returned, {:error, :killed}, false, []} -> true
+  other -> other
+end)
+
+# 4. A normal quit: {:ok, :normal}, and the caller left exactly as it was.
+{runtime, _sup, ref} = start.()
+send(runtime, {:harlock_event, :quit})
+
+expect_restored.("quit", ref, nil, fn
+  {:returned, {:ok, :normal}, false, []} -> true
+  other -> other
+end)
+
+# 5. Another process linked to the caller dies abnormally while the app runs.
+#    Without run/3 in between that would kill the caller; it still does, and the
+#    app is stopped on the way out.
+{_runtime, _sup, ref} =
+  start_with.(fn parent ->
+    doomed = spawn_link(fn -> receive do: (:die -> exit(:linked_crash)) end)
+    send(parent, {:doomed, doomed})
+  end)
+
+doomed = receive do: ({:doomed, pid} -> pid)
+send(doomed, :die)
+
+expect_restored.("a linked process crashing ends the caller", ref, nil, fn
+  {:caller_exited, :linked_crash} -> true
+  other -> other
+end)
+
+# 6. A caller that was already trapping exits keeps trapping them.
+{runtime, _sup, ref} = start_with.(fn _parent -> Process.flag(:trap_exit, true) end)
+send(runtime, {:harlock_event, :boom})
+
+expect_restored.("crash with a trapping caller", ref, nil, fn
+  {:returned, {:error, _}, true, []} -> true
+  other -> other
+end)
 
 IO.puts("PASS")
 System.halt(0)

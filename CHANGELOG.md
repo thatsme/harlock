@@ -202,8 +202,15 @@ changes are called out in the relevant release notes.
   the supervisor outright — and checks the terminal comes back cooked, in the
   foreground, with no program left running. It runs in `scripts/smoke.sh`.
 
-  Still open: `Harlock.run/3` is linked to the supervisor, so after such a
-  shutdown the calling process exits rather than receiving `{:error, reason}`.
+- **`Harlock.run/3` returns `{:error, reason}` when the app goes down,** as
+  documented. It could not: the caller is linked to the app's supervisor, so a
+  supervisor shut down by a crash killed the caller instead, and the error
+  branch never ran. `run/3` now traps exits while it waits and restores the
+  previous setting before returning, leaving no exit messages behind. So that
+  trapping changes nothing else, an abnormal exit from any other process linked
+  to the caller still ends the caller — after stopping the app — and a caller
+  that was already trapping exits keeps doing so. `priv/crash_smoke.exs` covers
+  each case, and `test/harlock/run_test.exs` the start failure.
 
 - **Resizing the terminal now reflows the app.** It never did outside tests,
   in any release since SIGWINCH support was added in v0.2.
