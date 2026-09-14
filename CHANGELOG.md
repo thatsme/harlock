@@ -12,6 +12,36 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **Styled, multi-line and wrapped `text`.** `text/2` accepts a list of runs as
+  well as a binary, plus `wrap:` and `align:`:
+
+  ```elixir
+  text(["CPU ", {"92%", fg: :red, bold: true}, " of 8 cores"])
+  text(description, wrap: true, align: :center)
+  ```
+
+  A run is a binary or `{binary, style}`. Its style merges over the element's
+  style and focus style, so a red run inside a focused `text` stays red. Wrapping
+  is `textarea`'s word wrap, and a run split across lines keeps its style on
+  both. Rows past the region's height are clipped.
+
+  `Harlock.Text` is the new public module behind it: the content type,
+  `lines/2`, `width/1`, and `height/2`. `height/2` is what makes wrapped text
+  scrollable — `viewport` takes its content height from the app, and wrapped text
+  has no height until it is laid out at a width.
+
+  A binary without `wrap:`, `align:` or a newline takes the previous render path
+  unchanged, so existing output is byte-identical (the golden-frame test still
+  passes). `Harlock.Bench`'s `text_rows` scenario shows no measurable difference;
+  the added check costs about 95ns per `text` element.
+
+  Runs are validated when `text/2` is called, so a malformed run raises in the
+  app's `view/1` rather than inside the renderer.
+
+  Chosen over a separate `paragraph` element: box titles, tab labels and table
+  cells will want styled text too, so the run type had to be designed either
+  way, and a binary inside `text` keeps its fast path regardless.
+
 - **`examples/nodes.exs` — a BEAM node explorer.** Process list, supervision
   trees, and memory over time; `observer` for people on SSH. The largest example,
   and the first application built *on* the API rather than a demonstration of one
@@ -79,6 +109,9 @@ changes are called out in the relevant release notes.
   have no unit tests, and the regression above was only visible by running them.
 - `table/1` documents that a window function runs during rendering, and what
   therefore belongs in it.
+- **`"\n"` in a `text` binary now starts a new line.** It was previously dropped
+  as a zero-width character, so `"ab\ncd"` rendered as `abcd` on one row. A
+  `text` relying on that joins its lines itself now.
 
 ### Fixed
 

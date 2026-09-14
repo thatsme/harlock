@@ -108,8 +108,13 @@ defmodule Harlock.Element.Renderer do
       |> Style.from()
       |> maybe_focus_style(el, focused)
 
-    text = clip(content, region.w)
-    Frame.write(frame, region.row, region.col, text, style)
+    if plain_single_line?(content, el.opts) do
+      # The pre-runs path, kept as it was: byte-identical output and no layout
+      # work for the overwhelmingly common case.
+      Frame.write(frame, region.row, region.col, clip(content, region.w), style)
+    else
+      render_text_lines(content, el.opts, style, region, frame)
+    end
   end
 
   defp render_element(%Element{type: :text_input} = el, region, frame, focused) do
@@ -1020,6 +1025,57 @@ defmodule Harlock.Element.Renderer do
 
   defp clip(text, max_cols) do
     if Width.string_width(text) <= max_cols, do: text, else: Width.slice(text, max_cols)
+  end
+
+  # -- Text helpers ----------------------------------------------------------
+
+  defp plain_single_line?(content, opts) when is_binary(content) do
+    not Keyword.get(opts, :wrap, false) and Keyword.get(opts, :align, :left) == :left and
+      :binary.match(content, "\n") == :nomatch
+  end
+
+  defp plain_single_line?(_content, _opts), do: false
+
+  defp render_text_lines(_content, _opts, _style, %{w: w, h: h}, frame) when w <= 0 or h <= 0,
+    do: frame
+
+  defp render_text_lines(content, opts, style, region, frame) do
+    width = if Keyword.get(opts, :wrap, false), do: region.w
+    align = Keyword.get(opts, :align, :left)
+
+    content
+    |> Harlock.Text.lines(width: width, style: style)
+    |> Enum.take(region.h)
+    |> Enum.with_index()
+    |> Enum.reduce(frame, fn {line, i}, f ->
+      col = region.col + align_offset(align, Harlock.Text.line_width(line), region.w)
+      write_runs(f, region.row + i, col, region.col + region.w, line)
+    end)
+  end
+
+  defp align_offset(:left, _line_w, _region_w), do: 0
+  defp align_offset(:right, line_w, region_w), do: max(region_w - line_w, 0)
+  defp align_offset(:center, line_w, region_w), do: max(div(region_w - line_w, 2), 0)
+
+  # Write each run at the column the previous one ended, clipping at `limit`
+  # (the region's right edge, exclusive).
+  defp write_runs(frame, row, col, limit, line) do
+    {frame, _col} =
+      Enum.reduce_while(line, {frame, col}, fn {text, style}, {f, c} ->
+        if c >= limit do
+          {:halt, {f, c}}
+        else
+          clipped = clip(text, limit - c)
+          f = Frame.write(f, row, c, clipped, style)
+          c = c + Width.string_width(clipped)
+
+          # A run cut short ends the line. Otherwise a wide grapheme that did not
+          # fit would leave a gap for the next run to draw into, out of order.
+          if clipped == text, do: {:cont, {f, c}}, else: {:halt, {f, c}}
+        end
+      end)
+
+    frame
   end
 
   # -- Viewport helpers ------------------------------------------------------

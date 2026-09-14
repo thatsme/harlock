@@ -31,14 +31,27 @@ defmodule Harlock.Elements do
   alias Harlock.{Element, Element.Column}
 
   @doc """
-  A text element. `content` is rendered as a single line; callers split
-  multi-line content themselves.
+  A text element.
+
+  `content` is a binary or a list of styled runs — see `Harlock.Text`:
+
+      text("Ready")
+      text(["CPU ", {"92%", fg: :red, bold: true}, " of 8 cores"])
+      text(description, wrap: true, align: :center)
+
+  `"\\n"` starts a new line. Lines past the region's height, and columns past
+  its width, are clipped.
 
   Options:
-    * `:style` — `%Harlock.Render.Style{}` or keyword list of style attrs.
+    * `:style` — `%Harlock.Render.Style{}` or keyword list of style attrs. Runs
+      with their own style are merged over it.
+    * `:wrap` — wrap at word boundaries to the region's width (default `false`).
+      Use `Harlock.Text.height/2` to size a `viewport` around wrapped text.
+    * `:align` — `:left` (default), `:center` or `:right`, applied per line.
   """
-  @spec text(String.t(), keyword()) :: Element.t()
-  def text(content, opts \\ []) when is_binary(content) do
+  @spec text(Harlock.Text.t(), keyword()) :: Element.t()
+  def text(content, opts \\ []) when is_binary(content) or is_list(content) do
+    if is_list(content), do: Harlock.Text.validate!(content)
     %Element{type: :text, opts: [content: content] ++ opts, children: []}
   end
 

@@ -29,6 +29,80 @@ defmodule Harlock.Element.RendererTest do
     end
   end
 
+  describe "text with runs, newlines, wrap and align" do
+    alias Harlock.Render.{Style, StyleTable}
+
+    defp row(frame, r) do
+      for c <- 0..(frame.buffer.cols - 1), into: "" do
+        case Buffer.get(frame.buffer, r, c).char do
+          nil -> " "
+          cp when is_integer(cp) -> <<cp::utf8>>
+          g when is_binary(g) -> g
+        end
+      end
+    end
+
+    defp style_at(frame, r, c),
+      do: StyleTable.get(frame.styles, Buffer.get(frame.buffer, r, c).style_id)
+
+    test "each run is drawn in its own style, merged over the element's" do
+      el = text(["CPU ", {"92%", fg: :red}], style: [bold: true])
+      frame = Renderer.render(el, 1, 10)
+
+      assert row(frame, 0) == "CPU 92%   "
+      assert style_at(frame, 0, 0) == %Style{bold: true}
+      assert style_at(frame, 0, 4) == %Style{bold: true, fg: :red}
+    end
+
+    test "a run keeps its colour while the element is focused" do
+      el = text(["ok ", {"!", fg: :red}], focusable: :t)
+      frame = Renderer.render(el, 1, 5, :t)
+
+      assert style_at(frame, 0, 0).reverse
+      assert %Style{fg: :red, reverse: true} = style_at(frame, 0, 3)
+    end
+
+    test "\\n in a plain binary starts a new line instead of being dropped" do
+      frame = Renderer.render(text("top\nbottom"), 2, 6)
+
+      assert row(frame, 0) == "top   "
+      assert row(frame, 1) == "bottom"
+    end
+
+    test "wrap: true wraps to the region width and clips rows past its height" do
+      frame = Renderer.render(text("one two three four", wrap: true), 2, 8)
+
+      assert row(frame, 0) == "one two "
+      assert row(frame, 1) == "three   "
+    end
+
+    test "without wrap, runs are clipped at the region's right edge" do
+      frame = Renderer.render(text(["abc", {"defgh", fg: :red}]), 1, 5)
+      assert row(frame, 0) == "abcde"
+    end
+
+    test "align positions each line independently" do
+      frame = Renderer.render(text("ab\nabcd", align: :right), 2, 6)
+      assert row(frame, 0) == "    ab"
+      assert row(frame, 1) == "  abcd"
+
+      frame = Renderer.render(text("ab\nabcd", align: :center), 2, 6)
+      assert row(frame, 0) == "  ab  "
+      assert row(frame, 1) == " abcd "
+    end
+
+    test "a wide grapheme that does not fit ends the line rather than leaving a gap" do
+      # "日" needs two columns and only one is left after "ab"; "x" must not be
+      # drawn into that column out of order.
+      frame = Renderer.render(text(["ab", "日", "x"]), 1, 3)
+      assert row(frame, 0) == "ab "
+    end
+
+    test "empty content renders nothing" do
+      assert row(Renderer.render(text([]), 1, 3), 0) == "   "
+    end
+  end
+
   describe "vbox" do
     test "stacks children with length constraints" do
       tree =
