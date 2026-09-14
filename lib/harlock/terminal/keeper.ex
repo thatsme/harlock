@@ -14,15 +14,16 @@ defmodule Harlock.Terminal.Keeper do
   # crashed, because it is the first child in the supervision tree (= last
   # to die).
   #
-  # SIGWINCH: :os.set_signal(:sigwinch, :handle) routes {:signal, :sigwinch}
-  # messages to the most recent caller — this Keeper. On signal we read
-  # TIOCGWINSZ via the NIF and forward {:harlock_resize, rows, cols} to
-  # the runtime.
+  # SIGWINCH: OTP delivers handled signals to the erl_signal_server event
+  # manager, not to the process that called :os.set_signal/2, so Keeper
+  # installs a SignalForwarder handler there that sends it {:signal, :sigwinch}.
+  # On signal we read TIOCGWINSZ via the NIF and forward
+  # {:harlock_resize, rows, cols} to the runtime.
 
   use GenServer
   require Logger
 
-  alias Harlock.Terminal.Termios
+  alias Harlock.Terminal.{SignalForwarder, Termios}
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -121,16 +122,24 @@ defmodule Harlock.Terminal.Keeper do
     :ok
   end
 
+  # A missing resize path degrades the app (no reflow) but must not stop it
+  # from starting, so failures are logged rather than raised.
   defp install_sigwinch do
-    :os.set_signal(:sigwinch, :handle)
+    case SignalForwarder.install(self(), [:sigwinch]) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Harlock SIGWINCH handler not installed: #{inspect(reason)}")
+    end
   rescue
-    _ -> :ok
+    e -> Logger.warning("Harlock SIGWINCH handler not installed: #{Exception.message(e)}")
   catch
     _, _ -> :ok
   end
 
   defp uninstall_sigwinch do
-    :os.set_signal(:sigwinch, :default)
+    SignalForwarder.uninstall(self())
   rescue
     _ -> :ok
   catch

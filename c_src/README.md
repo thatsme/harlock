@@ -177,9 +177,13 @@ touch the NIF, the Reader, or the Keeper:
    `{:harlock_tty_lost, :eof}` and stops; supervisor tears down the
    tree. No orphaned BEAM processes — verify with `pgrep beam.smp`.
 4. **Resize.** Run the demo, drag the window edge to change size.
-   SIGWINCH fires, Keeper queries TIOCGWINSZ via the NIF, sends
+   SIGWINCH fires, `erl_signal_server` passes it to Keeper's
+   `SignalForwarder` handler, Keeper queries TIOCGWINSZ via the NIF, sends
    `{:harlock_resize, rows, cols}` to the runtime, and the next frame
-   redraws at the new size.
+   clears the screen and redraws at the new size — no stale borders left
+   from the old one. `priv/resize_smoke.exs` automates the signal half of
+   this by resizing its own pty; dragging the window is still the check for
+   how the redraw looks.
 
 If any of these fail, the failure is the bug. Don't ship workarounds
 in the demo — fix it in the framework.

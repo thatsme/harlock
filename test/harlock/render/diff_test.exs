@@ -74,6 +74,13 @@ defmodule Harlock.Render.DiffTest do
     assert out =~ "a"
   end
 
+  test "resize resets SGR before clearing, so the clear does not inherit a background" do
+    f1 = Frame.new(2, 5) |> Frame.write(0, 0, "abc", %Style{bg: :blue})
+    f2 = Frame.new(3, 10) |> Frame.write(0, 0, "abc")
+    out = render(f1, f2)
+    assert out =~ "\e[0m\e[2J"
+  end
+
   test "char from prev frame is overwritten when curr has blank in same cell" do
     f1 = Frame.new(1, 3) |> Frame.write(0, 1, "X")
     f2 = Frame.new(1, 3)

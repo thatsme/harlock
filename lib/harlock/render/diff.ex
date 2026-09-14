@@ -50,7 +50,14 @@ defmodule Harlock.Render.Diff do
     if prev.buffer.rows == curr.buffer.rows and prev.buffer.cols == curr.buffer.cols do
       diff_with_prev(prev, curr)
     else
-      [AnsiTerm.clear_screen(), diff_buffer(blank_like(curr), curr.buffer, curr.styles)]
+      # Reset SGR first: terminals erase with the current background colour, so
+      # a clear issued while the previous frame's last style is active would
+      # paint every cell the new frame leaves blank.
+      [
+        AnsiTerm.reset_sgr(),
+        AnsiTerm.clear_screen(),
+        diff_buffer(blank_like(curr), curr.buffer, curr.styles)
+      ]
     end
   end
 

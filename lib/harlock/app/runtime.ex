@@ -108,9 +108,12 @@ defmodule Harlock.App.Runtime do
   end
 
   def handle_info({:harlock_resize, rows, cols}, state) when rows > 0 and cols > 0 do
-    # prev_frame is discarded because diffing against a buffer of different
-    # dimensions is meaningless — force a full redraw at the new size.
-    new_state = %{state | rows: rows, cols: cols, prev_frame: nil, dirty: true}
+    # prev_frame is kept, not discarded. Diff sees the dimensions differ and
+    # clears the screen before a full redraw. A nil prev_frame means "the
+    # screen is blank", which after a resize it is not: the terminal still
+    # shows the old frame, and a redraw that skips blank cells leaves stale
+    # borders and text behind.
+    new_state = %{state | rows: rows, cols: cols, dirty: true}
     {:noreply, render(new_state)}
   end
 

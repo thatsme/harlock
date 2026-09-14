@@ -80,6 +80,35 @@ changes are called out in the relevant release notes.
 - `table/1` documents that a window function runs during rendering, and what
   therefore belongs in it.
 
+### Fixed
+
+- **Resizing the terminal now reflows the app.** It never did outside tests,
+  in any release since SIGWINCH support was added in v0.2.
+
+  `Keeper` called `:os.set_signal(:sigwinch, :handle)` and waited for
+  `{:signal, :sigwinch}`. OTP delivers handled signals to the `erl_signal_server`
+  event manager, never to the calling process, so the message did not arrive.
+  Every resize test injected `{:harlock_resize, …}` into the runtime directly,
+  which is the step after the broken one.
+
+  Keeper now installs a `:gen_event` handler on `erl_signal_server` that forwards
+  the signal to it. The handler is supervised by Keeper, so it is removed even if
+  Keeper is killed. On teardown the signal is no longer reset to `:default`: every
+  handler on `erl_signal_server` stops receiving it once it is, and OTP's own
+  `prim_tty_sighandler`, which the shell uses for its resize handling, is one of
+  them.
+
+- **A resize now clears the screen before redrawing.** Hidden by the bug above,
+  because no real resize ever reached this code. The runtime discarded the
+  previous frame on resize, which `Diff` reads as "the screen is blank", so the
+  redraw skipped blank cells and left the old frame's borders and text on screen.
+  The previous frame is now kept, and `Diff`'s existing size-change path clears
+  first. That clear is now preceded by an SGR reset, since terminals erase with
+  the current background colour.
+
+- `priv/resize_smoke.exs` resizes its own pty and checks the runtime reflows,
+  twice. It runs in `scripts/smoke.sh`, and so in CI.
+
 ## [0.7.0] — 2026-07-28
 
 Measurement, data access, and the generic seam.
