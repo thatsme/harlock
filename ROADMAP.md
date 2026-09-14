@@ -22,7 +22,7 @@ What works:
   automatic stash/restore on open/close.
 - Focus-aware key routing (v0.4): the runtime dispatches navigation keys
   straight to the focused `viewport` / `tabs` / `text_input` / `textarea` /
-  `menu` / `select` / `tree` and delivers the result as a message, so apps no
+  `menu` / `select` / `tree` / `table` / `button` / `checkbox` and delivers the result as a message, so apps no
   longer hand-wire `apply_key` helpers. `box(focus_proxy:)` lets a container
   mirror a child's focus for styling without joining traversal.
 - Push-shaped subscriptions: `Sub.telemetry` and `Sub.logger` turn `:telemetry`
@@ -49,7 +49,7 @@ What works:
   (render-then-clip + scroll-into-view + cursor remap), `progress`, `spinner`,
   `statusbar`, `keybar`, `tabs`, `menu`, `select` (dropdown that flips rather
   than clipping near a margin), `tree` (flat projection, id-keyed expansion,
-  lazily loaded children).
+  lazily loaded children), `button` and `checkbox`.
 - Undo / redo via `Harlock.UndoStack` — bounded snapshots the app holds in its
   model, with coalescing that breaks on a newline, a cursor jump, or a delete
   after an insert.
@@ -78,8 +78,6 @@ What's stubbed / missing — the honest list:
   window) — 1.1+. Counts and means are a few lines of `Enum` in the model.
 - Styled runs are accepted by `text` only. Box titles, tab labels and table
   cells still take a plain binary.
-- No button or checkbox widgets; a focusable `text` gets focus styling but not
-  Enter / Space routing. v0.8. (Choosing one of several is `select` / `menu`.)
 - No way to hand the terminal to another program (`$EDITOR`, a pager) and take
   it back, and no suspend on Ctrl-Z. v0.8.
 - Mouse events: SGR parser only — runtime enabling is v0.8.
@@ -806,7 +804,7 @@ is what decides whether it has to land before the freeze.
    because a binary inside `text` keeps its fast path anyway. Accepting runs in
    those other places is a later, additive step.
 
-3. **Button and checkbox.** Additive, so not a freeze requirement, but wanted
+3. **Button and checkbox** ✓ — `button/2` and `checkbox/2`. Additive, so not a freeze requirement, but wanted
    before 1.0: they are small, a settings screen is the first thing a newcomer
    builds, and a 1.0 without them reads as incomplete. After item 2, because a
    label is a natural first consumer of styled runs.

@@ -36,7 +36,9 @@ defmodule Harlock.Element.Focusables do
     :menu,
     :select,
     :tree,
-    :table
+    :table,
+    :button,
+    :checkbox
   ]
 
   @spec collect(Element.t()) :: {[id()], [[id()]], %{id() => Element.t()}}

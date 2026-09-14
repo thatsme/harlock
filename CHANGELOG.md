@@ -12,6 +12,28 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **`button/2` and `checkbox/2`.** Focusable controls drawn as `[ Save ]` and
+  `[x] Notify me`, auto-routed like the other widgets:
+
+  ```elixir
+  checkbox("Notify me", checked: m.notify, focusable: :notify)
+  button("Save", focusable: :save)
+
+  def update({:harlock_toggle, :notify, checked}, m), do: %{m | notify: checked}
+  def update({:harlock_submit, :save}, m), do: save(m)
+  ```
+
+  Enter and Space press a button (`{:harlock_submit, id}`) and toggle a checkbox
+  (`{:harlock_toggle, id, checked}`, carrying the new value). No new message
+  shapes: the checkbox reuses `tree`'s toggle tuple. Labels are anything `text/2`
+  accepts, so part of one can be styled. `handle_keys: false` opts out, and other
+  keys reach `update/2` as before.
+
+  New elements rather than Enter / Space routing on a focusable `text`, which
+  would have silently taken those keys from apps that already bind them there.
+  There is no radio group: `select` and `menu` already cover choosing one of
+  several, and no helper module, since there is no key logic worth exposing.
+
 - **Styled, multi-line and wrapped `text`.** `text/2` accepts a list of runs as
   well as a binary, plus `wrap:` and `align:`:
 

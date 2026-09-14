@@ -53,7 +53,7 @@ defmodule Harlock.App do
 
   Focus-aware widget routing (R2, v0.4). When a focusable widget
   (`viewport`, `tabs`, `text_input`, `textarea`, `menu`, `select`,
-  `tree`, `table`) carries a `:focusable` id and is focused, the runtime
+  `tree`, `table`, `button`, `checkbox`) carries a `:focusable` id and is focused, the runtime
   translates relevant keys into widget-shaped messages **before**
   calling `update/2`. The raw `{:key, …}` is swallowed — apps see the
   routed message *or* the raw key, never both. Opt out per-element with
@@ -75,7 +75,9 @@ defmodule Harlock.App do
           def update({:harlock_select, :nav, id}, m), do: %{m | tab: id}
 
     * `{:harlock_toggle, focus_id, node_id}` — a focused `tree` expanded
-      or collapsed a node. Distinct from `:harlock_select` because
+      or collapsed a node. A focused `checkbox` sends the same tuple with
+      its new boolean in the last slot:
+      `{:harlock_toggle, :notify, true}`. Distinct from `:harlock_select` because
       expanding is not selecting, and because a node whose children are
       not loaded yet turns this into a side effect:
 
@@ -91,7 +93,8 @@ defmodule Harlock.App do
             do: %{m | search: v, search_cursor: c}
 
     * `{:harlock_submit, focus_id}` — the action key was pressed on a
-      focused `text_input`, `menu`, `select`, or `tree` leaf:
+      focused `text_input`, `menu`, `select`, or `tree` leaf, or Enter /
+      Space on a focused `button`:
 
           def update({:harlock_submit, :search}, m), do: run_search(m)
 

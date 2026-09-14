@@ -11,7 +11,8 @@ defmodule Harlock.Elements do
 
   ## Primitives
 
-    * `text/2` — single-line text content
+    * `text/2` — text content: styled runs, newlines, optional wrap and align
+    * `button/2` / `checkbox/2` — focusable controls; Enter / Space are routed
     * `text_input/1` — single-line editable input (paired with
       `Harlock.TextBuffer`)
     * `vbox/1` / `hbox/1` — vertical / horizontal stacks with layout
@@ -731,6 +732,72 @@ defmodule Harlock.Elements do
     end
 
     %Element{type: :tree, opts: opts, children: []}
+  end
+
+  @doc """
+  A button, drawn as `[ label ]`.
+
+  When focused, Enter or Space delivers `{:harlock_submit, focus_id}`:
+
+      button("Save", focusable: :save)
+
+      def update({:harlock_submit, :save}, m), do: save(m)
+
+  `label` is anything `text/2` accepts, so part of it can be styled.
+
+  Required:
+    * `:focusable` — focus id. A button that cannot be focused cannot be
+      pressed.
+
+  Optional:
+    * `:style` — `%Style{}` or keyword list for the button.
+    * `:focus_style` — style when focused (default: `:style` merged with
+      `Theme.get(:focus)`).
+    * `:handle_keys` — `false` delivers the raw `{:key, …}` instead.
+  """
+  @spec button(Harlock.Text.t(), keyword()) :: Element.t()
+  def button(label, opts) when (is_binary(label) or is_list(label)) and is_list(opts) do
+    require_focusable!(:button, opts)
+    if is_list(label), do: Harlock.Text.validate!(label)
+    %Element{type: :button, opts: [label: label] ++ opts, children: []}
+  end
+
+  @doc """
+  A checkbox, drawn as `[x] label` or `[ ] label`.
+
+  The app owns the checked state. When focused, Space or Enter delivers
+  `{:harlock_toggle, focus_id, checked}` carrying the *new* value, so the
+  clause only writes it back:
+
+      checkbox("Notify me", checked: m.notify, focusable: :notify)
+
+      def update({:harlock_toggle, :notify, checked}, m), do: %{m | notify: checked}
+
+  `label` is anything `text/2` accepts.
+
+  Required:
+    * `:checked` — boolean.
+    * `:focusable` — focus id.
+
+  Optional:
+    * `:style`, `:focus_style`, `:handle_keys` — as for `button/2`.
+  """
+  @spec checkbox(Harlock.Text.t(), keyword()) :: Element.t()
+  def checkbox(label, opts) when (is_binary(label) or is_list(label)) and is_list(opts) do
+    require_focusable!(:checkbox, opts)
+
+    unless is_boolean(Keyword.get(opts, :checked)) do
+      raise ArgumentError, "checkbox/2 requires :checked to be a boolean"
+    end
+
+    if is_list(label), do: Harlock.Text.validate!(label)
+    %Element{type: :checkbox, opts: [label: label] ++ opts, children: []}
+  end
+
+  defp require_focusable!(type, opts) do
+    if Keyword.get(opts, :focusable) == nil do
+      raise ArgumentError, "#{type}/2 requires :focusable"
+    end
   end
 
   defp default_constraints(children), do: Enum.map(children, fn _ -> {:fill, 1} end)

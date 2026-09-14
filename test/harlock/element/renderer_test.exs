@@ -3,7 +3,7 @@ defmodule Harlock.Element.RendererTest do
 
   import Harlock.Elements
 
-  alias Harlock.Element.Renderer
+  alias Harlock.Element.{Focusables, Renderer}
   alias Harlock.Render.Buffer
 
   describe "text" do
@@ -100,6 +100,63 @@ defmodule Harlock.Element.RendererTest do
 
     test "empty content renders nothing" do
       assert row(Renderer.render(text([]), 1, 3), 0) == "   "
+    end
+  end
+
+  describe "button and checkbox" do
+    defp cells(frame), do: row(frame, 0)
+    defp style_of(frame, c), do: style_at(frame, 0, c)
+
+    test "a button is drawn as [ label ]" do
+      assert cells(Renderer.render(button("Save", focusable: :save), 1, 10)) == "[ Save ]  "
+    end
+
+    test "a checkbox shows its state" do
+      assert cells(Renderer.render(checkbox("On", checked: true, focusable: :c), 1, 8)) ==
+               "[x] On  "
+
+      assert cells(Renderer.render(checkbox("On", checked: false, focusable: :c), 1, 8)) ==
+               "[ ] On  "
+    end
+
+    test "a label can carry styled runs" do
+      frame = Renderer.render(button(["Delete ", {"all", fg: :red}], focusable: :d), 1, 16)
+
+      assert cells(frame) == "[ Delete all ]  "
+      assert style_of(frame, 9).fg == :red
+      assert style_of(frame, 2).fg == :default
+    end
+
+    test "focus styles the whole control" do
+      frame = Renderer.render(checkbox("On", checked: false, focusable: :c), 1, 6, :c)
+
+      assert style_of(frame, 0).reverse
+      assert style_of(frame, 4).reverse
+
+      refute Renderer.render(checkbox("On", checked: false, focusable: :c), 1, 6, nil)
+             |> style_of(0)
+             |> Map.fetch!(:reverse)
+    end
+
+    test "the constructors reject what cannot work" do
+      assert_raise ArgumentError, ~r/requires :focusable/, fn -> button("x", []) end
+      assert_raise ArgumentError, ~r/requires :focusable/, fn -> checkbox("x", checked: true) end
+
+      assert_raise ArgumentError, ~r/:checked to be a boolean/, fn ->
+        checkbox("x", focusable: :c)
+      end
+
+      assert_raise ArgumentError, ~r/:bad/, fn -> button(["x", :bad], focusable: :b) end
+    end
+
+    test "both are focusable and auto-routed" do
+      tree =
+        vbox(children: [button("a", focusable: :a), checkbox("b", checked: false, focusable: :b)])
+
+      {ids, _traps, routed} = Focusables.collect(tree)
+
+      assert ids == [:a, :b]
+      assert Map.keys(routed) |> Enum.sort() == [:a, :b]
     end
   end
 

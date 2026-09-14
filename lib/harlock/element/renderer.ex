@@ -333,6 +333,25 @@ defmodule Harlock.Element.Renderer do
     frame
   end
 
+  defp render_element(%Element{type: type} = el, region, frame, focused)
+       when type in [:button, :checkbox] do
+    style =
+      el.opts
+      |> Keyword.get(:style, %Style{})
+      |> Style.from()
+      |> maybe_focus_style(el, focused)
+
+    label = el.opts |> Keyword.fetch!(:label) |> List.wrap()
+
+    content =
+      case type do
+        :button -> ["[ " | label] ++ [" ]"]
+        :checkbox -> [if(Keyword.fetch!(el.opts, :checked), do: "[x] ", else: "[ ] ") | label]
+      end
+
+    render_text_lines(content, [], style, region, frame)
+  end
+
   defp render_element(%Element{type: :tree} = el, region, frame, focused) do
     nodes = Keyword.fetch!(el.opts, :nodes)
     expanded = Keyword.fetch!(el.opts, :expanded)

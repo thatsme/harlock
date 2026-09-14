@@ -372,6 +372,26 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  # Buttons and checkboxes take Enter and Space, with any modifiers, like
+  # select's action key. Neither adds a message shape: a press is the submit
+  # text_input and menu already send, and a checkbox reuses tree's toggle with
+  # the new boolean in the last slot, so the app writes it back rather than
+  # negating state it might have changed in the meantime.
+  defp route_to_widget(%Element{type: :button}, {:key, key, _}, focus_id, state)
+       when key in [:enter, {:char, ?\s}],
+       do: {:routed, {:harlock_submit, focus_id}, state}
+
+  defp route_to_widget(%Element{type: :checkbox} = el, {:key, key, _}, focus_id, state)
+       when key in [:enter, {:char, ?\s}] do
+    case Keyword.fetch(el.opts, :checked) do
+      {:ok, checked} when is_boolean(checked) ->
+        {:routed, {:harlock_toggle, focus_id, not checked}, state}
+
+      _ ->
+        {:pass, state}
+    end
+  end
+
   defp route_to_widget(_el, _event, _focus_id, state), do: {:pass, state}
 
   defp route_windowed_table(el, event, focus_id, state, metrics) do

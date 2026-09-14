@@ -849,4 +849,86 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
       assert Harlock.Test.model(h).cursor == 11
     end
   end
+
+  defmodule FormApp do
+    @moduledoc false
+    use Harlock.App
+
+    def init(opts),
+      do: %{
+        notify: false,
+        saves: 0,
+        raw_keys: [],
+        save_keys: Keyword.get(opts || [], :save_keys, true)
+      }
+
+    def update({:harlock_toggle, :notify, checked}, m), do: %{m | notify: checked}
+    def update({:harlock_submit, :save}, m), do: %{m | saves: m.saves + 1}
+    def update({:key, _, _} = ev, m), do: %{m | raw_keys: [ev | m.raw_keys]}
+    def update(_, m), do: m
+
+    def view(m) do
+      vbox(
+        constraints: [length: 1, length: 1],
+        children: [
+          checkbox("Notify me", checked: m.notify, focusable: :notify),
+          button("Save", focusable: :save, handle_keys: m.save_keys)
+        ]
+      )
+    end
+  end
+
+  describe "checkbox and button auto-routing" do
+    setup do
+      h = Harlock.Test.start_app(FormApp, nil, rows: 4, cols: 20)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "Space and Enter toggle the checkbox, carrying the new value", %{h: h} do
+      assert Harlock.Test.focused(h) == :notify
+
+      Harlock.Test.send_key(h, {:char, ?\s})
+      assert Harlock.Test.model(h).notify == true
+      assert Harlock.Test.render(h) =~ "[x] Notify me"
+
+      Harlock.Test.send_key(h, :enter)
+      assert Harlock.Test.model(h).notify == false
+      assert Harlock.Test.render(h) =~ "[ ] Notify me"
+
+      assert Harlock.Test.model(h).raw_keys == []
+    end
+
+    test "Enter and Space on a focused button submit", %{h: h} do
+      Harlock.Test.send_key(h, :tab)
+      assert Harlock.Test.focused(h) == :save
+
+      Harlock.Test.send_key(h, :enter)
+      Harlock.Test.send_key(h, {:char, ?\s})
+
+      assert Harlock.Test.model(h).saves == 2
+      assert Harlock.Test.model(h).notify == false
+    end
+
+    test "other keys still reach update/2", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?a})
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, :down)
+
+      assert Enum.reverse(Harlock.Test.model(h).raw_keys) == [
+               {:key, {:char, ?a}, []},
+               {:key, :down, []}
+             ]
+    end
+
+    test "handle_keys: false delivers the raw key instead" do
+      h = Harlock.Test.start_app(FormApp, [save_keys: false], rows: 4, cols: 20)
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, :enter)
+
+      assert Harlock.Test.model(h).saves == 0
+      assert Harlock.Test.model(h).raw_keys == [{:key, :enter, []}]
+      Harlock.Test.stop(h)
+    end
+  end
 end
