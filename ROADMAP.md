@@ -54,7 +54,10 @@ What works:
   model, with coalescing that breaks on a newline, a cursor jump, or a delete
   after an insert.
 - Wide-grapheme width (CJK, emoji, ZWJ sequences, flags).
-- SIGWINCH resize via an `ioctl(TIOCGWINSZ)` NIF — terminal resize reflows.
+- Resize handling in the runtime: `{:harlock_resize, rows, cols}` discards the
+  previous frame and reflows, and `Keeper.size/1` reads `ioctl(TIOCGWINSZ)`
+  through the NIF. **Resizing a real terminal does not reach it** — see the
+  first item under v0.8.
 - Input parser handles CSI/SS3, bracketed paste, XTerm focus reporting,
   modified arrows (`CSI 1;5A`), Home / End, and F-keys.
 - `:telemetry` events for frame render, input dispatch, cmd, and reader.
@@ -74,9 +77,17 @@ What's stubbed / missing — the honest list:
   it.
 - No windowed aggregation for metrics (rates, percentiles over a trailing
   window) — 1.1+. Counts and means are a few lines of `Enum` in the model.
-- Mouse events: SGR parser only — runtime enabling is deferred.
+- Terminal resize is broken outside tests: `Keeper` waits for a message OTP
+  never sends. v0.8.
+- `text` is one line in one style, clipped, with no alignment. There is no way
+  to style part of a line or to display a wrapped paragraph without a
+  `textarea`. v0.8.
+- No way to hand the terminal to another program (`$EDITOR`, a pager) and take
+  it back, and no suspend on Ctrl-Z. v0.8.
+- No checkbox, radio or button widgets. v0.8.
+- Mouse events: SGR parser only — runtime enabling is v0.8.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
-- No mouse-driven interaction: keyboard only.
+- No inline (non-alternate-screen) mode, clipboard, or hyperlinks — 1.1+.
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
 
 ## Guiding principles
@@ -184,6 +195,12 @@ Terminal resize must reflow. Without this we can't ship.
 
 Tests: simulate resize event into `IO.Test` runtime, assert reflow
 (`test/harlock/resize_test.exs`).
+
+**Correction, found in v0.8:** the first bullet was wrong, and the tests could
+not show it. `:os.set_signal(:sigwinch, :handle)` delivers the signal to the
+`erl_signal_server` event manager, not to the caller's mailbox, so Keeper never
+receives `{:signal, :sigwinch}`. The simulated test injects
+`{:harlock_resize, …}` below the broken step. See v0.8.
 
 ### Wide-grapheme width (prerequisite for text_input)
 
@@ -723,22 +740,84 @@ roadmap instead of implementing it.
 
 ---
 
-## v0.8 — freeze prep (next, and the last milestone before 1.0)
+## v0.8 — the missing basics, then freeze prep (next, and the last milestone before 1.0)
 
-The only thing left between here and a frozen public API. Nothing in this
-milestone adds a feature.
+An earlier version of this section declared v0.8 closed to features, on the
+argument that every feature added before 1.0 is another shape frozen
+permanently. That argument still holds for *additive* work, and the `Sub` kinds
+and metrics helper stay in 1.1+ because of it.
 
-That constraint is deliberate and it is a correction. This work has been
-renumbered three times — v0.6, then v0.7, then v0.8 — because each time
-something finishable arrived first. Worse, the previous version of this section
-declared itself "closed to new features" while containing three: two `Sub` kinds
-and a metrics helper. Those have moved to 1.1+, below.
+It did not survive an audit of what the library cannot do. A terminal UI library
+that cannot style a word inside a sentence, hand the terminal to `$EDITOR`, or
+notice the window being resized is not ready to freeze, and two of those change
+contracts 1.0 would lock. So v0.8 has two halves, in this order.
 
-The argument for moving them is not tidiness. Every feature added before 1.0 is
-another shape frozen permanently, and all three are purely *additive* — new
-`Sub` kinds and a metrics helper break nothing, which is precisely what minor
-releases after 1.0 exist for. Holding 1.0 for them means freezing a larger API
-later, in exchange for nothing.
+### The missing basics
+
+In order. Each item says whether it changes an existing contract, because that
+is what decides whether it can wait for 1.1.
+
+1. **Terminal resize never reaches the runtime — a defect, not a feature.**
+   `Keeper` calls `:os.set_signal(:sigwinch, :handle)` and waits for
+   `{:signal, :sigwinch}`. OTP delivers handled signals to the `erl_signal_server`
+   event manager, never to the caller, so the message does not arrive.
+
+   Verified on macOS in a real pty. A bare BEAM that calls `set_signal` receives
+   nothing when sent `SIGWINCH`, while a `:gen_event` handler added to
+   `erl_signal_server` receives `:sigwinch` from the same signal. A running
+   Harlock app, with the pty resized from 80×24 to 100×30, sees the signal reach
+   `erl_signal_server` and never redraws. Every resize test injects
+   `{:harlock_resize, …}` directly, which is below the broken step.
+
+   The fix: a handler on `erl_signal_server` that only forwards to Keeper, removed
+   when Keeper terminates. Two things need care:
+   - `erl_signal_server` already carries OTP's `prim_tty_sighandler`. Keeper's
+     teardown resets the signal to `:default`, which may break the shell's own
+     resize handling after a Harlock app exits inside IEx.
+   - A handler that raises is silently removed by `gen_event`, so the forwarder
+     must not be able to fail.
+
+   Tests need a real pty. The resize probe is a script: resize the pty, then check
+   that a frame is drawn at the new width.
+
+   This also unblocks `Sub.signal` (1.1+), which needs the same mechanism.
+
+2. **Styled and wrapped text.** `text/2` takes one binary, one style, one line,
+   and clips it. There is no way to bold one word or colour a status value
+   inside a sentence. Apps fake it with an `hbox` of fixed-width `text`s, which
+   breaks on wide graphemes and resize. A wrapped read-only paragraph means
+   pressing `textarea` into service.
+
+   Changes a contract: what `text` accepts, and whether styled runs are a new
+   element or a new content shape. Width measurement, clipping and wrapping
+   must operate on runs rather than a single binary, and the `textarea` wrap
+   memo is the obvious thing to share.
+
+3. **Handing the terminal to another program, and suspend.** Opening `$EDITOR`
+   on a file, running a pager, or `git commit` needs the terminal released
+   (leave alternate screen, restore termios, stop the reader) and reclaimed
+   afterwards with a full redraw. Ctrl-Z / `SIGTSTP` is the same sequence around
+   a stop, and depends on item 1's signal path.
+
+   Changes a contract: it is a `Cmd` whose execution suspends rendering and
+   input, which the runtime currently has no state for. It also touches the
+   restore-on-crash path, so a crash *while suspended* needs the same test the
+   crash path already has.
+
+4. **Mouse runtime enabling** — moved from 1.1+. The SGR parser exists; the
+   DECSET sequences that turn reporting on, and restoring them on exit, do not.
+   Additive, but it gates click-to-open on `select` and `tree`, and building a
+   real application (below) runs into its absence immediately.
+
+5. **Form widgets: checkbox, radio group, button.** Additive. Wanted before the
+   freeze for the same reason as mouse: settings screens and dialogs are the
+   first thing a real application needs, and today each app fakes them with
+   `text` and hand-written key clauses — the boilerplate v0.4 existed to remove.
+   They should follow the routed-widget contract (`{:harlock_toggle, …}`,
+   `{:harlock_select, …}`, `{:harlock_submit, …}`) with no new message shapes.
+
+The second half is freeze prep, below, and it does not start until these land —
+the freeze decisions depend on the shapes items 2 and 3 settle.
 
 ### Build one real application first
 
@@ -937,7 +1016,7 @@ it.
 ## v1.0 — stable API
 
 - Public API frozen per the `@moduledoc` decisions above.
-- All v0.8 freeze prep complete, including at least one real application built
+- v0.8's missing basics landed and its freeze prep complete, including at least one real application built
   on the API.
 - Announcement post + Reddit/Elixir Forum thread.
 - Minimum supported: Elixir 1.19+, OTP 26+ — matching the `elixir: "~> 1.19"`
@@ -963,15 +1042,13 @@ No new design work.
   and change detection are real logic.
 - `Sub.port(cmd, args)` — long-running external process, stdout lines as events.
   Also real logic: port lifecycle, partial-line buffering, exit handling.
-- `Sub.signal(:sigusr1, msg)` — **blocked on a verification, not on effort.**
-  `Keeper`'s moduledoc claims `:os.set_signal(:sigwinch, :handle)` "routes
-  `{:signal, :sigwinch}` messages to the most recent caller". That is the
-  mechanism an app-level signal sub would build on, and it has never been
-  checked against OTP's actual delivery path — signals are documented as going
-  to the global `erl_signal_server`. Until someone confirms on a POSIX host how
-  Keeper really receives them, building a second consumer means building on an
-  unverified comment. Worth checking independently of this item: if the comment
-  is wrong, SIGWINCH reflow is working by accident.
+- `Sub.signal(:sigusr1, msg)` — **unblocked by v0.8 item 1.** The verification
+  this waited on is done, and `Keeper`'s comment was wrong: handled signals go
+  to the global `erl_signal_server` event manager, not to the caller, and
+  SIGWINCH reflow was not working at all. Once Keeper forwards through a
+  `:gen_event` handler, an app-level signal sub is a second consumer of the same
+  mechanism. It must not reset a signal to `:default` on teardown while another
+  consumer — Keeper, or OTP's own `prim_tty_sighandler` — still depends on it.
 
 `Sub.pubsub` is **not** on this list. `Sub.source/3` covers it, and a named
 constructor would add a `phoenix_pubsub` dependency to a terminal UI library in
@@ -992,9 +1069,6 @@ rates, and percentiles that cannot be derived from a running total.
 
 ### Deferred terminal capabilities
 
-- **Mouse runtime enabling.** The SGR parser exists; emitting the DECSET
-  sequences to turn reporting on does not. This is the only thing genuinely
-  gating click-to-open on `select` and `tree`.
 - **Kitty keyboard protocol push.** Parser only. Needed for chords the legacy
   encoding cannot express, and not for Alt-modified letters, which already work.
 - **`:ssh` backend.** An IO seam addition rather than a redesign: the backend
@@ -1002,6 +1076,26 @@ rates, and percentiles that cannot be derived from a running total.
   also sidesteps the `user_drv` contention problem entirely, since an SSH
   channel is not the controlling terminal. This is the prerequisite for Nerves
   over SSH, where the console is an Erlang shell rather than a pty.
+- **Inline mode.** Render into a region of the normal screen instead of the
+  alternate screen, the shape prompts, pickers and progress displays in CLI
+  tools use. A run option rather than a new contract, but the Writer and the
+  restore path both assume the alternate screen today, and scrollback
+  interaction needs design.
+- **Clipboard via OSC 52.** Copy from an app, including over SSH where no
+  local clipboard API exists. A `Cmd`; support is terminal-dependent, so it
+  needs a caps entry.
+- **Hyperlinks via OSC 8.** A style attribute on a run, so it follows v0.8's
+  styled text rather than preceding it.
+
+### More widgets
+
+Additive, and each should arrive with the real application that needs it rather
+than speculatively.
+
+- Bar chart and gauge, beside `sparkline`.
+- Horizontal scrolling for `viewport`, deliberately left out when it shipped
+  vertical-only.
+- Resizable split panes, which want mouse drag from v0.8 item 4.
 
 ---
 
