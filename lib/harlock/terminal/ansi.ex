@@ -4,25 +4,40 @@ defmodule Harlock.Terminal.Ansi do
   @esc "\e"
   @csi @esc <> "["
 
-  @doc "Sequence written immediately after opening the tty in raw mode."
-  def enter do
+  # xterm mouse reporting: 1000 presses and releases (and the wheel), 1002 motion
+  # while a button is held, 1006 the SGR encoding the parser reads, which has
+  # no column limit. 1003, motion with no button held, is left off: it reports
+  # every cell the pointer crosses.
+  @mouse_on [@csi <> "?1000h", @csi <> "?1002h", @csi <> "?1006h"]
+  @mouse_off [@csi <> "?1006l", @csi <> "?1002l", @csi <> "?1000l"]
+
+  @doc """
+  Sequence written immediately after opening the tty in raw mode.
+  `mouse: true` also turns on mouse reporting.
+  """
+  def enter(opts \\ []) do
     [
       @csi <> "?1049h",
       @csi <> "?25l",
       @csi <> "?2004h",
       @csi <> "2J",
       @csi <> "H"
-    ]
+    ] ++ if(Keyword.get(opts, :mouse, false), do: @mouse_on, else: [])
   end
 
-  @doc "Sequence written before restoring termios and closing the tty."
+  @doc """
+  Sequence written before restoring termios and closing the tty. Always turns
+  mouse reporting off, whether or not it was turned on: a terminal left
+  reporting clicks after an app exits types escape sequences into the shell.
+  """
   def leave do
-    [
-      @csi <> "?2004l",
-      @csi <> "?25h",
-      @csi <> "0m",
-      @csi <> "?1049l"
-    ]
+    @mouse_off ++
+      [
+        @csi <> "?2004l",
+        @csi <> "?25h",
+        @csi <> "0m",
+        @csi <> "?1049l"
+      ]
   end
 
   @doc "Move cursor to a 0-indexed row/col. ANSI is 1-indexed, so we add 1."

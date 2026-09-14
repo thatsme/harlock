@@ -6,6 +6,7 @@ defmodule Harlock.Element.Renderer do
   alias Harlock.Element
   alias Harlock.Element.Column
   alias Harlock.Element.Floats
+  alias Harlock.Element.HitRegions
   alias Harlock.Element.WidgetMetrics
   alias Harlock.Layout
   alias Harlock.Layout.Rect
@@ -39,6 +40,7 @@ defmodule Harlock.Element.Renderer do
     region = Rect.new(0, 0, cols, rows)
 
     Floats.clear()
+    HitRegions.clear()
     frame = render_element(root, region, frame, focused)
     draw_floats(frame, rows, cols, focused, @max_float_depth)
   end
@@ -55,7 +57,10 @@ defmodule Harlock.Element.Renderer do
       floats ->
         floats
         |> Enum.reduce(frame, fn %{anchor: anchor, w: w, h: h, element: el}, acc ->
-          render_element(el, float_region(anchor, w, h, rows, cols), acc, focused)
+          region = float_region(anchor, w, h, rows, cols)
+          # Covers the tree beneath it for clicks as it does visually.
+          HitRegions.record(nil, region)
+          render_element(el, region, acc, focused)
         end)
         |> draw_floats(rows, cols, focused, depth - 1)
     end
@@ -96,10 +101,24 @@ defmodule Harlock.Element.Renderer do
     Rect.new(row, col, w, h)
   end
 
-  defp render_element(_element, %Rect{w: 0}, frame, _focused), do: frame
-  defp render_element(_element, %Rect{h: 0}, frame, _focused), do: frame
+  # Every element passes through here, so every focusable one is recorded for
+  # mouse hit-testing just before it draws — a parent before its children,
+  # which is what puts children on top. An element that opts out with
+  # handle_mouse: false is recorded as an occluder instead, so a click on it
+  # still does not reach whatever lies beneath.
+  defp render_element(%Element{opts: opts} = el, region, frame, focused) do
+    case Keyword.get(opts, :focusable) do
+      nil -> :ok
+      id -> HitRegions.record(if(Keyword.get(opts, :handle_mouse, true), do: id), region)
+    end
 
-  defp render_element(%Element{type: :text} = el, region, frame, focused) do
+    draw_element(el, region, frame, focused)
+  end
+
+  defp draw_element(_element, %Rect{w: 0}, frame, _focused), do: frame
+  defp draw_element(_element, %Rect{h: 0}, frame, _focused), do: frame
+
+  defp draw_element(%Element{type: :text} = el, region, frame, focused) do
     content = Keyword.fetch!(el.opts, :content)
 
     style =
@@ -117,7 +136,7 @@ defmodule Harlock.Element.Renderer do
     end
   end
 
-  defp render_element(%Element{type: :text_input} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :text_input} = el, region, frame, focused) do
     value = Keyword.fetch!(el.opts, :value)
     cursor = Keyword.fetch!(el.opts, :cursor)
     id = Keyword.fetch!(el.opts, :focusable)
@@ -163,7 +182,7 @@ defmodule Harlock.Element.Renderer do
     frame
   end
 
-  defp render_element(%Element{type: :textarea} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :textarea} = el, region, frame, focused) do
     value = Keyword.fetch!(el.opts, :value)
     cursor = Keyword.fetch!(el.opts, :cursor)
     id = Keyword.fetch!(el.opts, :focusable)
@@ -209,7 +228,7 @@ defmodule Harlock.Element.Renderer do
     end
   end
 
-  defp render_element(%Element{type: :progress} = el, region, frame, _focused) do
+  defp draw_element(%Element{type: :progress} = el, region, frame, _focused) do
     value = max(0, Keyword.fetch!(el.opts, :value))
     max_val = Keyword.fetch!(el.opts, :max)
     width = Keyword.get(el.opts, :width, region.w) |> min(region.w) |> max(0)
@@ -226,7 +245,7 @@ defmodule Harlock.Element.Renderer do
     |> Frame.write(region.row, region.col + filled, String.duplicate(" ", empty), style)
   end
 
-  defp render_element(%Element{type: :spinner} = el, region, frame, _focused) do
+  defp draw_element(%Element{type: :spinner} = el, region, frame, _focused) do
     tick = Keyword.fetch!(el.opts, :tick)
     frames = Keyword.get(el.opts, :frames, ~w(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏))
     style = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
@@ -235,7 +254,7 @@ defmodule Harlock.Element.Renderer do
     Frame.write(frame, region.row, region.col, glyph, style)
   end
 
-  defp render_element(%Element{type: :statusbar} = el, region, frame, _focused) do
+  defp draw_element(%Element{type: :statusbar} = el, region, frame, _focused) do
     left = Keyword.get(el.opts, :left, "")
     right = Keyword.get(el.opts, :right, "")
     style = el.opts |> Keyword.get(:style, %Style{reverse: true}) |> Style.from()
@@ -243,7 +262,7 @@ defmodule Harlock.Element.Renderer do
     render_lr_bar(frame, region, left, right, style)
   end
 
-  defp render_element(%Element{type: :keybar} = el, region, frame, _focused) do
+  defp draw_element(%Element{type: :keybar} = el, region, frame, _focused) do
     bindings = Keyword.fetch!(el.opts, :bindings)
     separator = Keyword.get(el.opts, :separator, "  ")
     right = Keyword.get(el.opts, :right, "")
@@ -253,7 +272,7 @@ defmodule Harlock.Element.Renderer do
     render_lr_bar(frame, region, left, right, style)
   end
 
-  defp render_element(%Element{type: :tabs} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :tabs} = el, region, frame, focused) do
     items = Keyword.fetch!(el.opts, :items)
     active = Keyword.fetch!(el.opts, :active)
     separator = Keyword.get(el.opts, :separator, " │ ")
@@ -271,7 +290,7 @@ defmodule Harlock.Element.Renderer do
     render_tabs(frame, region, items, active, separator, inactive_style, active_style, sep_style)
   end
 
-  defp render_element(%Element{type: :menu} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :menu} = el, region, frame, focused) do
     items = Keyword.fetch!(el.opts, :items)
     active = Keyword.fetch!(el.opts, :active)
     align = Keyword.get(el.opts, :align, :left)
@@ -295,7 +314,7 @@ defmodule Harlock.Element.Renderer do
     end)
   end
 
-  defp render_element(%Element{type: :select} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :select} = el, region, frame, focused) do
     items = Keyword.fetch!(el.opts, :items)
     value = Keyword.fetch!(el.opts, :value)
     open? = Keyword.fetch!(el.opts, :open)
@@ -333,7 +352,7 @@ defmodule Harlock.Element.Renderer do
     frame
   end
 
-  defp render_element(%Element{type: type} = el, region, frame, focused)
+  defp draw_element(%Element{type: type} = el, region, frame, focused)
        when type in [:button, :checkbox] do
     style =
       el.opts
@@ -352,7 +371,7 @@ defmodule Harlock.Element.Renderer do
     render_text_lines(content, [], style, region, frame)
   end
 
-  defp render_element(%Element{type: :tree} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :tree} = el, region, frame, focused) do
     nodes = Keyword.fetch!(el.opts, :nodes)
     expanded = Keyword.fetch!(el.opts, :expanded)
     focused_id = Keyword.fetch!(el.opts, :focused)
@@ -394,7 +413,7 @@ defmodule Harlock.Element.Renderer do
     if is_focused?, do: Frame.set_focus_rect(frame, rect_of(region)), else: frame
   end
 
-  defp render_element(%Element{type: :sparkline} = el, region, frame, _focused) do
+  defp draw_element(%Element{type: :sparkline} = el, region, frame, _focused) do
     values = Keyword.fetch!(el.opts, :values)
     glyphs = Keyword.get(el.opts, :glyphs, @sparkline_glyphs)
     style = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
@@ -412,21 +431,21 @@ defmodule Harlock.Element.Renderer do
     Frame.write(frame, region.row, col, line, style)
   end
 
-  defp render_element(%Element{type: :vbox} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :vbox} = el, region, frame, focused) do
     constraints = Keyword.fetch!(el.opts, :constraints)
     rects = Layout.split(region, :vertical, constraints)
     render_children(el.children, rects, frame, focused)
   end
 
-  defp render_element(%Element{type: :hbox} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :hbox} = el, region, frame, focused) do
     constraints = Keyword.fetch!(el.opts, :constraints)
     rects = Layout.split(region, :horizontal, constraints)
     render_children(el.children, rects, frame, focused)
   end
 
-  defp render_element(%Element{type: :spacer}, _region, frame, _focused), do: frame
+  defp draw_element(%Element{type: :spacer}, _region, frame, _focused), do: frame
 
-  defp render_element(%Element{type: :box, children: [child]} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :box, children: [child]} = el, region, frame, focused) do
     border_kind = Keyword.get(el.opts, :border, :single)
     {pt, pr, pb, pl} = normalize_padding(Keyword.get(el.opts, :padding, 0))
 
@@ -464,7 +483,7 @@ defmodule Harlock.Element.Renderer do
     render_element(child, inner, frame, focused)
   end
 
-  defp render_element(
+  defp draw_element(
          %Element{type: :overlay, children: [child, over]} = el,
          region,
          frame,
@@ -477,10 +496,13 @@ defmodule Harlock.Element.Renderer do
     anchor = Keyword.get(el.opts, :anchor, :center)
     over_region = anchor_region(region, anchor, w, h)
 
+    # The panel covers the background for clicks as it does visually, even
+    # where it has nothing focusable of its own.
+    HitRegions.record(nil, over_region)
     render_element(over, over_region, frame, focused)
   end
 
-  defp render_element(%Element{type: :viewport, children: [child]} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :viewport, children: [child]} = el, region, frame, focused) do
     declared_offset = Keyword.fetch!(el.opts, :offset)
     content_height = Keyword.fetch!(el.opts, :content_height)
     scrollbar? = Keyword.get(el.opts, :scrollbar, false)
@@ -505,13 +527,24 @@ defmodule Harlock.Element.Renderer do
       true ->
         tall_frame = Frame.new(content_height, child_w)
         tall_region = %Rect{row: 0, col: 0, w: child_w, h: content_height}
-        tall_frame = render_element(child, tall_region, tall_frame, focused)
+
+        {tall_frame, child_regions} =
+          HitRegions.scoped(fn -> render_element(child, tall_region, tall_frame, focused) end)
 
         # Scroll-into-view: if the focused element is in our child's subtree
         # and outside the visible window, snap to bring it in. Model offset
         # is untouched — this is a render-time-only adjustment.
         effective_offset =
           scroll_into_view(declared_offset, region.h, content_height, tall_frame.focus_rect)
+
+        # Only what is scrolled into view can be clicked, where it is displayed.
+        child_regions
+        |> HitRegions.translate_and_clip(
+          region.row - effective_offset,
+          region.col,
+          Rect.new(region.row, region.col, child_w, region.h)
+        )
+        |> HitRegions.add()
 
         frame =
           blit_viewport(
@@ -556,7 +589,7 @@ defmodule Harlock.Element.Renderer do
     end
   end
 
-  defp render_element(%Element{type: :table} = el, region, frame, focused) do
+  defp draw_element(%Element{type: :table} = el, region, frame, focused) do
     columns = Keyword.fetch!(el.opts, :columns)
     rows_source = Keyword.fetch!(el.opts, :rows)
     row_id_fn = Keyword.fetch!(el.opts, :row_id)

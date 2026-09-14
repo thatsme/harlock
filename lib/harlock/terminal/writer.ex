@@ -39,12 +39,14 @@ defmodule Harlock.Terminal.Writer do
 
     case Tty.open_write() do
       {:ok, fd} ->
-        _ = Tty.write(fd, Ansi.enter())
+        mouse = Keyword.get(opts, :mouse, false)
+        _ = Tty.write(fd, Ansi.enter(mouse: mouse))
 
         {:ok,
          %{
            fd: fd,
            caps: Keyword.fetch!(opts, :caps),
+           mouse: mouse,
            entered: true
          }}
 
@@ -75,7 +77,7 @@ defmodule Harlock.Terminal.Writer do
     do: {:reply, Tty.write(state.fd, Ansi.leave()), %{state | entered: false}}
 
   def handle_call(:enter, _from, state),
-    do: {:reply, Tty.write(state.fd, Ansi.enter()), %{state | entered: true}}
+    do: {:reply, Tty.write(state.fd, Ansi.enter(mouse: state.mouse)), %{state | entered: true}}
 
   @impl true
   def terminate(_reason, %{fd: fd} = state) do

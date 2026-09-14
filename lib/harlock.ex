@@ -40,11 +40,17 @@ defmodule Harlock do
 
     * `:theme` — a `Harlock.Theme.t()` (or keyword list / map convertible
       via `Harlock.Theme.build/1`). Defaults to `Harlock.Theme.default/0`.
+    * `:mouse` — turn on mouse reporting (default `false`). Clicks focus
+      elements and press buttons and checkboxes, the wheel scrolls viewports
+      and tables, and anything not routed arrives in `update/2` as
+      `{:mouse, action, button, col, row, mods}`. See `Harlock.App`. Off by
+      default because while it is on the terminal's own click-and-drag text
+      selection needs a modifier (usually Shift, or Option on macOS).
   """
   @spec run(app(), init_arg(), keyword()) :: {:ok, term()} | {:error, term()}
   def run(app, init_arg \\ nil, opts \\ []) do
     sup_opts =
-      [app: app, init_arg: init_arg, caller: self()]
+      [app: app, init_arg: init_arg, caller: self(), mouse: Keyword.get(opts, :mouse, false)]
       |> maybe_put_theme(opts)
 
     was_trapping = Process.flag(:trap_exit, true)
@@ -123,7 +129,7 @@ defmodule Harlock do
   @spec start_link(app(), init_arg(), keyword()) :: Supervisor.on_start()
   def start_link(app, init_arg \\ nil, opts \\ []) do
     sup_opts =
-      [app: app, init_arg: init_arg, caller: self()]
+      [app: app, init_arg: init_arg, caller: self(), mouse: Keyword.get(opts, :mouse, false)]
       |> maybe_put_theme(opts)
 
     Harlock.App.Supervisor.start_link(sup_opts)

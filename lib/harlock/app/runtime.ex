@@ -32,6 +32,7 @@ defmodule Harlock.App.Runtime do
   alias Harlock.Cmd
   alias Harlock.Element
   alias Harlock.Element.Focusables
+  alias Harlock.Element.HitRegions
   alias Harlock.Element.Renderer
   alias Harlock.Element.WidgetMetrics
   alias Harlock.Focus
@@ -93,6 +94,8 @@ defmodule Harlock.App.Runtime do
         keeper: Keyword.get(opts, :keeper),
         exec_stub: Keyword.get(opts, :exec_stub),
         suspend_stub: Keyword.get(opts, :suspend_stub),
+        mouse: Keyword.get(opts, :mouse, false),
+        hit_regions: [],
         exec: nil
       }
 
@@ -111,6 +114,9 @@ defmodule Harlock.App.Runtime do
   end
 
   @impl true
+  def handle_info({:harlock_event, {:mouse, _, _, _, _, _} = event}, %{mouse: true} = state),
+    do: handle_mouse(event, state)
+
   def handle_info({:harlock_event, event}, state) do
     case maybe_handle_focus(event, state) do
       {:handled, state} ->
@@ -206,6 +212,95 @@ defmodule Harlock.App.Runtime do
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # Mouse routing. The renderer records where each focusable element landed
+  # (Harlock.Element.HitRegions); the topmost one under the pointer is the
+  # target. A left press focuses it and presses a button or toggles a checkbox;
+  # the wheel scrolls a viewport or moves through a table. Both reuse the
+  # messages keyboard routing already sends. Everything else — a miss, a
+  # release, a drag, another button, an element outside an open focus trap —
+  # arrives in update/2 as the raw {:mouse, …} event, never both.
+  #
+  # Widget messages need the element, which comes from routed_widgets, so an
+  # element with handle_keys: false is still focused by a click but gets no
+  # widget message from the mouse either.
+  defp handle_mouse({:mouse, action, button, col, row, _mods} = event, state) do
+    target =
+      case HitRegions.at(state.hit_regions, row - 1, col - 1) do
+        {:hit, id} when id != nil -> if id in active_ids(state), do: id
+        _ -> nil
+      end
+
+    case {action, button, target} do
+      {_, _, nil} ->
+        apply_update(state, event)
+
+      {:press, :left, id} ->
+        state = focus_by_mouse(state, id)
+
+        case click_message(state, id) do
+          nil -> {:noreply, render(state)}
+          message -> apply_update(state, message)
+        end
+
+      {wheel, _, id} when wheel in [:wheel_up, :wheel_down] ->
+        apply_update(state, wheel_message(state, id, wheel) || event)
+
+      _ ->
+        apply_update(state, event)
+    end
+  end
+
+  defp focus_by_mouse(%{focused: id} = state, id), do: state
+  defp focus_by_mouse(state, id), do: %{state | focused: id, goal_column: nil, dirty: true}
+
+  defp click_message(state, id) do
+    case Map.get(state.routed_widgets, id) do
+      %Element{type: :button} ->
+        {:harlock_submit, id}
+
+      %Element{type: :checkbox, opts: opts} ->
+        {:harlock_toggle, id, not Keyword.fetch!(opts, :checked)}
+
+      _ ->
+        nil
+    end
+  end
+
+  # Three lines per notch for a viewport, as terminals and pagers scroll; one
+  # row for a table, whose routing already knows what a row step means.
+  @wheel_lines 3
+
+  defp wheel_message(state, id, wheel) do
+    key = if wheel == :wheel_up, do: :up, else: :down
+
+    case Map.get(state.routed_widgets, id) do
+      %Element{type: :viewport, opts: opts} ->
+        offset = Keyword.fetch!(opts, :offset)
+        content_height = Keyword.fetch!(opts, :content_height)
+        height = region_height(state.hit_regions, id)
+
+        new_offset =
+          Enum.reduce(1..@wheel_lines, offset, fn _, o ->
+            Harlock.Viewport.apply_key(o, content_height, height, key)
+          end)
+
+        if new_offset != offset, do: {:harlock_scroll, id, new_offset}
+
+      %Element{type: :table} = el ->
+        case route_to_widget(el, {:key, key, []}, id, state) do
+          {:routed, message, _state} -> message
+          {:pass, _state} -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp region_height(regions, id) do
+    regions |> Enum.filter(&(&1.id == id)) |> List.last() |> Map.fetch!(:rect) |> Map.fetch!(:h)
+  end
 
   # Undo the handover. Entering the alternate screen clears it, so the previous
   # frame no longer describes what is displayed: nil makes the next render a
@@ -625,11 +720,18 @@ defmodule Harlock.App.Runtime do
     WidgetMetrics.clear()
     frame = Renderer.render(tree, state.rows, state.cols, state.focused)
     widget_metrics = WidgetMetrics.consume()
+    hit_regions = HitRegions.consume()
 
     diff = Diff.diff(state.prev_frame, frame)
     Writer.write(state.writer, diff)
 
-    %{state | prev_frame: frame, widget_metrics: widget_metrics, dirty: false}
+    %{
+      state
+      | prev_frame: frame,
+        widget_metrics: widget_metrics,
+        hit_regions: hit_regions,
+        dirty: false
+    }
   end
 
   defp update_subs(state) do

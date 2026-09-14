@@ -73,7 +73,9 @@ defmodule Harlock.App.Supervisor do
             },
             %{
               id: :writer,
-              start: {Writer, :start_link, [[caps: caps, name: writer_name]]},
+              start:
+                {Writer, :start_link,
+                 [[caps: caps, name: writer_name, mouse: Keyword.get(opts, :mouse, false)]]},
               shutdown: 1_000
             },
             %{
@@ -124,7 +126,8 @@ defmodule Harlock.App.Supervisor do
              theme: Keyword.get(opts, :theme, Harlock.Theme.default()),
              caps: caps,
              exec_stub: Keyword.get(opts, :exec_stub),
-             suspend_stub: Keyword.get(opts, :suspend_stub)
+             suspend_stub: Keyword.get(opts, :suspend_stub),
+             mouse: Keyword.get(opts, :mouse, false)
            ]
          ]},
       restart: :transient,

@@ -12,6 +12,30 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **Mouse support, phase 1.** `Harlock.run(app, arg, mouse: true)` turns on
+  mouse reporting. A left press focuses the element under the pointer and
+  presses a `button` (`{:harlock_submit, id}`) or toggles a `checkbox`
+  (`{:harlock_toggle, id, checked}`); the wheel scrolls a `viewport` three
+  lines (`{:harlock_scroll, id, offset}`) or moves a `table` one row. These are
+  the messages keyboard routing already sends. Anything not routed arrives in
+  `update/2` as `{:mouse, action, button, col, row, mods}`, and a click outside
+  an open focus trap is never routed. `handle_mouse: false` opts an element out.
+
+  Opt-in because while reporting is on, the terminal's own drag-to-select needs
+  a modifier. Reporting is turned off by the leave sequence every exit already
+  writes — quit, crash, `Cmd.exec`, `Cmd.suspend` — and `priv/mouse_smoke.exs`
+  records a pty's output to check it is.
+
+  The runtime finds the target from rectangles the renderer records for each
+  focusable element as it lays it out. Overlays and floating panels record
+  occluders so a click on a modal's blank space does not reach what is under
+  it, and a viewport records its contents where they are scrolled into view.
+  No measurable render cost in `Harlock.Bench`. `Harlock.Test.send_mouse/6` and
+  a `:mouse` option on `start_app/3` drive it in tests.
+
+  Clicks on the items inside widgets — rows, menu items, tree nodes, tabs, an
+  open `select` — come next.
+
 - **`Cmd.suspend/0` — job control.** Ctrl-Z to the shell, `fg` to come back,
   as in vim or `less`. In raw mode Ctrl-Z is an ordinary key, so an app binds
   it:

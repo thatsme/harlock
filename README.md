@@ -213,7 +213,7 @@ Anything `@moduledoc false` is internal and free to change.
 | `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ |
 | `:telemetry` events (frame render, input dispatch, cmd, reader) | ✓ |
 | Modified arrows / Home / End / F-keys (parser) | ✓ |
-| Mouse events (SGR parser) | ✓ (parser only — runtime enabling deferred) |
+| Mouse: clicks focus and press, wheel scrolls (`mouse: true`) | ✓ (unreleased; clicks on items inside widgets next) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | `tree` / `menu` / `select` widgets | ✓ (v0.5) |
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |

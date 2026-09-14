@@ -106,6 +106,26 @@ defmodule Harlock.App do
   modifier-only press in a text input) fall through to `update/2` as
   raw `{:key, …}` events so apps can still react if they want.
 
+  ## Mouse
+
+  With `mouse: true` passed to `Harlock.run/3`, mouse events are routed to
+  the element under the pointer, which the runtime finds from where the last
+  frame laid each focusable element out — the topmost one, so an overlay wins
+  over what it covers. The same messages as the keyboard arrive:
+
+    * a left press focuses the element, and on a `button` or `checkbox` also
+      delivers `{:harlock_submit, id}` or `{:harlock_toggle, id, checked}`;
+    * the wheel over a `viewport` scrolls three lines as
+      `{:harlock_scroll, id, offset}`, and over a `table` moves one row as
+      the arrow keys would, without moving focus.
+
+  Everything else arrives as the raw event
+  `{:mouse, action, button, col, row, mods}` — a press on nothing focusable,
+  releases, drags, other buttons, a wheel with nothing left to scroll, and
+  anything outside an open focus trap. `col` and `row` are 1-indexed, as the
+  terminal reports them. An element with `handle_mouse: false` is never the
+  target, but still covers what lies beneath it.
+
   Cmd results and Sub-produced messages have whatever shape the app
   defined via `Cmd.map/2` and friends — those are not part of the
   runtime's vocabulary.

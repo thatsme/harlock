@@ -85,7 +85,10 @@ What's stubbed / missing — the honest list:
   Run apps with `mix run`. Several example headers suggest starting them from
   `iex -S mix`, which is wrong and due for correction with the examples.
   The `:ssh` backend (1.1+) avoids the contention altogether.
-- Mouse events: SGR parser only — runtime enabling is v0.8.
+- Mouse, phase 1 only: clicks focus elements and press buttons and checkboxes,
+  the wheel scrolls viewports and tables. Clicks on items inside widgets —
+  table rows, menu items, tree nodes, tabs, an open `select`, the cursor in a
+  `text_input` — are phase 2, v0.8 item 5.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No inline (non-alternate-screen) mode, clipboard, or hyperlinks — 1.1+.
 - Windows native is unsupported (WSL works); the termios NIF targets POSIX.
@@ -885,11 +888,31 @@ provide it itself (principle 8). Each item says which applies.
    plain Harlock app under IEx received no keystrokes in the same test, because
    IEx's terminal driver reads the tty too. See the IEx entry in the status list.
 
-5. **Mouse runtime enabling** — moved from 1.1+. The SGR parser exists; the
-   DECSET sequences that turn reporting on, and restoring them on exit, do not.
-   Additive, but here by principle 8: turning reporting on and guaranteeing it is
-   turned off again on every exit path belongs to whoever owns the terminal. It
-   also gates click-to-open on `select` and `tree`.
+5. **Mouse** — moved from 1.1+; phase 1 ✓, phase 2 next. Additive, but here by
+   principle 8, twice over: turning reporting on and guaranteeing it is turned
+   off on every exit path belongs to whoever owns the terminal, and only the
+   renderer knows where an element landed, so an app cannot work out what was
+   clicked.
+
+   - **Opt-in**, `Harlock.run(app, arg, mouse: true)`: while reporting is on,
+     the terminal's own drag-to-select needs a modifier. Modes 1000, 1002 and
+     1006; 1003 (motion with no button) is left off.
+   - **Off on every way out**: the disable sequence is part of `Ansi.leave/0`,
+     which quitting, crashing, `Cmd.exec` and `Cmd.suspend` all write.
+     `priv/mouse_smoke.exs` records the pty's output and checks the order of
+     on and off for quit, crash and an exec round trip.
+   - **Routed like keys**, no new message shapes: the renderer records each
+     focusable element's rectangle (`Harlock.Element.HitRegions`), overlays and
+     floats record occluders, a viewport translates and clips what it scrolls.
+     Phase 1: a left press focuses and presses buttons and checkboxes; the wheel
+     scrolls a viewport three lines or moves a table a row. Everything else is
+     the raw event.
+   - **Phase 2**: clicks on the items inside widgets, which needs the renderer
+     to record where each visible item was drawn — table rows, menu items, tree
+     nodes and their expand markers, tabs, an open `select`'s choices, the
+     cursor position in a `text_input`.
+   - **Only if an application needs it**: drag gestures, motion with no button
+     held, double-click.
 
 The second half is freeze prep, below, and it does not start until these land —
 the freeze decisions depend on the shape item 2 settled and on what building a

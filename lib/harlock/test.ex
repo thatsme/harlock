@@ -47,6 +47,8 @@ defmodule Harlock.Test do
                 end)
 
       Without it, every exec returns `{:error, :no_terminal}`.
+    * `:mouse` — route mouse events as `Harlock.run/3` does with `mouse: true`,
+      for `send_mouse/6`.
     * `:suspend` — stands in for `Harlock.Cmd.suspend/0` in the same way: a
       0-arity function returning the result the app should get, typically
       `{:ok, :resumed}`. Without it, suspend returns `{:error, :no_terminal}`.
@@ -74,6 +76,7 @@ defmodule Harlock.Test do
       |> maybe_put_theme(opts)
       |> Keyword.put(:exec_stub, Keyword.get(opts, :exec))
       |> Keyword.put(:suspend_stub, Keyword.get(opts, :suspend))
+      |> Keyword.put(:mouse, Keyword.get(opts, :mouse, false))
 
     {:ok, sup} = AppSupervisor.start_link(sup_opts)
 
@@ -146,6 +149,19 @@ defmodule Harlock.Test do
   @spec send_key(handle(), any(), [atom()]) :: :ok
   def send_key(handle, key, mods \\ []) do
     send_event(handle, {:key, key, mods})
+  end
+
+  @doc """
+  Convenience for mouse events, in the shape the input parser emits. `col` and
+  `row` are 1-indexed, as the terminal reports them. The app must be started
+  with `mouse: true` for them to be routed.
+
+      Harlock.Test.send_mouse(h, :press, :left, 5, 2)
+      Harlock.Test.send_mouse(h, :wheel_down, nil, 5, 2)
+  """
+  @spec send_mouse(handle(), atom(), atom() | nil, pos_integer(), pos_integer(), [atom()]) :: :ok
+  def send_mouse(handle, action, button, col, row, mods \\ []) do
+    send_event(handle, {:mouse, action, button, col, row, mods})
   end
 
   @doc """
