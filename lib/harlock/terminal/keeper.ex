@@ -19,6 +19,16 @@ defmodule Harlock.Terminal.Keeper do
   # installs a SignalForwarder handler there that sends it {:signal, :sigwinch}.
   # On signal we read TIOCGWINSZ via the NIF and forward
   # {:harlock_resize, rows, cols} to the runtime.
+  #
+  # exec/3 runs another program with the terminal, because Keeper owns the
+  # control fd and the termios snapshot the program should start from. The
+  # program becomes the terminal's foreground process group (see Termios and
+  # c_src/README.md). When it ends Keeper takes the foreground back, puts the
+  # terminal in raw mode again, re-reads the size — SIGWINCH went to the
+  # program's group, not this BEAM, while it ran — and sends the runtime
+  # {:harlock_resize, rows, cols} followed by {:harlock_exec_done, result}.
+  # terminate/2 kills a program still running, so a crash cannot leave one
+  # holding the terminal.
 
   use GenServer
   require Logger
@@ -39,6 +49,17 @@ defmodule Harlock.Terminal.Keeper do
           {:ok, pos_integer(), pos_integer()} | {:error, term()}
   def size(server), do: GenServer.call(server, :size)
 
+  @doc """
+  Run `argv` in the terminal's foreground, with the terminal restored to the
+  settings it had before the app started. Returns once the program is running;
+  the result arrives at the runtime as `{:harlock_exec_done, result}`.
+
+  The caller is responsible for leaving the alternate screen and pausing input
+  first.
+  """
+  @spec exec(GenServer.server(), [String.t()], keyword()) :: :ok | {:error, term()}
+  def exec(server, argv, opts), do: GenServer.call(server, {:exec, argv, opts})
+
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
@@ -51,7 +72,7 @@ defmodule Harlock.Terminal.Keeper do
             case Termios.set_raw(ctl) do
               :ok ->
                 install_sigwinch()
-                {:ok, %{ctl: ctl, snapshot: snapshot, runtime: runtime}}
+                {:ok, %{ctl: ctl, snapshot: snapshot, runtime: runtime, exec: nil}}
 
               {:error, reason} ->
                 Termios.close(ctl)
@@ -88,6 +109,23 @@ defmodule Harlock.Terminal.Keeper do
     {:reply, Termios.winsize(ctl), state}
   end
 
+  def handle_call({:exec, _argv, _opts}, _from, %{exec: exec} = state) when exec != nil,
+    do: {:reply, {:error, :busy}, state}
+
+  def handle_call({:exec, argv, opts}, _from, %{ctl: ctl} = state) do
+    # The program gets the terminal as the user's shell left it, not raw.
+    _ = Termios.set(ctl, state.snapshot)
+
+    with {:ok, exec, _os_pid} <- Termios.exec_start(ctl, argv, opts),
+         :ok <- Termios.exec_arm(exec) do
+      {:reply, :ok, %{state | exec: exec}}
+    else
+      {:error, reason} ->
+        _ = Termios.set_raw(ctl)
+        {:reply, {:error, reason}, state}
+    end
+  end
+
   @impl true
   def handle_info({:signal, :sigwinch}, %{ctl: nil} = state) do
     {:noreply, state}
@@ -105,11 +143,37 @@ defmodule Harlock.Terminal.Keeper do
     {:noreply, state}
   end
 
+  def handle_info({:exec_ready, exec}, %{exec: exec, ctl: ctl} = state) do
+    case Termios.exec_read(exec) do
+      :wouldblock ->
+        _ = Termios.exec_arm(exec)
+        {:noreply, state}
+
+      result ->
+        reclaim_terminal(ctl)
+
+        case Termios.winsize(ctl) do
+          {:ok, rows, cols} -> send(state.runtime, {:harlock_resize, rows, cols})
+          {:error, _} -> :ok
+        end
+
+        send(state.runtime, {:harlock_exec_done, result})
+        {:noreply, %{state | exec: nil}}
+    end
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl true
   def terminate(_reason, state) do
     uninstall_sigwinch()
+
+    # Before restoring termios: a program still in the foreground would keep
+    # reading the terminal, and this BEAM could not reclaim it while it did.
+    if state[:exec] do
+      _ = Termios.exec_kill(state.exec)
+      _ = Termios.reclaim_foreground(state.ctl)
+    end
 
     if state.snapshot && state.ctl do
       _ = Termios.set(state.ctl, state.snapshot)
@@ -120,6 +184,19 @@ defmodule Harlock.Terminal.Keeper do
     end
 
     :ok
+  end
+
+  # Back to how the app runs: this BEAM in the foreground, raw mode.
+  defp reclaim_terminal(ctl) do
+    case Termios.reclaim_foreground(ctl) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.error("Harlock could not reclaim the terminal: #{inspect(reason)}")
+    end
+
+    _ = Termios.set_raw(ctl)
   end
 
   # A missing resize path degrades the app (no reflow) but must not stop it

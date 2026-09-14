@@ -18,6 +18,10 @@ defmodule Harlock.Terminal.Reader do
   #     and re-arms. EOF on the fd (ssh disconnect, etc.) is surfaced as
   #     `{:harlock_tty_lost, reason}` to the subscriber and the Reader
   #     terminates so the supervisor can tear down cleanly.
+  #   * `pause/1` and `resume/1` bracket handing the terminal to another
+  #     program. While paused a readiness notification is ignored rather than
+  #     read — the bytes belong to the program — and nothing is re-armed;
+  #     `resume/1` arms again.
   #   * `terminate/2` closes the Termios fd. The NIF's stop callback
   #     handles the underlying `close(2)` after BEAM has unregistered the
   #     fd from its IO poller.
@@ -39,6 +43,12 @@ defmodule Harlock.Terminal.Reader do
   @spec stop_reading(GenServer.server()) :: :ok
   def stop_reading(server), do: GenServer.call(server, :stop_reading)
 
+  @spec pause(GenServer.server()) :: :ok
+  def pause(server), do: GenServer.call(server, :pause)
+
+  @spec resume(GenServer.server()) :: :ok | {:error, term()}
+  def resume(server), do: GenServer.call(server, :resume)
+
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
@@ -50,7 +60,8 @@ defmodule Harlock.Terminal.Reader do
            caps: Keyword.fetch!(opts, :caps),
            tty: tty,
            parser: Parser.new(),
-           subscriber: nil
+           subscriber: nil,
+           paused: false
          }}
 
       {:error, reason} ->
@@ -74,7 +85,18 @@ defmodule Harlock.Terminal.Reader do
     {:reply, :ok, state}
   end
 
+  def handle_call(:pause, _from, state), do: {:reply, :ok, %{state | paused: true}}
+
+  def handle_call(:resume, _from, state) do
+    case Termios.arm_select(state.tty) do
+      :ok -> {:reply, :ok, %{state | paused: false}}
+      {:error, _} = err -> {:reply, err, %{state | paused: false}}
+    end
+  end
+
   @impl true
+  def handle_info({:tty_ready, tty}, %{tty: tty, paused: true} = state), do: {:noreply, state}
+
   def handle_info({:tty_ready, tty}, %{tty: tty} = state) do
     case Termios.read_nonblock(tty, 256) do
       {:ok, bytes} ->

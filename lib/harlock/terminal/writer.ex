@@ -4,6 +4,10 @@ defmodule Harlock.Terminal.Writer do
   # bound to the opening process). Writes ANSI enter on start and ANSI leave
   # on shutdown — the supervisor terminates children in reverse start order,
   # so this fires before Keeper's stty restore.
+  #
+  # `leave/1` and `enter/1` bracket handing the terminal to another program.
+  # `entered` tracks which side of that the terminal is on, so shutdown during
+  # a handover does not write the leave sequence a second time.
 
   use GenServer
   require Logger
@@ -21,6 +25,14 @@ defmodule Harlock.Terminal.Writer do
   @spec write_sync(GenServer.server(), iodata()) :: :ok | {:error, term()}
   def write_sync(server, data), do: GenServer.call(server, {:write, data})
 
+  @doc "Leave the alternate screen and restore cursor and paste modes. Synchronous."
+  @spec leave(GenServer.server()) :: :ok | {:error, term()}
+  def leave(server), do: GenServer.call(server, :leave)
+
+  @doc "Re-enter the alternate screen, cleared. Synchronous."
+  @spec enter(GenServer.server()) :: :ok | {:error, term()}
+  def enter(server), do: GenServer.call(server, :enter)
+
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
@@ -32,7 +44,8 @@ defmodule Harlock.Terminal.Writer do
         {:ok,
          %{
            fd: fd,
-           caps: Keyword.fetch!(opts, :caps)
+           caps: Keyword.fetch!(opts, :caps),
+           entered: true
          }}
 
       {:error, reason} ->
@@ -58,9 +71,15 @@ defmodule Harlock.Terminal.Writer do
     {:reply, Tty.write(state.fd, data), state}
   end
 
+  def handle_call(:leave, _from, state),
+    do: {:reply, Tty.write(state.fd, Ansi.leave()), %{state | entered: false}}
+
+  def handle_call(:enter, _from, state),
+    do: {:reply, Tty.write(state.fd, Ansi.enter()), %{state | entered: true}}
+
   @impl true
-  def terminate(_reason, %{fd: fd}) do
-    _ = Tty.write(fd, Ansi.leave())
+  def terminate(_reason, %{fd: fd} = state) do
+    if state.entered, do: _ = Tty.write(fd, Ansi.leave())
     _ = Tty.close(fd)
     :ok
   end

@@ -10,6 +10,13 @@ defmodule Harlock.App.Runtime do
   # the runtime can exit without triggering a restart cascade — Writer and
   # Reader stay up just long enough for the supervisor's shutdown sequence
   # (and the Keeper's terminate/2) to restore the terminal.
+  #
+  # {:harlock_exec, argv, opts, reply} hands the terminal to another program:
+  # input paused, alternate screen left, the program started by Keeper. While
+  # it runs update/2 keeps handling subscriptions and Cmd results but nothing
+  # is drawn. {:harlock_exec_done, result} reverses that — alternate screen
+  # re-entered (which clears it), input resumed, a full redraw — and delivers
+  # reply.(result) to update/2.
 
   use GenServer
   require Logger
@@ -74,7 +81,9 @@ defmodule Harlock.App.Runtime do
         widget_metrics: %{},
         goal_column: nil,
         subs: %{},
-        pending_cmd: init_cmd
+        pending_cmd: init_cmd,
+        keeper: Keyword.get(opts, :keeper),
+        exec: nil
       }
 
       {:ok, state, {:continue, :start}}
@@ -122,7 +131,47 @@ defmodule Harlock.App.Runtime do
   # strictly better than resizing to a frame that cannot draw anything.
   def handle_info({:harlock_resize, _rows, _cols}, state), do: {:noreply, state}
 
+  def handle_info({:harlock_exec, _argv, _opts, reply}, %{exec: exec} = state) when exec != nil,
+    do: apply_update(state, reply.({:error, :busy}))
+
+  def handle_info({:harlock_exec, _argv, _opts, reply}, %{keeper: nil} = state),
+    do: apply_update(state, reply.({:error, :no_terminal}))
+
+  def handle_info({:harlock_exec, argv, opts, reply}, state) do
+    :ok = Reader.pause(state.reader)
+    _ = Writer.leave(state.writer)
+
+    case Keeper.exec(state.keeper, argv, opts) do
+      :ok ->
+        {:noreply, %{state | exec: %{reply: reply}}}
+
+      {:error, reason} ->
+        state = return_from_exec(state)
+        apply_update(state, reply.({:error, reason}))
+    end
+  end
+
+  def handle_info({:harlock_exec_done, result}, %{exec: %{reply: reply}} = state) do
+    state = return_from_exec(state)
+    apply_update(state, reply.(exec_result(result)))
+  end
+
   def handle_info(_msg, state), do: {:noreply, state}
+
+  # Undo the handover. Entering the alternate screen clears it, so the previous
+  # frame no longer describes what is displayed: nil makes the next render a
+  # full one.
+  defp return_from_exec(state) do
+    _ = Writer.enter(state.writer)
+    _ = Reader.resume(state.reader)
+    render(%{state | exec: nil, prev_frame: nil, dirty: true})
+  end
+
+  defp exec_result({:exited, code}), do: {:ok, code}
+  defp exec_result({:signaled, signal}), do: {:error, {:signal, signal}}
+  defp exec_result({:failed, stage, reason}), do: {:error, {stage, reason}}
+  defp exec_result(:killed), do: {:error, :killed}
+  defp exec_result({:error, _} = error), do: error
 
   defp init_app(app, init_arg) do
     case app.init(init_arg) do
@@ -460,6 +509,9 @@ defmodule Harlock.App.Runtime do
   end
 
   defp render(%{dirty: false} = state), do: state
+
+  # Another program has the terminal. Stay dirty; return_from_exec renders.
+  defp render(%{exec: %{}} = state), do: state
 
   defp render(state) do
     Focus.__set__(state.focused)
