@@ -193,9 +193,10 @@ Anything `@moduledoc false` is internal and free to change.
 | TEA runtime (`init` / `update` / `view` / `subs`) | ✓ |
 | OTP supervision + terminal restoration | ✓ |
 | Cmd executor (`Cmd.from`, `Cmd.batch`, `Cmd.map`) | ✓ |
+| Running another program with the terminal (`Cmd.exec`) | ✓ (unreleased) |
 | Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ |
 | Focus traversal + focus_trap overlays | ✓ |
-| Focus-aware key routing (`viewport` / `tabs` / `text_input` / `textarea` / `menu` / `select` / `tree` / `table`) | ✓ |
+| Focus-aware key routing (`viewport` / `tabs` / `text_input` / `textarea` / `menu` / `select` / `tree` / `table` / `button` / `checkbox`) | ✓ |
 | Wide-grapheme width (CJK, emoji, ZWJ, flags) | ✓ |
 | Theme tokens (`:header`, `:focus`, `:selection`, `:border`, `:primary`, `:accent`, `:muted`, `:error`) | ✓ (full set in v0.4) |
 | Built-in themes (`:default` / `:dark` / `:high_contrast`) | ✓ (v0.4) |
@@ -204,6 +205,8 @@ Anything `@moduledoc false` is internal and free to change.
 | `:default` theme byte-identical to v0.3 (golden-frame pin) | ✓ (v0.4) |
 | SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
+| Styled runs, newlines, wrap and align in `text` (`Harlock.Text`) | ✓ (unreleased) |
+| `button` / `checkbox` | ✓ (unreleased) |
 | Readline editing in `text_input` / `textarea` (word motions, kill ring, yank) | ✓ (v0.4.2) |
 | `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ |
 | `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ |

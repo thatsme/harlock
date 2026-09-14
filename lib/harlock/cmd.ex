@@ -18,8 +18,41 @@ defmodule Harlock.Cmd do
 
     * `none/0` — no side-effect. Equivalent to returning just the model.
     * `from/1` — run a 0-arity function in a task; deliver its return value.
+    * `exec/3` — hand the terminal to another program until it exits.
     * `batch/1` — dispatch a list of cmds concurrently; no ordering guarantee.
     * `map/2` — tag/transform the result of an inner cmd before delivery.
+
+  ## Running another program
+
+  `exec/3` suspends the app's use of the terminal, runs a program with it, and
+  resumes when the program exits — how an editor, pager, or `git commit` is run
+  from a terminal UI:
+
+      def update({:harlock_submit, :edit}, m) do
+        {m, Cmd.exec("vim", [m.path]) |> Cmd.map(&{:edited, &1})}
+      end
+
+      def update({:edited, {:ok, 0}}, m), do: reload(m)
+      def update({:edited, _failed}, m), do: %{m | status: "editor failed"}
+
+  While the program runs it owns the terminal completely: the app's alternate
+  screen is left, the terminal settings the shell had before the app started
+  are restored, and keystrokes, Ctrl-C and window resizes go to the program.
+  The app keeps running — subscriptions and other cmd results still reach
+  `update/2` — but nothing is drawn. On exit the app redraws at the current
+  size and receives the result:
+
+    * `{:ok, exit_status}` — the program exited, with any status.
+    * `{:error, {:signal, n}}` — it was killed by signal `n` (2 for Ctrl-C).
+    * `{:error, {:exec, reason}}` — it could not be started, e.g. `:enoent`
+      when `program` is not on `PATH`.
+    * `{:error, {:chdir, reason}}` — the `:cd` directory could not be entered.
+    * `{:error, :busy}` — another program is already running.
+    * `{:error, :no_terminal}` — the app is not attached to a terminal, as under
+      the test backend without an `:exec` stub (see `Harlock.Test.start_app/3`).
+
+  `exec/3` needs the app to own its terminal: run it with `mix run`, not from an
+  IEx prompt, whose own terminal driver competes for input.
 
   Task lifecycle: cmd tasks are supervised by `Harlock.App.TaskSupervisor`,
   itself a child of the app's supervisor positioned after `Runtime`. A
@@ -34,6 +67,7 @@ defmodule Harlock.Cmd do
   @opaque t ::
             :none
             | {:fun, (-> any())}
+            | {:exec, String.t(), [String.t()], keyword()}
             | {:batch, [t()]}
             | {:map, t(), (any() -> any())}
 
@@ -42,6 +76,59 @@ defmodule Harlock.Cmd do
 
   @spec from((-> any())) :: t()
   def from(fun) when is_function(fun, 0), do: {:fun, fun}
+
+  @doc """
+  Run `program` with the terminal until it exits. See "Running another program"
+  above.
+
+  `program` is looked up on `PATH` unless it contains a `/`. `args` are passed
+  as-is, with no shell in between — use `exec("sh", ["-c", script])` when a
+  shell is wanted.
+
+  Options:
+    * `:cd` — directory to run the program in.
+    * `:env` — environment variables to set for the program, as `{name, value}`
+      pairs or a map, on top of the current environment. A `nil` value unsets
+      the variable.
+  """
+  @spec exec(String.t(), [String.t()], keyword()) :: t()
+  def exec(program, args \\ [], opts \\ []) do
+    unless is_binary(program) and program != "" and not String.contains?(program, <<0>>),
+      do:
+        raise(ArgumentError, "exec/3 expects a non-empty program name, got: #{inspect(program)}")
+
+    unless is_list(args) and Enum.all?(args, &(is_binary(&1) and not String.contains?(&1, <<0>>))),
+      do:
+        raise(ArgumentError, "exec/3 expects args to be a list of strings, got: #{inspect(args)}")
+
+    {:exec, program, args, validate_exec_opts!(opts)}
+  end
+
+  defp validate_exec_opts!(opts) when is_list(opts) do
+    Enum.map(opts, fn
+      {:cd, dir} when is_binary(dir) ->
+        {:cd, dir}
+
+      {:env, env} when is_map(env) or is_list(env) ->
+        env =
+          Enum.map(env, fn
+            {k, v} when is_binary(k) and (is_binary(v) or is_nil(v)) ->
+              {k, v}
+
+            other ->
+              raise ArgumentError,
+                    "exec/3 :env entries must be {string, string | nil}, got: #{inspect(other)}"
+          end)
+
+        {:env, env}
+
+      other ->
+        raise ArgumentError, "exec/3 got an unknown or malformed option: #{inspect(other)}"
+    end)
+  end
+
+  defp validate_exec_opts!(other),
+    do: raise(ArgumentError, "exec/3 expects options as a keyword list, got: #{inspect(other)}")
 
   @spec batch([t()]) :: t()
   def batch(cmds) when is_list(cmds), do: {:batch, cmds}
@@ -58,6 +145,7 @@ defmodule Harlock.Cmd do
 
   defp kind(:none), do: :none
   defp kind({:fun, _}), do: :fun
+  defp kind({:exec, _, _, _}), do: :exec
   defp kind({:batch, _}), do: :batch
   defp kind({:map, _, _}), do: :map
 
@@ -82,6 +170,13 @@ defmodule Harlock.Cmd do
         send(runtime, {:harlock_event, tagged})
       end)
 
+    :ok
+  end
+
+  # Not a task: handing the terminal over needs the runtime, the Reader, the
+  # Writer and the Keeper in sequence, so the runtime runs it.
+  defp dispatch_with({:exec, program, args, opts}, runtime, _sup, mappers) do
+    send(runtime, {:harlock_exec, program, args, opts, &apply_mappers(&1, mappers)})
     :ok
   end
 

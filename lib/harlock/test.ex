@@ -31,6 +31,22 @@ defmodule Harlock.Test do
   @doc """
   Start an app under the test backend and return a handle for the helpers
   in this module.
+
+  Options:
+    * `:rows`, `:cols` — the size of the test screen (default 24×80).
+    * `:theme` — as for `Harlock.run/3`.
+    * `:exec` — stands in for the programs `Harlock.Cmd.exec/3` would run,
+      since there is no terminal to hand over. A function receiving the
+      program, args and options the app passed, returning the result the app
+      should get:
+
+          h = Harlock.Test.start_app(Editor, nil,
+                exec: fn "vim", [path], _opts ->
+                  send(test_pid, {:edited, path})
+                  {:ok, 0}
+                end)
+
+      Without it, every exec returns `{:error, :no_terminal}`.
   """
   @spec start_app(module(), any(), keyword()) :: handle()
   def start_app(app, init_arg \\ nil, opts \\ []) do
@@ -53,6 +69,7 @@ defmodule Harlock.Test do
         cols: cols
       ]
       |> maybe_put_theme(opts)
+      |> Keyword.put(:exec_stub, Keyword.get(opts, :exec))
 
     {:ok, sup} = AppSupervisor.start_link(sup_opts)
 

@@ -18,6 +18,8 @@ What works:
   rendering, no periodic polling.
 - `Cmd` executor for supervised side effects: `Cmd.from/1`, `Cmd.batch/1`,
   `Cmd.map/2`. Results arrive back through `update/2` as messages.
+  `Cmd.exec/3` runs another program with the terminal and resumes the app when
+  it exits.
 - Focus traversal (`Tab` / `Shift-Tab`), focus traps for modals with
   automatic stash/restore on open/close.
 - Focus-aware key routing (v0.4): the runtime dispatches navigation keys
@@ -78,8 +80,7 @@ What's stubbed / missing — the honest list:
   window) — 1.1+. Counts and means are a few lines of `Enum` in the model.
 - Styled runs are accepted by `text` only. Box titles, tab labels and table
   cells still take a plain binary.
-- No way to hand the terminal to another program (`$EDITOR`, a pager) and take
-  it back, and no suspend on Ctrl-Z. v0.8; approach verified, see item 4.
+- No suspend on Ctrl-Z (`Cmd.suspend/0`). v0.8, item 4.
 - **Apps do not work under IEx.** IEx's terminal driver reads the same tty, and a
   Harlock app started from an IEx prompt received no keystrokes when tested.
   Run apps with `mix run`. Several example headers suggest starting them from
@@ -831,7 +832,8 @@ provide it itself (principle 8). Each item says which applies.
    one of several. A checkbox *group* is `table` with `selection: {:multi, set}`,
    which lacks only Space-to-toggle routing.
 
-4. **Handing the terminal to another program, and suspend.** Opening `$EDITOR`
+4. **Handing the terminal to another program** ✓ as `Cmd.exec/3`; **suspend**
+   next. Opening `$EDITOR`
    on a file, running a pager, or `git commit` needs the terminal released
    (leave alternate screen, restore termios, stop the reader) and reclaimed
    afterwards with a full redraw. Ctrl-Z is the same sequence around a stop.

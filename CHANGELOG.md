@@ -12,6 +12,50 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **`Cmd.exec/3` — run another program with the terminal.** An editor, a pager,
+  `git commit`: the app leaves the alternate screen, the program runs with the
+  terminal settings the shell had, and the app redraws when it exits.
+
+  ```elixir
+  def update({:harlock_submit, :edit}, m),
+    do: {m, Cmd.exec("vim", [m.path]) |> Cmd.map(&{:edited, &1})}
+
+  def update({:edited, {:ok, 0}}, m), do: reload(m)
+  ```
+
+  The result is `{:ok, exit_status}`, or `{:error, reason}` for a signal, a
+  program that could not be started, a bad `:cd`, or a second exec while one
+  runs. `:env` adds to the environment, with `nil` unsetting a variable. There
+  is no shell in between.
+
+  While the program runs, keystrokes, Ctrl-C and resizes go to it, not the app.
+  The app keeps processing subscriptions and cmd results but draws nothing, and
+  re-reads the terminal size on return, since the resize signal went to the
+  program.
+
+  This could not be built on ports. Anything the BEAM starts through
+  `erl_child_setup` has no controlling terminal: `/dev/tty` fails to open in it,
+  and terminal signals go to the BEAM. The program is started from the termios
+  NIF instead, as the terminal's foreground process group, the way a shell runs
+  a job. `c_src/README.md` has the details, including three things that each
+  broke without them: blocking `SIGTTOU` while taking the terminal back (or the
+  VM is stopped), a helper process to collect the exit status (the BEAM ignores
+  `SIGCHLD`), and closing the BEAM's descriptors before the program starts.
+  Verified in real ptys on macOS and Linux by `priv/exec_native_smoke.exs` and
+  `priv/exec_runtime_smoke.exs`, both in CI.
+
+  **The build now produces a second binary,** `priv/harlock_exec`, next to the
+  NIF. It is that helper, built by the same `Makefile` from
+  `c_src/exec_helper.c`.
+
+  **Not from IEx.** Run apps with `mix run`. IEx's terminal driver reads the same
+  tty, so a program started from an app under IEx does not get its input — and
+  in testing, a plain Harlock app under IEx did not receive keystrokes either.
+
+  Under the test backend no program runs: `Harlock.Test.start_app/3` takes an
+  `:exec` function that receives what the app asked for and returns the result
+  it should get. Without one, exec returns `{:error, :no_terminal}`.
+
 - **`button/2` and `checkbox/2`.** Focusable controls drawn as `[ Save ]` and
   `[x] Notify me`, auto-routed like the other widgets:
 

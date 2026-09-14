@@ -115,7 +115,8 @@ defmodule Harlock.App.Supervisor do
              rows: Keyword.get(opts, :rows),
              cols: Keyword.get(opts, :cols),
              theme: Keyword.get(opts, :theme, Harlock.Theme.default()),
-             caps: caps
+             caps: caps,
+             exec_stub: Keyword.get(opts, :exec_stub)
            ]
          ]},
       restart: :temporary,

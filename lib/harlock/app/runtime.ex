@@ -11,12 +11,14 @@ defmodule Harlock.App.Runtime do
   # Reader stay up just long enough for the supervisor's shutdown sequence
   # (and the Keeper's terminate/2) to restore the terminal.
   #
-  # {:harlock_exec, argv, opts, reply} hands the terminal to another program:
+  # {:harlock_exec, program, args, opts, reply} — what Cmd.exec dispatches —
+  # hands the terminal to another program:
   # input paused, alternate screen left, the program started by Keeper. While
   # it runs update/2 keeps handling subscriptions and Cmd results but nothing
   # is drawn. {:harlock_exec_done, result} reverses that — alternate screen
   # re-entered (which clears it), input resumed, a full redraw — and delivers
-  # reply.(result) to update/2.
+  # reply.(result) to update/2. Under the test backend there is no Keeper; the
+  # :exec_stub given to Harlock.Test.start_app/3 supplies the result instead.
 
   use GenServer
   require Logger
@@ -83,6 +85,7 @@ defmodule Harlock.App.Runtime do
         subs: %{},
         pending_cmd: init_cmd,
         keeper: Keyword.get(opts, :keeper),
+        exec_stub: Keyword.get(opts, :exec_stub),
         exec: nil
       }
 
@@ -131,17 +134,25 @@ defmodule Harlock.App.Runtime do
   # strictly better than resizing to a frame that cannot draw anything.
   def handle_info({:harlock_resize, _rows, _cols}, state), do: {:noreply, state}
 
-  def handle_info({:harlock_exec, _argv, _opts, reply}, %{exec: exec} = state) when exec != nil,
-    do: apply_update(state, reply.({:error, :busy}))
+  def handle_info({:harlock_exec, _program, _args, _opts, reply}, %{exec: exec} = state)
+      when exec != nil,
+      do: apply_update(state, reply.({:error, :busy}))
 
-  def handle_info({:harlock_exec, _argv, _opts, reply}, %{keeper: nil} = state),
-    do: apply_update(state, reply.({:error, :no_terminal}))
+  def handle_info({:harlock_exec, program, args, opts, reply}, %{keeper: nil} = state) do
+    result =
+      case state.exec_stub do
+        nil -> {:error, :no_terminal}
+        stub -> stub.(program, args, opts)
+      end
 
-  def handle_info({:harlock_exec, argv, opts, reply}, state) do
+    apply_update(state, reply.(result))
+  end
+
+  def handle_info({:harlock_exec, program, args, opts, reply}, state) do
     :ok = Reader.pause(state.reader)
     _ = Writer.leave(state.writer)
 
-    case Keeper.exec(state.keeper, argv, opts) do
+    case Keeper.exec(state.keeper, [program | args], native_exec_opts(opts)) do
       :ok ->
         {:noreply, %{state | exec: %{reply: reply}}}
 
@@ -165,6 +176,24 @@ defmodule Harlock.App.Runtime do
     _ = Writer.enter(state.writer)
     _ = Reader.resume(state.reader)
     render(%{state | exec: nil, prev_frame: nil, dirty: true})
+  end
+
+  # :env in Cmd.exec adds to the environment; the native layer takes the whole
+  # environment, so the merge happens here, at the moment the program starts.
+  defp native_exec_opts(opts) do
+    Enum.map(opts, fn
+      {:env, overrides} ->
+        env =
+          Enum.reduce(overrides, System.get_env(), fn
+            {k, nil}, acc -> Map.delete(acc, k)
+            {k, v}, acc -> Map.put(acc, k, v)
+          end)
+
+        {:env, env}
+
+      other ->
+        other
+    end)
   end
 
   defp exec_result({:exited, code}), do: {:ok, code}

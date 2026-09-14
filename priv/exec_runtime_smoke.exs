@@ -1,7 +1,8 @@
 # Verifies the runtime's side of handing the terminal to another program: a
 # real app, on a real pty, hands the terminal over and gets it back.
 #
-# Requests go straight to the runtime as {:harlock_exec, argv, opts, reply};
+# Requests go straight to the runtime as {:harlock_exec, program, args, opts,
+# reply};
 # that message is what Cmd.exec dispatches to. Needs ps, stty and a pty — run
 # through scripts/smoke.sh.
 
@@ -42,6 +43,11 @@ defmodule ExecApp do
 
   def update(:tick, m), do: %{m | ticks: m.ticks + 1}
   def update({:exec_result, tag, result}, m), do: %{m | results: m.results ++ [{tag, result}]}
+
+  # The public path: update/2 returns Cmd.exec, as an app would.
+  def update({:run, tag, program, args, opts}, m),
+    do: {m, Harlock.Cmd.exec(program, args, opts) |> Harlock.Cmd.map(&{:exec_result, tag, &1})}
+
   def update({:key, {:char, ?q}, []}, _m), do: :quit
   def update(_, m), do: m
 
@@ -80,14 +86,46 @@ renders = :counters.new(1, [])
   nil
 )
 
-exec = fn tag, argv, opts ->
-  send(runtime, {:harlock_exec, argv, opts, &{:exec_result, tag, &1}})
+exec = fn tag, [program | args], opts ->
+  send(runtime, {:harlock_exec, program, args, opts, &{:exec_result, tag, &1}})
 end
 
 result_for = fn tag ->
   S.eventually(fn -> List.keymember?(model.().results, tag, 0) end, 200)
   model.().results |> List.keyfind(tag, 0) |> elem(1)
 end
+
+# 0. Through the public API: update/2 returns Cmd.exec. :cd is honoured, :env
+#    adds to the environment rather than replacing it, and a nil value unsets.
+#    Inheritance is checked with a variable of our own: sh invents a PATH when
+#    none is inherited, so PATH cannot tell a merge from a replacement.
+System.put_env("HARLOCK_SMOKE_UNSET_ME", "1")
+System.put_env("HARLOCK_SMOKE_INHERITED", "1")
+cd = System.tmp_dir!()
+expected_dir = :os.cmd(~c"cd #{cd} && pwd -P") |> to_string() |> String.trim()
+
+send(
+  runtime,
+  {:harlock_event,
+   {:run, :public, "sh",
+    [
+      "-c",
+      ~S|test "$HARLOCK_SMOKE_SET" = yes && test -z "${HARLOCK_SMOKE_UNSET_ME+x}" && test "$HARLOCK_SMOKE_INHERITED" = 1 && test "$(pwd -P)" = "$HARLOCK_SMOKE_DIR"|
+    ],
+    [
+      cd: cd,
+      env: [
+        {"HARLOCK_SMOKE_SET", "yes"},
+        {"HARLOCK_SMOKE_UNSET_ME", nil},
+        {"HARLOCK_SMOKE_DIR", expected_dir}
+      ]
+    ]}}
+)
+
+S.check(
+  "Cmd.exec from update/2, with :cd honoured and :env merged",
+  result_for.(:public) == {:ok, 0}
+)
 
 # 1. Result delivered through update/2, with the exit code.
 exec.(:code, ["sh", "-c", "exit 4"], [])
