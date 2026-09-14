@@ -12,6 +12,38 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **`Cmd.suspend/0` — job control.** Ctrl-Z to the shell, `fg` to come back,
+  as in vim or `less`. In raw mode Ctrl-Z is an ordinary key, so an app binds
+  it:
+
+  ```elixir
+  def update({:key, {:char, ?z}, [:ctrl]}, m), do: {m, Cmd.suspend()}
+  ```
+
+  The terminal is handed back as for `Cmd.exec/3`, the app's process group is
+  sent `SIGTSTP`, and on `fg` the `SIGCONT` arrives through the same signal
+  handler as resize; the app redraws at the current size and receives
+  `{:ok, :resumed}`. Not bound by default: `examples/notes.exs` and the
+  `Harlock.UndoStack` docs use Ctrl-Z for undo.
+
+  The kernel discards `SIGTSTP` for a process group with no job-control shell
+  above it, and nothing would ever resume a stop that did happen. So suspend
+  first checks that the app holds the foreground and that its parent is in the
+  same session under a different process group; if not it returns
+  `{:error, :no_job_control}` without touching the terminal. A watchdog
+  reclaims the terminal if the stop does not happen anyway
+  (`{:error, :not_stopped}`). Keeper replies to the runtime before stopping,
+  because a call still waiting when the VM stops would time out the instant it
+  resumes.
+
+  `priv/suspend_smoke.exs` runs as a job under an interactive bash
+  (`priv/suspend_smoke.run.sh`; macOS's bash 3.2 with only `set -m` never
+  notices the job stopping): the shell sees the stop, has a cooked terminal,
+  runs `fg`, and the app gets its terminal back. `exec_runtime_smoke.exs`
+  checks the refusal under `script(1)`. Removing the job-control check or the
+  `SIGCONT` handling makes them fail. `Harlock.Test.start_app/3` takes a
+  `:suspend` function standing in for the result.
+
 - **`Cmd.exec/3` — run another program with the terminal.** An editor, a pager,
   `git commit`: the app leaves the alternate screen, the program runs with the
   terminal settings the shell had, and the app redraws when it exits.

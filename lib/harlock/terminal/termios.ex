@@ -163,6 +163,20 @@ defmodule Harlock.Terminal.Termios do
   def foreground?(ref), do: foreground_nif(ref)
 
   @doc false
+  # Whether suspending would be resumed: the BEAM holds the foreground and a
+  # job-control shell is its parent. See job_control_nif in c_src/termios.c.
+  @spec job_control?(ref()) :: boolean() | {:error, term()}
+  def job_control?(ref), do: job_control_nif(ref)
+
+  @doc false
+  # SIGTSTP to this BEAM's process group. Check job_control?/1 first.
+  @spec suspend() :: :ok | {:error, term()}
+  def suspend do
+    :ok = :os.set_signal(:sigtstp, :default)
+    suspend_nif()
+  end
+
+  @doc false
   def exec_helper_path, do: :code.priv_dir(:harlock) |> Path.join("harlock_exec")
 
   # -- NIF stubs. Replaced at module load. ----------------------------------
@@ -181,4 +195,6 @@ defmodule Harlock.Terminal.Termios do
   defp exec_kill_nif(_exec), do: :erlang.nif_error(:nif_not_loaded)
   defp reclaim_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
   defp foreground_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
+  defp job_control_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
+  defp suspend_nif, do: :erlang.nif_error(:nif_not_loaded)
 end

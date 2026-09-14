@@ -54,6 +54,8 @@ which Erlang process invoked them.
 | `exec_kill/1`                | `SIGKILL` to the program's process group         |
 | `reclaim_foreground/1`       | `tcsetpgrp` back to the BEAM with `SIGTTOU` blocked |
 | `foreground?/1`              | `tcgetpgrp(fd) == getpgrp()`                     |
+| `job_control?/1`             | foreground, and parent in the same session but another process group |
+| `suspend/0`                  | `kill(0, SIGTSTP)` — stop this BEAM's process group |
 
 The `exec_*` functions are `@doc false`: they are the native half of handing
 the terminal to another program, not an API of their own.
@@ -202,6 +204,22 @@ close loop each makes it fail.
 
 **Not under IEx.** IEx's terminal driver reads the same tty and competes with
 the program for input.
+
+### Suspending
+
+`Cmd.suspend/0` stops the BEAM's own process group with `SIGTSTP`, after the
+same release of the terminal. `job_control?/1` gates it. The kernel discards
+`SIGTSTP` sent to an orphaned process group — none of whose members has a parent
+in another group of the same session — and even a stop that happened would
+have no shell to send `SIGCONT`. An interactive shell running the app as a job
+is exactly a parent in the same session and a different group, so that is the
+test. Under `script(1)`, or when the app is the session leader, it fails and
+the app is told `{:error, :no_job_control}` before anything is released.
+
+On resume, `SIGCONT` reaches Keeper through `erl_signal_server` like
+`SIGWINCH`. Under IEx, OTP's own `SIGCONT` handler resets the terminal to its
+cooked settings as well, racing Keeper's reclaim — one more reason apps run
+under `mix run`.
 
 ## Caveats and known limitations
 

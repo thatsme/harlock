@@ -194,6 +194,7 @@ Anything `@moduledoc false` is internal and free to change.
 | OTP supervision + terminal restoration | ✓ |
 | Cmd executor (`Cmd.from`, `Cmd.batch`, `Cmd.map`) | ✓ |
 | Running another program with the terminal (`Cmd.exec`) | ✓ (unreleased) |
+| Job control: Ctrl-Z / `fg` (`Cmd.suspend`) | ✓ (unreleased) |
 | Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ |
 | Focus traversal + focus_trap overlays | ✓ |
 | Focus-aware key routing (`viewport` / `tabs` / `text_input` / `textarea` / `menu` / `select` / `tree` / `table` / `button` / `checkbox`) | ✓ |

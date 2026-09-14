@@ -49,6 +49,10 @@ defmodule ExecApp do
     do: {m, Harlock.Cmd.exec(program, args, opts) |> Harlock.Cmd.map(&{:exec_result, tag, &1})}
 
   def update({:key, {:char, ?q}, []}, _m), do: :quit
+
+  def update(:suspend, m),
+    do: {m, Harlock.Cmd.suspend() |> Harlock.Cmd.map(&{:exec_result, :suspend, &1})}
+
   def update(_, m), do: m
 
   def view(m), do: text("ticks #{m.ticks} results #{length(m.results)}")
@@ -183,7 +187,27 @@ S.check(
 S.check("raw mode after a failed start", S.eventually(raw?))
 S.check("foreground after a failed start", Termios.foreground?(probe))
 
-# 5. The app still quits cleanly and restores the terminal.
+# 5. Suspending without a job-control shell is refused, and the terminal is not
+#    touched. Under script(1) this BEAM's process group is orphaned, so a
+#    SIGTSTP would be discarded and nothing would ever resume it.
+send(runtime, {:harlock_event, :suspend})
+
+S.check(
+  "suspend without job control is {:error, :no_job_control}",
+  result_for.(:suspend) == {:error, :no_job_control}
+)
+
+S.check("  ...leaving raw mode alone", raw?.())
+S.check("  ...and the foreground", Termios.foreground?(probe))
+
+S.check(
+  "  ...and the alternate screen",
+  :sys.get_state(:"Elixir.Harlock.App.Supervisor.Writer").entered
+)
+
+S.check("  ...and input", not :sys.get_state(:"Elixir.Harlock.App.Supervisor.Reader").paused)
+
+# 6. The app still quits cleanly and restores the terminal.
 send(runtime, {:harlock_event, {:key, {:char, ?q}, []}})
 
 receive do

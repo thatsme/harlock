@@ -1,11 +1,11 @@
-defmodule Harlock.CmdExecTest do
+defmodule Harlock.CmdTerminalTest do
   use ExUnit.Case, async: true
 
   alias Harlock.Cmd
 
   # Running a program for real needs a terminal the BEAM controls, which
   # `mix test` does not have; priv/exec_runtime_smoke.exs covers that in a pty.
-  # These cover the API and the test backend's stand-in.
+  # These cover the API and the test backend's stand-ins, for exec and suspend.
 
   defmodule EditorApp do
     use Harlock.App
@@ -23,6 +23,9 @@ defmodule Harlock.CmdExecTest do
        ])}
     end
 
+    def update(:suspend, m), do: {m, Cmd.suspend() |> Cmd.map(&{:suspended, &1})}
+
+    def update({:suspended, result}, m), do: %{m | results: m.results ++ [{:suspended, result}]}
     def update({:edited, result}, m), do: %{m | results: m.results ++ [{:edited, result}]}
     def update(:fetched, m), do: %{m | results: m.results ++ [:fetched]}
     def update(_, m), do: m
@@ -91,6 +94,24 @@ defmodule Harlock.CmdExecTest do
       Harlock.Test.send_event(h, {:edit, "vim", [], []})
 
       assert eventually(fn -> results(h) == [{:edited, {:error, :no_terminal}}] end)
+      Harlock.Test.stop(h)
+    end
+
+    test "the :suspend stub supplies the result of Cmd.suspend" do
+      h = Harlock.Test.start_app(EditorApp, nil, suspend: fn -> {:ok, :resumed} end)
+
+      Harlock.Test.send_event(h, :suspend)
+
+      assert eventually(fn -> results(h) == [{:suspended, {:ok, :resumed}}] end)
+      Harlock.Test.stop(h)
+    end
+
+    test "without a :suspend stub, suspend reports that there is no terminal" do
+      h = Harlock.Test.start_app(EditorApp)
+
+      Harlock.Test.send_event(h, :suspend)
+
+      assert eventually(fn -> results(h) == [{:suspended, {:error, :no_terminal}}] end)
       Harlock.Test.stop(h)
     end
 

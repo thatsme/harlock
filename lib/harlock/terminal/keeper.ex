@@ -29,6 +29,16 @@ defmodule Harlock.Terminal.Keeper do
   # {:harlock_resize, rows, cols} followed by {:harlock_exec_done, result}.
   # terminate/2 kills a program still running, so a crash cannot leave one
   # holding the terminal.
+  #
+  # suspend/1 stops this BEAM for the shell's job control (Ctrl-Z, then fg).
+  # The reply goes out before the stop: a caller still waiting in
+  # GenServer.call when the VM stops would time out the moment it resumes,
+  # because the call's timer keeps counting while stopped. SIGCONT on resume
+  # arrives through the same SignalForwarder as SIGWINCH, and Keeper then
+  # reclaims the terminal exactly as after exec/3, reporting
+  # {:harlock_exec_done, :resumed}. If no stop happened — a check can pass and
+  # the kernel still discard the signal — a watchdog reclaims the terminal
+  # instead of leaving it released forever, reporting :not_stopped.
 
   use GenServer
   require Logger
@@ -60,6 +70,24 @@ defmodule Harlock.Terminal.Keeper do
   @spec exec(GenServer.server(), [String.t()], keyword()) :: :ok | {:error, term()}
   def exec(server, argv, opts), do: GenServer.call(server, {:exec, argv, opts})
 
+  @doc """
+  Whether suspending would work: this BEAM holds the terminal's foreground and
+  a job-control shell is its parent, so the stop will be honoured and resumed.
+  """
+  @spec can_suspend?(GenServer.server()) :: boolean()
+  def can_suspend?(server), do: GenServer.call(server, :can_suspend?)
+
+  @doc """
+  Restore the shell's terminal settings and stop this BEAM's process group.
+  Returns before the stop; the runtime receives
+  `{:harlock_exec_done, :resumed}` once the shell resumes it.
+
+  The caller is responsible for leaving the alternate screen and pausing input
+  first, and for checking `can_suspend?/1`.
+  """
+  @spec suspend(GenServer.server()) :: :ok | {:error, term()}
+  def suspend(server), do: GenServer.call(server, :suspend)
+
   @impl true
   def init(opts) do
     Process.flag(:trap_exit, true)
@@ -71,8 +99,10 @@ defmodule Harlock.Terminal.Keeper do
           {:ok, snapshot} ->
             case Termios.set_raw(ctl) do
               :ok ->
-                install_sigwinch()
-                {:ok, %{ctl: ctl, snapshot: snapshot, runtime: runtime, exec: nil}}
+                install_signals()
+
+                {:ok,
+                 %{ctl: ctl, snapshot: snapshot, runtime: runtime, exec: nil, suspended: false}}
 
               {:error, reason} ->
                 Termios.close(ctl)
@@ -109,6 +139,19 @@ defmodule Harlock.Terminal.Keeper do
     {:reply, Termios.winsize(ctl), state}
   end
 
+  def handle_call(:can_suspend?, _from, %{ctl: ctl} = state),
+    do: {:reply, Termios.job_control?(ctl) == true, state}
+
+  def handle_call(:suspend, _from, %{exec: exec, suspended: suspended} = state)
+      when exec != nil or suspended,
+      do: {:reply, {:error, :busy}, state}
+
+  def handle_call(:suspend, _from, %{ctl: ctl} = state) do
+    _ = Termios.set(ctl, state.snapshot)
+    send(self(), :stop_for_suspend)
+    {:reply, :ok, %{state | suspended: true}}
+  end
+
   def handle_call({:exec, _argv, _opts}, _from, %{exec: exec} = state) when exec != nil,
     do: {:reply, {:error, :busy}, state}
 
@@ -127,6 +170,37 @@ defmodule Harlock.Terminal.Keeper do
   end
 
   @impl true
+  def handle_info(:stop_for_suspend, %{suspended: true} = state) do
+    case Termios.suspend() do
+      :ok ->
+        # Runs after the resume if the stop happened, and ~1s from now if not.
+        Process.send_after(self(), :suspend_watchdog, 1_000)
+        {:noreply, state}
+
+      {:error, _} ->
+        {:noreply, resume_from_suspend(state, :not_stopped)}
+    end
+  end
+
+  def handle_info({:signal, :sigcont}, %{suspended: true} = state),
+    do: {:noreply, resume_from_suspend(state, :resumed)}
+
+  # After a real stop both this and SIGCONT are overdue on resume, and this can
+  # win the race; give SIGCONT a moment before deciding no stop happened.
+  def handle_info(:suspend_watchdog, %{suspended: true} = state) do
+    result =
+      receive do
+        {:signal, :sigcont} -> :resumed
+      after
+        200 -> :not_stopped
+      end
+
+    {:noreply, resume_from_suspend(state, result)}
+  end
+
+  def handle_info({:signal, :sigcont}, state), do: {:noreply, state}
+  def handle_info(:suspend_watchdog, state), do: {:noreply, state}
+
   def handle_info({:signal, :sigwinch}, %{ctl: nil} = state) do
     {:noreply, state}
   end
@@ -166,7 +240,7 @@ defmodule Harlock.Terminal.Keeper do
 
   @impl true
   def terminate(_reason, state) do
-    uninstall_sigwinch()
+    uninstall_signals()
 
     # Before restoring termios: a program still in the foreground would keep
     # reading the terminal, and this BEAM could not reclaim it while it did.
@@ -186,6 +260,18 @@ defmodule Harlock.Terminal.Keeper do
     :ok
   end
 
+  defp resume_from_suspend(%{ctl: ctl} = state, result) do
+    reclaim_terminal(ctl)
+
+    case Termios.winsize(ctl) do
+      {:ok, rows, cols} -> send(state.runtime, {:harlock_resize, rows, cols})
+      {:error, _} -> :ok
+    end
+
+    send(state.runtime, {:harlock_exec_done, result})
+    %{state | suspended: false}
+  end
+
   # Back to how the app runs: this BEAM in the foreground, raw mode.
   defp reclaim_terminal(ctl) do
     case Termios.reclaim_foreground(ctl) do
@@ -199,23 +285,24 @@ defmodule Harlock.Terminal.Keeper do
     _ = Termios.set_raw(ctl)
   end
 
-  # A missing resize path degrades the app (no reflow) but must not stop it
-  # from starting, so failures are logged rather than raised.
-  defp install_sigwinch do
-    case SignalForwarder.install(self(), [:sigwinch]) do
+  # A missing signal path degrades the app (no reflow, no resume after a
+  # suspend) but must not stop it from starting, so failures are logged rather
+  # than raised.
+  defp install_signals do
+    case SignalForwarder.install(self(), [:sigwinch, :sigcont]) do
       :ok ->
         :ok
 
       {:error, reason} ->
-        Logger.warning("Harlock SIGWINCH handler not installed: #{inspect(reason)}")
+        Logger.warning("Harlock signal handler not installed: #{inspect(reason)}")
     end
   rescue
-    e -> Logger.warning("Harlock SIGWINCH handler not installed: #{Exception.message(e)}")
+    e -> Logger.warning("Harlock signal handler not installed: #{Exception.message(e)}")
   catch
     _, _ -> :ok
   end
 
-  defp uninstall_sigwinch do
+  defp uninstall_signals do
     SignalForwarder.uninstall(self())
   rescue
     _ -> :ok

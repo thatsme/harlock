@@ -696,6 +696,41 @@ static ERL_NIF_TERM reclaim_nif(ErlNifEnv *env, int argc,
     return rc == 0 ? enif_make_atom(env, "ok") : make_error_errno(env, err);
 }
 
+// job_control(tty_ref) -> boolean
+//
+// Whether stopping this BEAM would hand the terminal back to a shell that can
+// resume it. The kernel discards SIGTSTP sent to an orphaned process group —
+// one with no member whose parent is in another group of the same session —
+// and nothing would ever send the SIGCONT. So: this BEAM holds the foreground,
+// and its parent is in the same session but a different process group, as an
+// interactive shell running it as a job is.
+static ERL_NIF_TERM job_control_nif(ErlNifEnv *env, int argc,
+                                    const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    tty_fd_t *tty;
+    if (!enif_get_resource(env, argv[0], TTY_FD_TYPE, (void **)&tty)) {
+        return enif_make_badarg(env);
+    }
+    if (tty->fd < 0) return make_error(env, "closed");
+
+    pid_t parent = getppid();
+    int ok = tcgetpgrp(tty->fd) == getpgrp() &&
+             getsid(parent) == getsid(0) &&
+             getpgid(parent) != getpgrp();
+    return enif_make_atom(env, ok ? "true" : "false");
+}
+
+// suspend() -> :ok | {:error, reason}
+// SIGTSTP to this BEAM's process group, as Ctrl-Z would send it. The caller
+// sets SIGTSTP to its default disposition first and checks job_control/1.
+static ERL_NIF_TERM suspend_nif(ErlNifEnv *env, int argc,
+                                const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    (void)argv;
+    if (kill(0, SIGTSTP) != 0) return make_error_errno(env, errno);
+    return enif_make_atom(env, "ok");
+}
+
 // foreground(tty_ref) -> boolean
 static ERL_NIF_TERM foreground_nif(ErlNifEnv *env, int argc,
                                    const ERL_NIF_TERM argv[]) {
@@ -725,7 +760,9 @@ static ErlNifFunc nif_funcs[] = {
     {"exec_read_nif",     1, exec_read_nif,     ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"exec_kill_nif",     1, exec_kill_nif,     ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"reclaim_nif",       1, reclaim_nif,       ERL_NIF_DIRTY_JOB_IO_BOUND},
-    {"foreground_nif",    1, foreground_nif,    ERL_NIF_DIRTY_JOB_IO_BOUND}};
+    {"foreground_nif",    1, foreground_nif,    ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"job_control_nif",   1, job_control_nif,   ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"suspend_nif",       0, suspend_nif,       ERL_NIF_DIRTY_JOB_IO_BOUND}};
 
 ERL_NIF_INIT(Elixir.Harlock.Terminal.Termios, nif_funcs, on_load, NULL, NULL,
              NULL);

@@ -19,6 +19,7 @@ defmodule Harlock.Cmd do
     * `none/0` — no side-effect. Equivalent to returning just the model.
     * `from/1` — run a 0-arity function in a task; deliver its return value.
     * `exec/3` — hand the terminal to another program until it exits.
+    * `suspend/0` — stop the app for the shell's job control, as Ctrl-Z does.
     * `batch/1` — dispatch a list of cmds concurrently; no ordering guarantee.
     * `map/2` — tag/transform the result of an inner cmd before delivery.
 
@@ -54,6 +55,28 @@ defmodule Harlock.Cmd do
   `exec/3` needs the app to own its terminal: run it with `mix run`, not from an
   IEx prompt, whose own terminal driver competes for input.
 
+  ## Suspending
+
+  In raw mode Ctrl-Z is an ordinary key, `{:key, {:char, ?z}, [:ctrl]}`, not a
+  suspend: the terminal driver no longer turns it into a signal. An app that
+  wants the usual job-control behaviour — Ctrl-Z to the shell, `fg` to come
+  back — binds it to `suspend/0`:
+
+      def update({:key, {:char, ?z}, [:ctrl]}, m), do: {m, Cmd.suspend()}
+
+  The terminal is handed back to the shell as for `exec/3`, the app stops, and
+  after `fg` it redraws at the current size and receives `{:ok, :resumed}`.
+  It is not bound by default because apps use Ctrl-Z for other things, undo
+  among them.
+
+  Suspending needs a shell with job control to resume the app. Without one —
+  the app started by a script, by `exec`, or under `script(1)` — it returns
+  `{:error, :no_job_control}` and leaves the terminal as it was, rather than
+  stopping with nothing to resume it. Other results: `{:error, :busy}` while an
+  `exec/3` program runs, `{:error, :no_terminal}` under the test backend
+  without a `:suspend` stub, and `{:error, :not_stopped}` if the stop was
+  requested but did not happen, in which case the app simply carries on.
+
   Task lifecycle: cmd tasks are supervised by `Harlock.App.TaskSupervisor`,
   itself a child of the app's supervisor positioned after `Runtime`. A
   Runtime exit terminates the task supervisor and all in-flight tasks
@@ -68,6 +91,7 @@ defmodule Harlock.Cmd do
             :none
             | {:fun, (-> any())}
             | {:exec, String.t(), [String.t()], keyword()}
+            | :suspend
             | {:batch, [t()]}
             | {:map, t(), (any() -> any())}
 
@@ -130,6 +154,13 @@ defmodule Harlock.Cmd do
   defp validate_exec_opts!(other),
     do: raise(ArgumentError, "exec/3 expects options as a keyword list, got: #{inspect(other)}")
 
+  @doc """
+  Stop the app for the shell's job control, as Ctrl-Z would. See "Suspending"
+  above.
+  """
+  @spec suspend() :: t()
+  def suspend, do: :suspend
+
   @spec batch([t()]) :: t()
   def batch(cmds) when is_list(cmds), do: {:batch, cmds}
 
@@ -146,6 +177,7 @@ defmodule Harlock.Cmd do
   defp kind(:none), do: :none
   defp kind({:fun, _}), do: :fun
   defp kind({:exec, _, _, _}), do: :exec
+  defp kind(:suspend), do: :suspend
   defp kind({:batch, _}), do: :batch
   defp kind({:map, _, _}), do: :map
 
@@ -177,6 +209,11 @@ defmodule Harlock.Cmd do
   # Writer and the Keeper in sequence, so the runtime runs it.
   defp dispatch_with({:exec, program, args, opts}, runtime, _sup, mappers) do
     send(runtime, {:harlock_exec, program, args, opts, &apply_mappers(&1, mappers)})
+    :ok
+  end
+
+  defp dispatch_with(:suspend, runtime, _sup, mappers) do
+    send(runtime, {:harlock_suspend, &apply_mappers(&1, mappers)})
     :ok
   end
 

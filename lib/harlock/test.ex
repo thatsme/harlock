@@ -47,6 +47,9 @@ defmodule Harlock.Test do
                 end)
 
       Without it, every exec returns `{:error, :no_terminal}`.
+    * `:suspend` — stands in for `Harlock.Cmd.suspend/0` in the same way: a
+      0-arity function returning the result the app should get, typically
+      `{:ok, :resumed}`. Without it, suspend returns `{:error, :no_terminal}`.
   """
   @spec start_app(module(), any(), keyword()) :: handle()
   def start_app(app, init_arg \\ nil, opts \\ []) do
@@ -70,6 +73,7 @@ defmodule Harlock.Test do
       ]
       |> maybe_put_theme(opts)
       |> Keyword.put(:exec_stub, Keyword.get(opts, :exec))
+      |> Keyword.put(:suspend_stub, Keyword.get(opts, :suspend))
 
     {:ok, sup} = AppSupervisor.start_link(sup_opts)
 

@@ -19,6 +19,12 @@ defmodule Harlock.App.Runtime do
   # re-entered (which clears it), input resumed, a full redraw — and delivers
   # reply.(result) to update/2. Under the test backend there is no Keeper; the
   # :exec_stub given to Harlock.Test.start_app/3 supplies the result instead.
+  #
+  # {:harlock_suspend, reply} — what Cmd.suspend dispatches — is the same
+  # handover with the BEAM stopped instead of a program started, and resumed by
+  # the shell. It is checked first: without a job-control shell to resume it
+  # the stop would be discarded or never undone, so the terminal is not touched
+  # and the app gets {:error, :no_job_control}.
 
   use GenServer
   require Logger
@@ -86,6 +92,7 @@ defmodule Harlock.App.Runtime do
         pending_cmd: init_cmd,
         keeper: Keyword.get(opts, :keeper),
         exec_stub: Keyword.get(opts, :exec_stub),
+        suspend_stub: Keyword.get(opts, :suspend_stub),
         exec: nil
       }
 
@@ -162,6 +169,37 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  def handle_info({:harlock_suspend, reply}, %{exec: exec} = state) when exec != nil,
+    do: apply_update(state, reply.({:error, :busy}))
+
+  def handle_info({:harlock_suspend, reply}, %{keeper: nil} = state) do
+    result =
+      case state.suspend_stub do
+        nil -> {:error, :no_terminal}
+        stub -> stub.()
+      end
+
+    apply_update(state, reply.(result))
+  end
+
+  def handle_info({:harlock_suspend, reply}, state) do
+    if Keeper.can_suspend?(state.keeper) do
+      :ok = Reader.pause(state.reader)
+      _ = Writer.leave(state.writer)
+
+      case Keeper.suspend(state.keeper) do
+        :ok ->
+          {:noreply, %{state | exec: %{reply: reply}}}
+
+        {:error, reason} ->
+          state = return_from_exec(state)
+          apply_update(state, reply.({:error, reason}))
+      end
+    else
+      apply_update(state, reply.({:error, :no_job_control}))
+    end
+  end
+
   def handle_info({:harlock_exec_done, result}, %{exec: %{reply: reply}} = state) do
     state = return_from_exec(state)
     apply_update(state, reply.(exec_result(result)))
@@ -200,6 +238,8 @@ defmodule Harlock.App.Runtime do
   defp exec_result({:signaled, signal}), do: {:error, {:signal, signal}}
   defp exec_result({:failed, stage, reason}), do: {:error, {stage, reason}}
   defp exec_result(:killed), do: {:error, :killed}
+  defp exec_result(:resumed), do: {:ok, :resumed}
+  defp exec_result(:not_stopped), do: {:error, :not_stopped}
   defp exec_result({:error, _} = error), do: error
 
   defp init_app(app, init_arg) do

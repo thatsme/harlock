@@ -20,22 +20,28 @@ smokes=(
   priv/exec_runtime_smoke.exs
   priv/exec_input_smoke.exs
   priv/crash_smoke.exs
+  priv/suspend_smoke.exs
   priv/sysmon_smoke.exs
   priv/contacts_smoke.exs
 )
 
 # A smoke test that needs typed input has a <name>.drive.sh next to it, whose
-# output is piped into the pty. Each test gets its own directory in
-# HARLOCK_SMOKE_DIR for the two sides to coordinate through.
+# output is piped into the pty. One that needs a particular way of being started
+# — under a job-control shell, say — has a <name>.run.sh, run in the pty in
+# place of `mix run <name>.exs`. Each test gets its own directory in
+# HARLOCK_SMOKE_DIR for the sides to coordinate through.
 run_smoke() {
   HARLOCK_SMOKE_DIR="$(mktemp -d)"
   export HARLOCK_SMOKE_DIR
   driver="${1%.exs}.drive.sh"
+  runner="${1%.exs}.run.sh"
+  command="mix run $1"
+  [ -x "$runner" ] && command="$runner $1"
 
   if [ -x "$driver" ]; then
-    "$driver" | run_tty mix run "$1"
+    "$driver" | run_tty $command
   else
-    run_tty mix run "$1"
+    run_tty $command
   fi
   status=$?
 
