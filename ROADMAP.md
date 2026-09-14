@@ -79,7 +79,12 @@ What's stubbed / missing — the honest list:
 - Styled runs are accepted by `text` only. Box titles, tab labels and table
   cells still take a plain binary.
 - No way to hand the terminal to another program (`$EDITOR`, a pager) and take
-  it back, and no suspend on Ctrl-Z. v0.8.
+  it back, and no suspend on Ctrl-Z. v0.8; approach verified, see item 4.
+- **Apps do not work under IEx.** IEx's terminal driver reads the same tty, and a
+  Harlock app started from an IEx prompt received no keystrokes when tested.
+  Run apps with `mix run`. Several example headers suggest starting them from
+  `iex -S mix`, which is wrong and due for correction with the examples.
+  The `:ssh` backend (1.1+) avoids the contention altogether.
 - Mouse events: SGR parser only — runtime enabling is v0.8.
 - Kitty keyboard protocol: parser only — runtime push is deferred.
 - No inline (non-alternate-screen) mode, clipboard, or hyperlinks — 1.1+.
@@ -110,6 +115,12 @@ What's stubbed / missing — the honest list:
    output — the adapter is a few lines of app code, or its own package if it
    ever earns one. `:telemetry` is the sole first-party integration, and only
    because it is already a dependency and its seam is generic.
+8. **Own what only the terminal owner can do.** Priority goes first to what an
+   application cannot provide for itself: resize, handing the terminal to another
+   program, suspend, terminal modes such as mouse reporting. Something an app can
+   build from existing elements in a few lines — a checkbox, a chart — can wait.
+   Harlock is a foundation in the way curses is, and a gap in the first category
+   is a gap no application can close.
 
 ## Versioning
 
@@ -745,13 +756,14 @@ and metrics helper stay in 1.1+ because of it.
 
 It did not survive an audit of what the library cannot do. A terminal UI library
 that cannot style a word inside a sentence, hand the terminal to `$EDITOR`, or
-notice the window being resized is not ready to freeze, and two of those change
-contracts 1.0 would lock. So v0.8 has two halves, in this order.
+notice the window being resized is not ready to freeze. So v0.8 has two halves,
+in this order.
 
 ### The missing basics
 
-In order. Each item says whether it changes an existing contract, because that
-is what decides whether it has to land before the freeze.
+In order. Two tests decide whether an item belongs here rather than in 1.1+:
+whether it changes a contract 1.0 would lock, and whether an application could
+provide it itself (principle 8). Each item says which applies.
 
 1. **Terminal resize never reached the runtime** ✓ — a defect, not a feature.
    `Keeper` called `:os.set_signal(:sigwinch, :handle)` and waited for
@@ -804,16 +816,16 @@ is what decides whether it has to land before the freeze.
    because a binary inside `text` keeps its fast path anyway. Accepting runs in
    those other places is a later, additive step.
 
-3. **Button and checkbox** ✓ — `button/2` and `checkbox/2`. Additive, so not a freeze requirement, but wanted
-   before 1.0: they are small, a settings screen is the first thing a newcomer
+3. **Button and checkbox** ✓ — `button/2` and `checkbox/2`. Additive, so not a
+   freeze requirement, but wanted before 1.0: they are small, a settings screen is the first thing a newcomer
    builds, and a 1.0 without them reads as incomplete. After item 2, because a
    label is a natural first consumer of styled runs.
 
-   Most of the need is already met, which keeps this small. `text` with
-   `:focusable` already gets focus styling; what is missing is routing, so today
-   an app checks `Focus.current()` in an `{:key, :enter, []}` clause. Enter on a
-   button and Space on a checkbox should arrive as `{:harlock_submit, id}` and
-   `{:harlock_toggle, id, …}` — no new message shapes.
+   Most of the need was already met, which kept this small. `text` with
+   `:focusable` already got focus styling; what was missing was routing, so an
+   app checked `Focus.current()` in an `{:key, :enter, []}` clause. Enter or Space
+   now arrive as `{:harlock_submit, id}` and `{:harlock_toggle, id, checked}` —
+   no new message shapes.
 
    A radio group is not on the list: `select` and `menu` already cover choosing
    one of several. A checkbox *group* is `table` with `selection: {:multi, set}`,
@@ -822,21 +834,65 @@ is what decides whether it has to land before the freeze.
 4. **Handing the terminal to another program, and suspend.** Opening `$EDITOR`
    on a file, running a pager, or `git commit` needs the terminal released
    (leave alternate screen, restore termios, stop the reader) and reclaimed
-   afterwards with a full redraw. Ctrl-Z / `SIGTSTP` is the same sequence around
-   a stop, and uses item 1's signal path.
+   afterwards with a full redraw. Ctrl-Z is the same sequence around a stop.
 
-   Changes a contract: it is a `Cmd` whose execution suspends rendering and
-   input, which the runtime currently has no state for. It also touches the
-   restore-on-crash path, so a crash *while suspended* needs the same test the
-   crash path already has.
+   Additive to the public API — `Cmd.exec/3` and `Cmd.suspend/0` are new
+   functions — but here by principle 8: an application cannot do this itself.
+   Every program the BEAM starts, through `:os.cmd` or a port, runs in a new
+   session with no controlling terminal. Opening `/dev/tty` fails in it, and
+   Ctrl-C, Ctrl-Z and SIGWINCH go to the BEAM instead. Redirecting its stdin to
+   the tty by path makes stdin a tty but changes none of that.
+
+   **Approach, verified by a spike on macOS and Linux:** start the program from
+   the termios NIF with `posix_spawn` into its own process group, with fds 0–2 on
+   the tty and signal dispositions reset, then make that group the terminal's
+   foreground with `tcsetpgrp`, as a shell does. In a real pty the child could
+   open `/dev/tty` itself, received Ctrl-C (the BEAM did not) and SIGWINCH, and
+   vim edited and wrote a file; the BEAM took the foreground back each time.
+
+   Three requirements the spike showed are not optional:
+
+   - **SIGTTOU blocked while reclaiming the foreground.** Once the child exits the
+     BEAM is a background group, and `tcsetpgrp` from there stops the BEAM
+     outright under a job-control shell (and fails with `EIO` in an orphaned
+     group). OTP cannot handle SIGTTOU, so the NIF blocks it in the calling thread.
+   - **A way to get the exit status.** The BEAM ignores SIGCHLD, so the kernel
+     discards a child's status at exit and `waitpid` never returns it — the first
+     spike hung there. The spike defaulted SIGCHLD for the child's lifetime, which
+     is a VM-wide change; a small helper process that waits for the program and
+     reports its status leaves the VM's disposition alone and is the preferred
+     shape.
+   - **A child stopped by Ctrl-Z.** A program that does not handle SIGTSTP stops,
+     and there is no job table to return to. Resuming it in the foreground is the
+     simplest defined behaviour.
+
+   While the program runs, `update/2` keeps processing subscriptions and `Cmd`
+   results but nothing is drawn, and one full redraw follows. A second exec while
+   one is running is refused. A crash while the terminal is handed over must still
+   restore it, reclaim the foreground, and kill the child's process group — the
+   same crash-path test the restore path already has.
+
+   `Cmd.suspend/0` is opt-in, not bound to Ctrl-Z by the runtime:
+   `examples/notes.exs` and the `Harlock.UndoStack` docs already use Ctrl-Z for
+   undo. In the spike, SIGTSTP stopped the BEAM, SIGCONT arrived through the
+   `erl_signal_server` handler from item 1, and terminal modes were intact on
+   resume.
+
+   **Not under IEx.** In the spike, a program started under IEx never received
+   its input, and IEx's own IO then terminated; after a SIGCONT, OTP's tty handler
+   reset the terminal to cooked mode. The cause is not specific to this item: a
+   plain Harlock app under IEx received no keystrokes in the same test, because
+   IEx's terminal driver reads the tty too. See the IEx entry in the status list.
 
 5. **Mouse runtime enabling** — moved from 1.1+. The SGR parser exists; the
    DECSET sequences that turn reporting on, and restoring them on exit, do not.
-   Additive, but it gates click-to-open on `select` and `tree`, and building a
-   real application (below) runs into its absence immediately.
+   Additive, but here by principle 8: turning reporting on and guaranteeing it is
+   turned off again on every exit path belongs to whoever owns the terminal. It
+   also gates click-to-open on `select` and `tree`.
 
 The second half is freeze prep, below, and it does not start until these land —
-the freeze decisions depend on the shapes items 2 and 4 settle.
+the freeze decisions depend on the shape item 2 settled and on what building a
+real application on items 3–5 turns up.
 
 ### Build one real application first
 
