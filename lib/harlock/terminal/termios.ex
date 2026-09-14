@@ -100,6 +100,71 @@ defmodule Harlock.Terminal.Termios do
           {:ok, binary()} | :wouldblock | :eof | {:error, atom() | {atom(), term()}}
   def read_nonblock(ref, max_bytes), do: read_nonblock_nif(ref, max_bytes)
 
+  # -- Handing the terminal to another program -------------------------------
+  #
+  # Building blocks for Cmd.exec, not public API. The program runs as the
+  # terminal's foreground process group, started through priv/harlock_exec,
+  # because anything the BEAM starts through a port has no controlling
+  # terminal. See c_src/README.md.
+
+  @typedoc false
+  @opaque exec_ref :: reference()
+
+  @typedoc false
+  @type exec_result ::
+          {:exited, non_neg_integer()}
+          | {:signaled, pos_integer()}
+          | {:failed, atom(), atom() | {:errno, integer()}}
+          | :killed
+
+  @doc false
+  # Start `argv` (program first, looked up on PATH) in the terminal's
+  # foreground. The caller must own the foreground; `{:error, :not_foreground}`
+  # otherwise. Arm with exec_arm/1 and read the result with exec_read/1.
+  @spec exec_start(ref(), [String.t()], keyword()) ::
+          {:ok, exec_ref(), pos_integer()} | {:error, term()}
+  def exec_start(ref, [_program | _] = argv, opts \\ []) do
+    dir = Keyword.get(opts, :cd, "")
+
+    env =
+      case Keyword.fetch(opts, :env) do
+        {:ok, env} -> Enum.map(env, fn {k, v} -> "#{k}=#{v}" end)
+        :error -> nil
+      end
+
+    exec_start_nif(ref, exec_helper_path(), dir, argv, env)
+  end
+
+  @doc false
+  # One-shot: the caller receives {:exec_ready, exec_ref} once the result can
+  # be read.
+  @spec exec_arm(exec_ref()) :: :ok | {:error, term()}
+  def exec_arm(exec), do: exec_arm_nif(exec)
+
+  @doc false
+  # Any result other than :wouldblock is final.
+  @spec exec_read(exec_ref()) :: exec_result() | :wouldblock | {:error, term()}
+  def exec_read(exec), do: exec_read_nif(exec)
+
+  @doc false
+  # SIGKILL the program's whole process group. {:error, :finished} once its
+  # result has been read.
+  @spec exec_kill(exec_ref()) :: :ok | {:error, term()}
+  def exec_kill(exec), do: exec_kill_nif(exec)
+
+  @doc false
+  # Make this BEAM the terminal's foreground process group again, without the
+  # SIGTTOU that would otherwise stop the VM.
+  @spec reclaim_foreground(ref()) :: :ok | {:error, term()}
+  def reclaim_foreground(ref), do: reclaim_nif(ref)
+
+  @doc false
+  @spec foreground?(ref()) :: boolean() | {:error, term()}
+  def foreground?(ref), do: foreground_nif(ref)
+
+  @doc false
+  def exec_helper_path, do: :code.priv_dir(:harlock) |> Path.join("harlock_exec")
+
   # -- NIF stubs. Replaced at module load. ----------------------------------
 
   defp open_nif, do: :erlang.nif_error(:nif_not_loaded)
@@ -110,4 +175,10 @@ defmodule Harlock.Terminal.Termios do
   defp winsize_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
   defp arm_select_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
   defp read_nonblock_nif(_ref, _max), do: :erlang.nif_error(:nif_not_loaded)
+  defp exec_start_nif(_ref, _helper, _dir, _argv, _env), do: :erlang.nif_error(:nif_not_loaded)
+  defp exec_arm_nif(_exec), do: :erlang.nif_error(:nif_not_loaded)
+  defp exec_read_nif(_exec), do: :erlang.nif_error(:nif_not_loaded)
+  defp exec_kill_nif(_exec), do: :erlang.nif_error(:nif_not_loaded)
+  defp reclaim_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
+  defp foreground_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
 end

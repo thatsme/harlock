@@ -16,6 +16,7 @@ smokes=(
   priv/runtime_smoke.exs
   priv/focus_smoke.exs
   priv/resize_smoke.exs
+  priv/exec_native_smoke.exs
   priv/sysmon_smoke.exs
   priv/contacts_smoke.exs
 )

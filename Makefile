@@ -1,4 +1,6 @@
-# Builds priv/termios_nif.so from c_src/termios.c.
+# Builds priv/termios_nif.so from c_src/termios.c, and priv/harlock_exec — the
+# helper the NIF starts to run a program in the terminal's foreground — from
+# c_src/exec_helper.c.
 #
 # Driven by elixir_make (configured in mix.exs). `mix compile` invokes
 # `make all`; `mix clean` invokes `make clean`. ERTS_INCLUDE_DIR is set by
@@ -6,6 +8,7 @@
 
 PRIV_DIR    ?= priv
 NIF_SO      = $(PRIV_DIR)/termios_nif.so
+EXEC_HELPER = $(PRIV_DIR)/harlock_exec
 
 # Cross toolchains (Nerves among them) export CROSSCOMPILE. Where it matters
 # below, that flag distinguishes the build host from the target — `uname` and
@@ -31,6 +34,10 @@ CFLAGS  ?= -O2 -Wall -Wextra -Wno-unused-parameter
 CFLAGS  += -fPIC -I"$(ERTS_INCLUDE_DIR)"
 LDFLAGS ?= -shared
 
+# The helper is an executable, so it takes neither -shared nor the Mach-O
+# dynamic_lookup flags below.
+HELPER_CFLAGS ?= -O2 -Wall -Wextra
+
 # Darwin needs Mach-O linker flags — but only when Darwin is the *target*.
 # Cross-compiling from a Mac to ARM Linux is the common Nerves setup, and
 # feeding these to a Linux link breaks it.
@@ -43,13 +50,16 @@ endif
 
 .PHONY: all clean
 
-all: $(NIF_SO)
+all: $(NIF_SO) $(EXEC_HELPER)
 
 $(NIF_SO): c_src/termios.c | $(PRIV_DIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
+
+$(EXEC_HELPER): c_src/exec_helper.c | $(PRIV_DIR)
+	$(CC) $(HELPER_CFLAGS) -o $@ $<
 
 $(PRIV_DIR):
 	mkdir -p $(PRIV_DIR)
 
 clean:
-	rm -f $(NIF_SO)
+	rm -f $(NIF_SO) $(EXEC_HELPER)

@@ -28,6 +28,7 @@ harlock-*.tar
 
 # NIF artifacts (rebuilt by elixir_make from c_src/).
 /priv/*.so
+/priv/harlock_exec
 /priv/*.dylib
 
 # macOS Finder metadata

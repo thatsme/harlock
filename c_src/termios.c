@@ -8,16 +8,38 @@
 //
 // All NIFs are dirty (ERL_NIF_DIRTY_JOB_IO_BOUND) because tcsetattr can
 // block on some pty implementations.
+//
+// The exec_* NIFs hand the terminal to another program. Programs the BEAM
+// starts through ports get no controlling terminal (see above), so the
+// program is started from here instead, via the harlock_exec helper, as the
+// terminal's foreground process group — the way a shell runs a job.
 
 #include <erl_nif.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <signal.h>
+#include <spawn.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
+extern char **environ;
+
 static ErlNifResourceType *TTY_FD_TYPE;
+static ErlNifResourceType *EXEC_TYPE;
+
+// A program started by exec_start_nif. `status_fd` is the read end of the
+// helper's status pipe; `pgid` is the helper's process group, which the
+// program shares.
+typedef struct {
+    int status_fd;
+    pid_t pgid;
+    int finished;
+} exec_t;
 
 typedef struct {
     int fd;
@@ -57,6 +79,28 @@ static void tty_fd_destructor(ErlNifEnv *env, void *obj) {
     }
 }
 
+static void exec_stop(ErlNifEnv *env, void *obj, ErlNifEvent fd,
+                      int is_direct_call) {
+    (void)env;
+    (void)obj;
+    (void)is_direct_call;
+    close(fd);
+}
+
+// A program whose resource is collected before it finished is killed, so a
+// crashed owner cannot leave it holding the terminal. Only while unfinished:
+// once the helper has reported, the group id may already belong to someone
+// else.
+static void exec_destructor(ErlNifEnv *env, void *obj) {
+    exec_t *ex = (exec_t *)obj;
+    if (!ex->finished && ex->pgid > 0) kill(-ex->pgid, SIGKILL);
+    if (ex->status_fd >= 0) {
+        enif_select(env, ex->status_fd, ERL_NIF_SELECT_STOP, obj, NULL,
+                    enif_make_atom(env, "undefined"));
+        ex->status_fd = -1;
+    }
+}
+
 static int on_load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
     (void)priv_data;
     (void)load_info;
@@ -69,6 +113,16 @@ static int on_load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
         env, "harlock_tty_fd", &init,
         ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, NULL);
     if (TTY_FD_TYPE == NULL) return -1;
+
+    ErlNifResourceTypeInit exec_init = {
+        .dtor = exec_destructor,
+        .stop = exec_stop,
+        .members = 2,
+    };
+    EXEC_TYPE = enif_open_resource_type_x(
+        env, "harlock_exec", &exec_init,
+        ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER, NULL);
+    if (EXEC_TYPE == NULL) return -1;
     return 0;
 }
 
@@ -322,6 +376,338 @@ static ERL_NIF_TERM read_nonblock_nif(ErlNifEnv *env, int argc,
                             enif_make_binary(env, &bin));
 }
 
+// -- Handing the terminal to another program --------------------------------
+
+static const char *errno_atom(int err) {
+    switch (err) {
+        case ENOENT:    return "enoent";
+        case EACCES:    return "eacces";
+        case ENOTDIR:   return "enotdir";
+        case ENOEXEC:   return "enoexec";
+        case ENOMEM:    return "enomem";
+        case E2BIG:     return "e2big";
+        case EAGAIN:    return "eagain";
+        case ETIMEDOUT: return "etimedout";
+        case EPERM:     return "eperm";
+        case EIO:       return "eio";
+        default:        return NULL;
+    }
+}
+
+static ERL_NIF_TERM errno_term(ErlNifEnv *env, int err) {
+    const char *name = errno_atom(err);
+    if (name) return enif_make_atom(env, name);
+    return enif_make_tuple2(env, enif_make_atom(env, "errno"), enif_make_int(env, err));
+}
+
+static ERL_NIF_TERM error2(ErlNifEnv *env, const char *what, int err) {
+    return enif_make_tuple2(
+        env, enif_make_atom(env, "error"),
+        enif_make_tuple2(env, enif_make_atom(env, what), errno_term(env, err)));
+}
+
+static char *dup_binary(ErlNifEnv *env, ERL_NIF_TERM term) {
+    ErlNifBinary bin;
+    if (!enif_inspect_binary(env, term, &bin)) return NULL;
+    if (memchr(bin.data, '\0', bin.size)) return NULL;
+    char *s = enif_alloc(bin.size + 1);
+    memcpy(s, bin.data, bin.size);
+    s[bin.size] = '\0';
+    return s;
+}
+
+// A NULL-terminated array of C strings from a list of binaries, with `prefix`
+// leading entries left for the caller to fill. NULL on a malformed list.
+static char **dup_binary_list(ErlNifEnv *env, ERL_NIF_TERM list, unsigned prefix,
+                              unsigned *count) {
+    unsigned len;
+    if (!enif_get_list_length(env, list, &len)) return NULL;
+    char **out = enif_alloc(sizeof(char *) * (prefix + len + 1));
+    memset(out, 0, sizeof(char *) * (prefix + len + 1));
+    ERL_NIF_TERM head, tail = list;
+    for (unsigned i = 0; i < len; i++) {
+        enif_get_list_cell(env, tail, &head, &tail);
+        if ((out[prefix + i] = dup_binary(env, head)) == NULL) {
+            for (unsigned j = prefix; j < prefix + i; j++) enif_free(out[j]);
+            enif_free(out);
+            return NULL;
+        }
+    }
+    *count = prefix + len;
+    return out;
+}
+
+static void free_strings(char **strings, unsigned from, unsigned count) {
+    if (!strings) return;
+    for (unsigned i = from; i < count; i++) enif_free(strings[i]);
+    enif_free(strings);
+}
+
+// Duplicate `fd` to a number above 3 with FD_CLOEXEC, closing the original.
+// The helper's fd 3 is the status pipe; a source descriptor that happened to
+// be 3 already would make that dup2 a no-op and leave FD_CLOEXEC set on it.
+static int move_high_cloexec(int fd) {
+    int high = fcntl(fd, F_DUPFD_CLOEXEC, 10);
+    int saved = errno;
+    close(fd);
+    errno = saved;
+    return high;
+}
+
+// exec_start(tty_ref, helper_path, dir, argv, env) ->
+//     {:ok, exec_ref, os_pid} | {:error, reason}
+//
+// `argv` is a non-empty list of binaries, program first; `dir` is "" for the
+// current directory; `env` is a list of "KEY=VALUE" binaries, or nil to
+// inherit. The caller must be in the terminal's foreground group.
+static ERL_NIF_TERM exec_start_nif(ErlNifEnv *env, int argc,
+                                   const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    tty_fd_t *tty;
+    if (!enif_get_resource(env, argv[0], TTY_FD_TYPE, (void **)&tty)) {
+        return enif_make_badarg(env);
+    }
+    if (tty->fd < 0) return make_error(env, "closed");
+
+    // tcsetpgrp from a background group would stop the BEAM; refuse instead.
+    if (tcgetpgrp(tty->fd) != getpgrp()) return make_error(env, "not_foreground");
+
+    char *helper = dup_binary(env, argv[1]);
+    char *dir = dup_binary(env, argv[2]);
+    unsigned argv_count = 0, env_count = 0;
+    char **helper_argv = dup_binary_list(env, argv[3], 2, &argv_count);
+    char **envp = NULL;
+    int env_ok = enif_is_atom(env, argv[4]) ||
+                 (envp = dup_binary_list(env, argv[4], 0, &env_count)) != NULL;
+
+    ERL_NIF_TERM result;
+    if (!helper || !dir || !helper_argv || argv_count < 3 || !env_ok) {
+        result = enif_make_badarg(env);
+        goto done;
+    }
+    helper_argv[0] = helper;
+    helper_argv[1] = dir;
+
+    // A fresh descriptor for the program: the Reader's is O_NONBLOCK, and a
+    // dup2 of it would hand the program a non-blocking stdin.
+    int child_tty = open("/dev/tty", O_RDWR | O_NOCTTY);
+    if (child_tty < 0) { result = error2(env, "open_tty", errno); goto done; }
+    if ((child_tty = move_high_cloexec(child_tty)) < 0) {
+        result = error2(env, "open_tty", errno);
+        goto done;
+    }
+
+    int status_pipe[2];
+    if (pipe(status_pipe) != 0) {
+        result = error2(env, "pipe", errno);
+        close(child_tty);
+        goto done;
+    }
+    status_pipe[0] = move_high_cloexec(status_pipe[0]);
+    status_pipe[1] = move_high_cloexec(status_pipe[1]);
+    if (status_pipe[0] < 0 || status_pipe[1] < 0) {
+        result = error2(env, "pipe", errno);
+        if (status_pipe[0] >= 0) close(status_pipe[0]);
+        if (status_pipe[1] >= 0) close(status_pipe[1]);
+        close(child_tty);
+        goto done;
+    }
+    fcntl(status_pipe[0], F_SETFL, O_NONBLOCK);
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_adddup2(&actions, child_tty, STDIN_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, child_tty, STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, child_tty, STDERR_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, status_pipe[1], 3);
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    sigset_t defaults, empty;
+    sigfillset(&defaults);
+    sigdelset(&defaults, SIGKILL);
+    sigdelset(&defaults, SIGSTOP);
+    sigemptyset(&empty);
+    posix_spawnattr_setsigdefault(&attr, &defaults);
+    posix_spawnattr_setsigmask(&attr, &empty);
+    posix_spawnattr_setpgroup(&attr, 0);
+    short flags = POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK;
+#ifdef POSIX_SPAWN_CLOEXEC_DEFAULT
+    flags |= POSIX_SPAWN_CLOEXEC_DEFAULT;
+#endif
+    posix_spawnattr_setflags(&attr, flags);
+
+    pid_t pid;
+    int rc = posix_spawn(&pid, helper, &actions, &attr, helper_argv,
+                         envp ? envp : environ);
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attr);
+    close(child_tty);
+    close(status_pipe[1]);
+
+    if (rc != 0) {
+        close(status_pipe[0]);
+        result = error2(env, "spawn", rc);
+        goto done;
+    }
+
+    if (tcsetpgrp(tty->fd, pid) != 0) {
+        int err = errno;
+        kill(-pid, SIGKILL);
+        close(status_pipe[0]);
+        result = error2(env, "foreground", err);
+        goto done;
+    }
+
+    exec_t *ex = enif_alloc_resource(EXEC_TYPE, sizeof(exec_t));
+    ex->status_fd = status_pipe[0];
+    ex->pgid = pid;
+    ex->finished = 0;
+    ERL_NIF_TERM ref = enif_make_resource(env, ex);
+    enif_release_resource(ex);
+    result = enif_make_tuple3(env, enif_make_atom(env, "ok"), ref, enif_make_int(env, pid));
+
+done:
+    // helper_argv[0..1] are `helper` and `dir`; free those separately.
+    if (helper_argv) free_strings(helper_argv, 2, argv_count);
+    free_strings(envp, 0, env_count);
+    if (helper) enif_free(helper);
+    if (dir) enif_free(dir);
+    return result;
+}
+
+// exec_arm(exec_ref) -> :ok | {:error, reason}
+// One-shot readiness on the status pipe: the caller receives
+// {:exec_ready, exec_ref} when the helper has reported or died.
+static ERL_NIF_TERM exec_arm_nif(ErlNifEnv *env, int argc,
+                                 const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    exec_t *ex;
+    if (!enif_get_resource(env, argv[0], EXEC_TYPE, (void **)&ex)) {
+        return enif_make_badarg(env);
+    }
+    if (ex->status_fd < 0) return make_error(env, "closed");
+
+    ErlNifEnv *msg_env = enif_alloc_env();
+    ERL_NIF_TERM msg =
+        enif_make_tuple2(msg_env, enif_make_atom(msg_env, "exec_ready"),
+                         enif_make_copy(msg_env, argv[0]));
+    if (enif_select_read(env, ex->status_fd, ex, NULL, msg, msg_env) < 0) {
+        enif_free_env(msg_env);
+        return make_error(env, "select_failed");
+    }
+    return enif_make_atom(env, "ok");
+}
+
+static void exec_finish(ErlNifEnv *env, exec_t *ex) {
+    ex->finished = 1;
+    if (ex->status_fd >= 0) {
+        enif_select(env, ex->status_fd, ERL_NIF_SELECT_STOP, ex, NULL,
+                    enif_make_atom(env, "undefined"));
+        ex->status_fd = -1;
+    }
+}
+
+// exec_read(exec_ref) ->
+//     {:exited, code} | {:signaled, signal} | {:failed, stage, errno} |
+//     :killed | :wouldblock | {:error, reason}
+//
+// :killed means the helper died without reporting — its process group was
+// killed. Any result other than :wouldblock is final and closes the pipe.
+static ERL_NIF_TERM exec_read_nif(ErlNifEnv *env, int argc,
+                                  const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    exec_t *ex;
+    if (!enif_get_resource(env, argv[0], EXEC_TYPE, (void **)&ex)) {
+        return enif_make_badarg(env);
+    }
+    if (ex->status_fd < 0) return make_error(env, "closed");
+
+    char line[96];
+    ssize_t n;
+    do {
+        n = read(ex->status_fd, line, sizeof(line) - 1);
+    } while (n < 0 && errno == EINTR);
+
+    if (n < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return enif_make_atom(env, "wouldblock");
+        int err = errno;
+        exec_finish(env, ex);
+        return make_error_errno(env, err);
+    }
+    exec_finish(env, ex);
+    if (n == 0) return enif_make_atom(env, "killed");
+
+    // The helper writes one line well under PIPE_BUF, so it arrives whole.
+    line[n] = '\0';
+    int value, err;
+    char stage[24];
+    if (sscanf(line, "exited %d", &value) == 1) {
+        return enif_make_tuple2(env, enif_make_atom(env, "exited"), enif_make_int(env, value));
+    }
+    if (sscanf(line, "signaled %d", &value) == 1) {
+        return enif_make_tuple2(env, enif_make_atom(env, "signaled"), enif_make_int(env, value));
+    }
+    if (sscanf(line, "failed %23s %d", stage, &err) == 2) {
+        return enif_make_tuple3(env, enif_make_atom(env, "failed"),
+                                enif_make_atom(env, stage), errno_term(env, err));
+    }
+    return make_error(env, "bad_status");
+}
+
+// exec_kill(exec_ref) -> :ok | {:error, :finished}
+// SIGKILL to the whole process group: the helper and the program.
+static ERL_NIF_TERM exec_kill_nif(ErlNifEnv *env, int argc,
+                                  const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    exec_t *ex;
+    if (!enif_get_resource(env, argv[0], EXEC_TYPE, (void **)&ex)) {
+        return enif_make_badarg(env);
+    }
+    if (ex->finished) return make_error(env, "finished");
+    if (kill(-ex->pgid, SIGKILL) != 0 && errno != ESRCH) return make_error_errno(env, errno);
+    return enif_make_atom(env, "ok");
+}
+
+// reclaim(tty_ref) -> :ok | {:error, reason}
+//
+// Make the BEAM's process group the terminal's foreground again. After a
+// program ran, the BEAM is a background group, and tcsetpgrp from there
+// raises SIGTTOU — which stops the whole VM under a job-control shell, and OTP
+// cannot handle it. Blocking it in this thread is enough: the kernel checks
+// the calling thread's mask.
+static ERL_NIF_TERM reclaim_nif(ErlNifEnv *env, int argc,
+                                const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    tty_fd_t *tty;
+    if (!enif_get_resource(env, argv[0], TTY_FD_TYPE, (void **)&tty)) {
+        return enif_make_badarg(env);
+    }
+    if (tty->fd < 0) return make_error(env, "closed");
+
+    sigset_t block, saved;
+    sigemptyset(&block);
+    sigaddset(&block, SIGTTOU);
+    pthread_sigmask(SIG_BLOCK, &block, &saved);
+    int rc = tcsetpgrp(tty->fd, getpgrp());
+    int err = errno;
+    pthread_sigmask(SIG_SETMASK, &saved, NULL);
+
+    return rc == 0 ? enif_make_atom(env, "ok") : make_error_errno(env, err);
+}
+
+// foreground(tty_ref) -> boolean
+static ERL_NIF_TERM foreground_nif(ErlNifEnv *env, int argc,
+                                   const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    tty_fd_t *tty;
+    if (!enif_get_resource(env, argv[0], TTY_FD_TYPE, (void **)&tty)) {
+        return enif_make_badarg(env);
+    }
+    if (tty->fd < 0) return make_error(env, "closed");
+    return enif_make_atom(env, tcgetpgrp(tty->fd) == getpgrp() ? "true" : "false");
+}
+
 static ErlNifFunc nif_funcs[] = {
     {"open_nif",          0, open_nif,          ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"close_nif",         1, close_nif,         ERL_NIF_DIRTY_JOB_IO_BOUND},
@@ -332,7 +718,14 @@ static ErlNifFunc nif_funcs[] = {
     // arm_select needs to run on a normal scheduler (not dirty) because
     // enif_select_read requires the calling process to be the receiver.
     {"arm_select_nif",    1, arm_select_nif,    0},
-    {"read_nonblock_nif", 2, read_nonblock_nif, ERL_NIF_DIRTY_JOB_IO_BOUND}};
+    {"read_nonblock_nif", 2, read_nonblock_nif, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"exec_start_nif",    5, exec_start_nif,    ERL_NIF_DIRTY_JOB_IO_BOUND},
+    // Same constraint as arm_select: the caller is the notification target.
+    {"exec_arm_nif",      1, exec_arm_nif,      0},
+    {"exec_read_nif",     1, exec_read_nif,     ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"exec_kill_nif",     1, exec_kill_nif,     ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"reclaim_nif",       1, reclaim_nif,       ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"foreground_nif",    1, foreground_nif,    ERL_NIF_DIRTY_JOB_IO_BOUND}};
 
 ERL_NIF_INIT(Elixir.Harlock.Terminal.Termios, nif_funcs, on_load, NULL, NULL,
              NULL);
