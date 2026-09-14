@@ -47,9 +47,9 @@ defmodule Sysmon do
 
   def update({:key, {:char, ?n}, []}, %{dialog: :quit_confirm} = m), do: %{m | dialog: nil}
 
-  def update({:key, :down, []}, m), do: move_cursor(m, 1)
+  # ↑/↓ are routed by the focused table; j/k are not, so they stay app-handled.
+  def update({:harlock_select, :process_table, pid_str}, m), do: %{m | cursor: pid_str}
   def update({:key, {:char, ?j}, []}, m), do: move_cursor(m, 1)
-  def update({:key, :up, []}, m), do: move_cursor(m, -1)
   def update({:key, {:char, ?k}, []}, m), do: move_cursor(m, -1)
 
   def update(_, m), do: m

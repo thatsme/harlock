@@ -60,6 +60,11 @@ jobs:
       - name: Run tests
         run: mix test
 
+      # The examples have no unit tests; these catch a framework change that
+      # silently breaks one.
+      - name: Smoke tests
+        run: scripts/smoke.sh
+
       - name: Credo
         run: mix credo --strict
 

@@ -126,20 +126,8 @@ defmodule ContactsApp do
       else: search_key(model, {:char, ?d})
   end
 
-  # List navigation when the list is focused.
-  def update({:key, :down, []}, model) do
-    case Focus.current() do
-      :contact_list -> move_focus(model, +1)
-      _ -> search_key(model, :down)
-    end
-  end
-
-  def update({:key, :up, []}, model) do
-    case Focus.current() do
-      :contact_list -> move_focus(model, -1)
-      _ -> search_key(model, :up)
-    end
-  end
+  # List navigation: the focused table routes Up / Down itself.
+  def update({:harlock_select, :contact_list, id}, model), do: %{model | focused_id: id}
 
   # Catch-all: route remaining key events to the search input when it has focus.
   def update({:key, _, _} = event, model) do
@@ -364,24 +352,6 @@ defmodule ContactsApp do
       String.contains?(String.downcase(c.name), needle) or
         String.contains?(String.downcase(c.email), needle)
     end)
-  end
-
-  defp move_focus(model, delta) do
-    visible = visible_contacts(model)
-    ids = Enum.map(visible, & &1.id)
-
-    case Enum.find_index(ids, &(&1 == model.focused_id)) do
-      nil ->
-        case ids do
-          [first | _] -> %{model | focused_id: first}
-          [] -> model
-        end
-
-      idx ->
-        n = length(ids)
-        new_idx = rem(idx + delta + n, n)
-        %{model | focused_id: Enum.at(ids, new_idx)}
-    end
   end
 
   defp open_new_modal(model) do

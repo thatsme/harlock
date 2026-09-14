@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 
 case "$(uname -s)" in
   Darwin|*BSD) run_tty() { script -q /dev/null "$@"; } ;;
-  Linux)       run_tty() { script -qc "$*" /dev/null; } ;;
+  Linux)       run_tty() { script -qec "$*" /dev/null; } ;;
   *) echo "unsupported OS: $(uname -s)" >&2; exit 2 ;;
 esac
 
@@ -16,6 +16,7 @@ smokes=(
   priv/runtime_smoke.exs
   priv/focus_smoke.exs
   priv/sysmon_smoke.exs
+  priv/contacts_smoke.exs
 )
 
 failed=0

@@ -50,6 +50,14 @@ unless state_before.cursor != state_after.cursor do
   System.halt(1)
 end
 
+# j / k are not table navigation keys, so they still reach update/2.
+Harlock.Test.send_key(h, {:char, ?k})
+
+if Harlock.Test.model(h).cursor == state_after.cursor do
+  IO.puts(:stderr, "FAIL: cursor did not move back on k")
+  System.halt(1)
+end
+
 # Quit confirm + cancel
 Harlock.Test.send_key(h, {:char, ?q})
 frame = Harlock.Test.render(h)

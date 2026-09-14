@@ -68,6 +68,15 @@ changes are called out in the relevant release notes.
   `update/2` as raw `{:key, …}` events. This is the same class of change R2 made
   for `text_input` in v0.4. Set `handle_keys: false` on the element to keep the
   old behaviour. Keys that would not move anything still fall through.
+
+  An app that already handles `{:key, :up | :down, …}` for a focusable table
+  must match `{:harlock_select, id, row_id}` (or `{:harlock_scroll, id, offset}`
+  for a window function) instead: its own clauses stop being reached, and the new
+  message usually lands in a catch-all, so the arrows go dead with no error.
+  `examples/sysmon.exs` and `examples/contacts.exs` broke exactly this way and are
+  migrated. The contact list no longer wraps from the last row to the first.
+- `scripts/smoke.sh` runs in CI and covers `examples/contacts.exs`. The examples
+  have no unit tests, and the regression above was only visible by running them.
 - `table/1` documents that a window function runs during rendering, and what
   therefore belongs in it.
 
