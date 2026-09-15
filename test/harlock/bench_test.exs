@@ -102,12 +102,21 @@ defmodule Harlock.BenchTest do
       # A wrapped textarea memoises its wrap by value. render/2 hands the same
       # value every sample so the memo hits; varying it makes every sample miss,
       # which is what typing does.
+      #
+      # Compared by work done — this process's reductions — rather than by the
+      # timings: a miss costs one extra wrap per render, which a loaded CI
+      # runner can hide in wall-clock time (it did, 5364µs against 5451µs), but
+      # not in a count of work that load does not change. The trees are built
+      # up front so building them is not counted either.
       opts = [samples: 8, warmup: 1, rows: 60, cols: 80]
+      same = Bench.scenario(:textarea_wrapped, n: 120)
+      distinct = Map.new(1..9, &{&1, Bench.scenario(:textarea_wrapped, n: 120, edit: &1)})
 
-      cached = Bench.render(Bench.scenario(:textarea_wrapped, n: 120), opts)
-      varying = Bench.render_varying(&Bench.scenario(:textarea_wrapped, n: 120, edit: &1), opts)
+      cached = work(fn -> Bench.render(same, opts) end)
+      varying = work(fn -> Bench.render_varying(&Map.fetch!(distinct, &1), opts) end)
 
-      assert varying.p50 > cached.p50
+      # Measured at about 2.25 on a loaded machine, and steady across runs.
+      assert varying > cached * 1.5
     end
   end
 
@@ -167,6 +176,15 @@ defmodule Harlock.BenchTest do
       output = Bench.measure(fn -> :ok end, @fast) |> Bench.format()
       assert output =~ "measured"
     end
+  end
+
+  # Reductions this process spends running `fun` — a count of work, unmoved by
+  # whatever else the machine is doing.
+  defp work(fun) do
+    {:reductions, before} = Process.info(self(), :reductions)
+    fun.()
+    {:reductions, later} = Process.info(self(), :reductions)
+    later - before
   end
 
   defp rows_of(n) do
