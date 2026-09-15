@@ -1184,6 +1184,30 @@ found one gap, closed with a new message:
    leaves the model saying open, or moving `open` into the widget, which
    reverses a documented decision and helps no other widget.
 
+**`examples/showcase.exs`**, reworked — a clickable tab bar, log lines with
+styled levels and services, a pause button and a loop checkbox on the Widgets
+tab, and raw mouse events in the Keys tab. It found two questions:
+
+1. **An app cannot move focus.** Focus starts on the first focusable element in
+   tree order and moves only by Tab, clicks and traps. Making the tab bar
+   focusable, so a click switches tabs, put it first — so the log no longer
+   scrolls on the arrows at startup, and switching to the Keys tab leaves focus
+   on the tab bar, where Left and Right switch tabs instead of being captured.
+   The example asks for a Tab into the log or the event list. Contacts wanted
+   the same after saving: focus on the new contact's row, not back where the
+   dialog was opened. A way to ask for focus — a `Cmd`, or an option naming
+   the initial focus — would be additive; which shape, and whether a request
+   from `update/2` should win over a trap, is the question. The keyboard-only
+   alternative, `handle_keys: false` on the tab bar, is not one: it turns off
+   the click routing too, since both go through the same element.
+2. **The wheel does not reach an enclosing viewport.** Over the Form tab the
+   wheel lands on a `text_input`, which does not scroll, and the event goes to
+   `update/2` raw; the viewport around the fields is never asked. A viewport
+   scrolls on the wheel only when it is itself the element under the pointer
+   and focusable. Passing an unhandled wheel up to the nearest scrollable
+   ancestor would make every long form scroll; the viewport has no focus id to
+   report the offset under, which is the part to decide.
+
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
 

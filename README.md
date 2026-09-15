@@ -239,7 +239,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh counter    # simplest possible app — count up/down
 ./scripts/run.sh sysmon     # live BEAM process monitor
 ./scripts/run.sh contacts   # contact manager: search, list, dialog with buttons, mouse
-./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys
+./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys and mouse events
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
 ./scripts/run.sh explorer   # tree + select + menu: async-loaded nodes, focus changes, mouse
 ./scripts/run.sh dashboard  # telemetry + logger subscriptions into a sparkline
@@ -258,12 +258,12 @@ text_input fields, buttons and a checkbox, an overlay with focus_trap,
 async save via `Cmd.from`, styled text, a custom theme, a status bar with
 a current-focus indicator, and the mouse.
 
-`showcase` is a four-tab tour of the display widgets — a
-200-row scrollable log viewer with `viewport` + scrollbar, a long form
-that uses scroll-into-view to keep the focused field visible, a
-widget gallery with animated progress/spinner/statusbar/keybar, and a
-key-event inspector you can use to try out modified arrows
-(Ctrl-Up, Alt-Left, etc.).
+`showcase` is a four-tab tour of the display widgets — a clickable tab
+bar, a 200-row log viewer with `viewport` + scrollbar and styled levels, a
+long form that uses scroll-into-view to keep the focused field visible, a
+widget gallery with animated progress/spinner/statusbar/keybar and a
+button and checkbox driving them, and an event inspector for modified arrows
+(Ctrl-Up, Alt-Left, etc.) and the raw mouse events an app receives.
 
 `nodes` is a BEAM node explorer — `observer` for people on SSH — and the
 largest example: a process list, supervision trees, and memory over time. It

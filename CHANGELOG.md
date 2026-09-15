@@ -49,6 +49,15 @@ changes are called out in the relevant release notes.
   The filter closes when focus leaves it, through the new focus message above,
   which is what building it found missing. `test/examples/explorer_test.exs`
   covers it.
+- **`examples/showcase.exs` is rebuilt on v0.8's basics**: a focusable tab bar
+  that switches on a click or Left / Right, log lines with styled levels and
+  services, a pause button and a loop checkbox on the Widgets tab, and raw
+  mouse events next to key events in the Keys tab. Pausing now holds the
+  progress bar where it is instead of jumping to 100%. The tab bar takes the
+  first focus, so the log scrolls on the arrows after a Tab into it. Two
+  questions for the 1.0 freeze came out of it, recorded in the roadmap: an app
+  cannot move focus, and the wheel does not reach a viewport enclosing the
+  element under the pointer.
 
 ### Added
 

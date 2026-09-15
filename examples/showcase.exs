@@ -1,30 +1,34 @@
-# Showcase — a multi-tab demo of several widgets, using routed messages
-# (focused-widget keys are routed by the runtime; this app's update/2 owns
-# no manual apply_key dispatch):
-#
-#   - `tabs/1`         — horizontal tab bar
-#   - `viewport/1`     — scrollable container with scroll-into-view
-#   - `progress/1`     — bar widget driven by a Sub.interval
-#   - `spinner/1`      — single-cell animator
-#   - `statusbar/1`    — pinned top/bottom row helper
-#   - `keybar/1`       — context-aware shortcut row
-#   - Modified arrows  — Ctrl/Shift/Alt + arrow keys (Keys tab shows them)
-#
-# Run from the project root:
-#
+# Run with:
 #   ./scripts/run.sh showcase
 #
-# Tabs (Shift-Left / Shift-Right, or 1-4 outside the Form tab, to switch):
+# or directly:
+#   mix run examples/showcase.exs --run
 #
-#   1. Logs    — viewport scrolling over 200 lines, scrollbar, focus follows
-#   2. Form    — 14 text_inputs inside a viewport; Tab cycles fields and
-#                scroll-into-view + cursor remap keep the focused field visible
-#   3. Widgets — progress bar + spinner + animated statusbar via Sub.interval
-#   4. Keys    — captures and displays the last 12 key events (try modified
-#                arrows like Ctrl-Up or Alt-Left; Shift-Left/Right, 1-4 and q
-#                keep their meanings above)
+# Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
+# would not receive keystrokes.
 #
-# Quit: Ctrl-C from anywhere, or 'q' whenever no form field is focused.
+# A four-tab tour of the display widgets. Focused widgets have their keys routed
+# by the runtime, so update/2 holds no per-key dispatch for them:
+#
+#   * tabs          — the tab bar; Left / Right while it has focus, or a click
+#   * viewport      — a 200-line log with a scrollbar; the wheel scrolls it
+#   * text_input    — 14 fields inside a viewport, kept in view as Tab moves
+#   * progress, spinner, statusbar, keybar — driven by a Sub.interval
+#   * button, checkbox — pause the progress bar, and choose whether it loops
+#   * styled text   — the header, and each log line's level and service
+#   * mouse         — clicks on tabs, fields and controls; the Keys tab shows
+#                     the raw mouse events nothing else takes
+#   * modified keys — Ctrl / Shift / Alt with arrows, shown in the Keys tab
+#
+# Tabs:
+#
+#   1. Logs    — Tab into the log, then arrows / PgUp / PgDn; [ and ] cycle alerts
+#   2. Form    — Tab cycles fields; scroll-into-view keeps the focused one visible
+#   3. Widgets — Space or the button pauses; the checkbox stops it looping
+#   4. Keys    — the last 12 key and mouse events
+#
+# Shift-Left / Shift-Right, or 1-4 outside the Form tab, switch tabs from
+# anywhere. Quit: Ctrl-C, or q whenever no form field has focus.
 
 defmodule ShowcaseApp do
   use Harlock.App
@@ -48,7 +52,7 @@ defmodule ShowcaseApp do
                     rem(i, 6)
                   )
 
-                "#{String.pad_leading(Integer.to_string(i), 3)}  #{level}  #{service}  #{msg}"
+                {String.pad_leading(Integer.to_string(i), 3), level, service, msg}
               end)
 
   @form_fields ~w(
@@ -69,7 +73,7 @@ defmodule ShowcaseApp do
         values: Map.new(@form_fields, &{&1, ""}),
         cursors: Map.new(@form_fields, &{&1, 0})
       },
-      widgets: %{progress: 0, working?: true}
+      widgets: %{progress: 0, working?: true, loop?: true}
     }
   end
 
@@ -80,7 +84,7 @@ defmodule ShowcaseApp do
   def update({:key, {:char, ?c}, [:ctrl]}, _model), do: :quit
 
   def update(:tick, model) do
-    progress = if model.widgets.working?, do: rem(model.widgets.progress + 2, 101), else: 100
+    progress = advance(model.widgets)
 
     %{
       model
@@ -100,19 +104,25 @@ defmodule ShowcaseApp do
   def update({:key, :right, [:shift]}, model), do: %{model | tab: cycle_tab(model.tab, +1)}
   def update({:key, :left, [:shift]}, model), do: %{model | tab: cycle_tab(model.tab, -1)}
 
+  # The focused tab bar routes Left / Right, and a click on a tab, here.
+  def update({:harlock_select, :tabs, tab}, model), do: %{model | tab: tab}
+
   # 'q' quits only when no input is focused.
   def update({:key, {:char, ?q}, []}, model) do
     if input_focused?(model), do: model, else: :quit
   end
 
-  # Keys tab: capture every key event verbatim into the history.
-  def update({:key, _, _} = ev, %{tab: :keys} = model) do
-    %{model | keys: Enum.take([format_event(ev) | model.keys], 12)}
-  end
+  # Keys tab: every key and mouse event that reaches update/2, verbatim. Routed
+  # keys and clicks on focusable elements become widget messages instead, so
+  # what shows here is what the app itself would have to handle.
+  def update({tag, _, _} = ev, %{tab: :keys} = model)
+      when tag in [:key, :key_repeat, :key_release],
+      do: capture(model, ev)
 
-  # Logs tab: scrolling is now routed by the runtime via :logs_viewport
-  # (v0.4 R2). Tab is used by the runtime for focus traversal, so alert
-  # cycling moved to `[` / `]`.
+  def update({:mouse, _, _, _, _, _} = ev, %{tab: :keys} = model), do: capture(model, ev)
+
+  # Logs tab: scrolling is routed by the runtime via :logs_viewport. Tab is
+  # used by the runtime for focus traversal, so alert cycling is on `[` / `]`.
   def update({:harlock_scroll, :logs_viewport, n}, model) do
     %{model | logs: %{model.logs | offset: n}}
   end
@@ -129,18 +139,21 @@ defmodule ShowcaseApp do
     %{model | logs: %{model.logs | focused_alert: next}}
   end
 
-  # Form tab: routed text-input edit — the runtime auto-routes the focused
-  # field's apply_key result to this clause (v0.4 R2).
+  # Form tab: the runtime routes the focused field's edits to this clause.
   def update({:harlock_edit, {:form_field, field}, {v, c}}, model) do
     new_values = Map.put(model.form.values, field, v)
     new_cursors = Map.put(model.form.cursors, field, c)
     %{model | form: %{model.form | values: new_values, cursors: new_cursors}}
   end
 
-  # Widgets tab: space toggles working/paused.
-  def update({:key, {:char, ?\s}, []}, %{tab: :widgets} = model) do
-    %{model | widgets: %{model.widgets | working?: not model.widgets.working?}}
-  end
+  # Widgets tab: Space anywhere on the tab, or the button, pauses and resumes.
+  # A focused button takes Space itself, so the raw-key clause only sees it
+  # when something else has focus.
+  def update({:key, {:char, ?\s}, []}, %{tab: :widgets} = model), do: toggle_working(model)
+  def update({:harlock_submit, :pause}, model), do: toggle_working(model)
+
+  def update({:harlock_toggle, :loop, loop?}, model),
+    do: %{model | widgets: %{model.widgets | loop?: loop?}}
 
   def update(_ev, model), do: model
 
@@ -160,15 +173,18 @@ defmodule ShowcaseApp do
   end
 
   defp header(_model) do
-    text(
-      " Harlock Showcase " <>
-        String.duplicate(" ", 80) <> " viewport · tabs · widgets · modified keys ",
-      style: %Style{bold: true, fg: :cyan, reverse: true}
+    hbox(
+      constraints: [fill: 1, fill: 1],
+      children: [
+        text([{" Harlock ", bold: true, reverse: true, fg: :cyan}, {" Showcase", bold: true}]),
+        text("viewport · tabs · widgets · keys · mouse ", align: :right, style: [dim: true])
+      ]
     )
   end
 
   defp tab_bar(model) do
     tabs(
+      focusable: :tabs,
       items: [
         {:logs, "1. Logs"},
         {:form, "2. Form"},
@@ -224,21 +240,28 @@ defmodule ShowcaseApp do
     )
   end
 
-  defp log_line(line, _idx, true) do
-    text("▶ " <> line, style: %Style{bold: true, fg: :yellow})
+  # The alert row is highlighted whole; the others colour only their level and
+  # service, which is what styled runs are for.
+  defp log_line({n, level, service, msg}, _idx, true) do
+    text("▶ #{n}  #{String.pad_trailing(level, 5)}  #{String.pad_trailing(service, 9)}  #{msg}",
+      style: %Style{bold: true, fg: :yellow}
+    )
   end
 
-  defp log_line(line, _idx, false) do
-    style =
-      cond do
-        String.contains?(line, "ERROR") -> %Style{fg: :red}
-        String.contains?(line, "WARN") -> %Style{fg: :yellow}
-        String.contains?(line, "DEBUG") -> %Style{dim: true}
-        true -> %Style{}
-      end
-
-    text("  " <> line, style: style)
+  defp log_line({n, level, service, msg}, _idx, false) do
+    text([
+      {"  #{n}  ", dim: true},
+      {String.pad_trailing(level, 5), level_style(level)},
+      "  ",
+      {String.pad_trailing(service, 9), fg: :cyan},
+      "  " <> msg
+    ])
   end
+
+  defp level_style("ERROR"), do: [fg: :red, bold: true]
+  defp level_style("WARN"), do: [fg: :yellow]
+  defp level_style("DEBUG"), do: [dim: true]
+  defp level_style(_info), do: [fg: :green]
 
   defp logs_legend(model) do
     box(
@@ -329,10 +352,12 @@ defmodule ShowcaseApp do
         widget_card(
           "Worker",
           hbox(
-            constraints: [length: 2, fill: 1],
+            constraints: [length: 2, length: 10, length: 13, fill: 1],
             children: [
               spinner(tick: model.tick, style: %Style{fg: :magenta}),
-              text("   " <> state_label, style: %Style{bold: true})
+              text(state_label, style: %Style{bold: true}),
+              button(if(model.widgets.working?, do: "Pause", else: "Resume"), focusable: :pause),
+              checkbox("Loop when done", checked: model.widgets.loop?, focusable: :loop)
             ]
           )
         ),
@@ -363,6 +388,13 @@ defmodule ShowcaseApp do
     )
   end
 
+  defp advance(%{working?: false, progress: p}), do: p
+  defp advance(%{loop?: true, progress: p}), do: rem(p + 2, 101)
+  defp advance(%{progress: p}), do: min(p + 2, 100)
+
+  defp toggle_working(model),
+    do: %{model | widgets: %{model.widgets | working?: not model.widgets.working?}}
+
   defp widget_card(title, child) do
     box(
       title: " " <> title <> " ",
@@ -375,18 +407,42 @@ defmodule ShowcaseApp do
 
   # -- Keys tab --
 
+  # The event list is focusable so that keys reach update/2 raw once it has
+  # focus — on the tab bar, Left and Right switch tabs instead. It opts out of
+  # the mouse, so a click inside it arrives raw too rather than focusing it.
   defp keys_body(model) do
     rows =
       case model.keys do
-        [] -> [text("Press any key. Try Ctrl-Up, Shift-Right, Alt-A …", style: %Style{dim: true})]
-        keys -> Enum.map(keys, &text/1)
+        [] ->
+          [
+            text("Tab here, then press keys: try Ctrl-Up, Shift-Right, Alt-A …",
+              style: [dim: true]
+            ),
+            text("Click, right-click or scroll anywhere in this box.", style: [dim: true])
+          ]
+
+        keys ->
+          Enum.map(keys, &text/1)
       end
 
-    vbox(
-      constraints: Enum.map(rows, fn _ -> {:length, 1} end) ++ [fill: 1],
-      children: rows ++ [spacer()]
+    box(
+      title: " events ",
+      border: :rounded,
+      border_style: %Style{fg: :bright_black},
+      focus_proxy: :capture,
+      handle_mouse: false,
+      padding: {0, 1},
+      child:
+        vbox(
+          focusable: :capture,
+          handle_mouse: false,
+          constraints: Enum.map(rows, fn _ -> {:length, 1} end) ++ [fill: 1],
+          children: rows ++ [spacer()]
+        )
     )
   end
+
+  defp capture(model, ev), do: %{model | keys: Enum.take([format_event(ev) | model.keys], 12)}
 
   defp format_event({:key, key, mods}) do
     parts =
@@ -405,6 +461,13 @@ defmodule ShowcaseApp do
 
   defp format_event({:key_repeat, k, m}), do: "  ↻ " <> format_event({:key, k, m})
   defp format_event({:key_release, k, m}), do: "  ↑ " <> format_event({:key, k, m})
+
+  defp format_event({:mouse, action, button, col, row, mods}) do
+    what = Enum.map_join(Enum.reject([action, button], &is_nil/1), " ", &Atom.to_string/1)
+    held = Enum.map_join(mods, "", &"#{&1} + ")
+    "  mouse #{held}#{what} at #{col},#{row}"
+  end
+
   defp format_event(other), do: "  " <> inspect(other)
 
   # -- Status / key rows --
@@ -429,6 +492,7 @@ defmodule ShowcaseApp do
     do:
       keybar(
         bindings: [
+          {"Tab", "focus log"},
           {"↑↓", "scroll"},
           {"PgUp/PgDn", "page"},
           {"[ ]", "alert"},
@@ -455,6 +519,7 @@ defmodule ShowcaseApp do
       keybar(
         bindings: [
           {?\s, "pause / resume"},
+          {"Tab", "button, checkbox"},
           {"Shift-←→", "switch tab"},
           {?q, "quit"}
         ],
@@ -465,6 +530,7 @@ defmodule ShowcaseApp do
     do:
       keybar(
         bindings: [
+          {"Tab", "focus events"},
           {"any key", "captured"},
           {"Shift-←→", "switch tab"},
           {"Ctrl-C", "quit"}
