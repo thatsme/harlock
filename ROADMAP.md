@@ -4,10 +4,10 @@ A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan through v1.0 (stable API). It's a living
-document — revised as the design settles. v0.8.0 is current and published
-on Hex.
+document — revised as the design settles. v0.9.0 is current. v0.10 makes the
+freeze decisions, and 1.0 follows it.
 
-## Status snapshot (v0.8.0, current)
+## Status snapshot (v0.9.0, current)
 
 What works:
 
@@ -29,13 +29,18 @@ What works:
   automatic stash/restore on open/close.
 - Focus-aware key routing (v0.4): the runtime dispatches navigation keys
   straight to the focused `viewport` / `tabs` / `text_input` / `textarea` /
-  `menu` / `select` / `tree` / `table` / `button` / `checkbox` and delivers the
-  result as a message, so apps no longer hand-wire `apply_key` helpers.
+  `menu` / `select` / `tree` / `table` / `button` / `checkbox` / `radio_group` and
+  delivers the result as a message, so apps no longer hand-wire `apply_key`
+  helpers. Focus moves themselves reach `update/2` as `{:harlock_focus, from, to}`,
+  and `Harlock.Focus.current/0` in `view/1` reports the focus the frame is drawn
+  with.
 - Mouse (opt-in, `mouse: true`): clicks focus elements and act on buttons,
-  checkboxes, table rows, menu items, tree nodes and markers, tabs, `select`
-  choices and `text_input` positions; the wheel scrolls viewports and tables.
-  Routed through the same messages as keys, and turned off on every exit. `box(focus_proxy:)` lets a container
-  mirror a child's focus for styling without joining traversal.
+  checkboxes, table rows and check-list items, menu items, tree nodes and
+  markers, tabs, radio options, `select` choices, and cursor positions in
+  `text_input` and `textarea`; the wheel scrolls viewports and tables. Routed
+  through the same messages as keys, and turned off on every exit.
+  `box(focus_proxy:)` lets a container mirror a child's focus without joining
+  traversal, and takes clicks on its border and padding for that child.
 - Push-shaped subscriptions: `Sub.telemetry` and `Sub.logger` turn `:telemetry`
   events and log calls into `update/2` messages, `Sub.source` subscribes to
   anything that sends to its subscriber (Phoenix.PubSub, registries, `:global`
@@ -60,11 +65,16 @@ What works:
   (render-then-clip + scroll-into-view + cursor remap), `progress`, `spinner`,
   `statusbar`, `keybar`, `tabs`, `menu`, `select` (dropdown that flips rather
   than clipping near a margin), `tree` (flat projection, id-keyed expansion,
-  lazily loaded children), `button` and `checkbox`.
+  lazily loaded children), `button`, `checkbox` and `radio_group`. `list` is a
+  list box, and with `selection: {:multi, set}` and `marker: :checkbox` a check
+  list toggled by Space or a click.
 - Undo / redo via `Harlock.UndoStack` — bounded snapshots the app holds in its
   model, with coalescing that breaks on a newline, a cursor jump, or a delete
   after an insert.
 - Wide-grapheme width (CJK, emoji, ZWJ sequences, flags).
+- Log output is held back while an app owns the terminal — the console
+  handlers are muted and mirrored — and printed after it is restored, a crash
+  report included.
 - Terminal resize reflows: SIGWINCH reaches Keeper through a handler on
   `erl_signal_server`, Keeper reads `ioctl(TIOCGWINSZ)` through the NIF, and the
   runtime clears and redraws at the new size. Checked in a real pty in CI.
@@ -76,11 +86,15 @@ What works:
   tests without a TTY — with stand-ins for `Cmd.exec` and `Cmd.suspend` and
   synthetic mouse events.
 - Examples: `counter`, `sysmon`, `contacts`, `showcase`, `overview`, `notes`,
-  `explorer`, `dashboard`, `nodes`.
+  `explorer`, `dashboard`, `nodes`, `editor` — all on the v0.8 basics, all with
+  the mouse on, and all tested under `test/examples`: started with the options
+  their `--run` uses, compiled without warnings, and with the README's
+  `overview` snippet checked against its source.
 - Smoke tests in a real pty, run by `scripts/smoke.sh` in CI on Linux and checked
   on macOS: the runtime, focus, resize, `Cmd.exec` (native layer, runtime
-  handover, typed input), crash restoration, suspend under a job-control shell,
-  mouse reporting on and off, and two examples.
+  handover, typed input, Ctrl-Z inside a program), crash restoration, suspend
+  under a job-control shell, mouse reporting on and off, log output held back,
+  and two examples.
 - Packaging and quality gates: Hex package metadata, published hexdocs, CI,
   Dialyzer, and Credo all wired in.
 
@@ -93,11 +107,10 @@ What's stubbed / missing — the honest list:
 - No windowed aggregation for metrics (rates, percentiles over a trailing
   window) — 1.1+. Counts and means are a few lines of `Enum` in the model.
 - Styled runs are accepted by `text`, `button` and `checkbox`. Box titles, tab
-  labels and table cells still take a plain binary.
+  labels, radio options and table cells still take a plain binary.
 - **Apps do not work under IEx.** IEx's terminal driver reads the same tty, and a
   Harlock app started from an IEx prompt received no keystrokes when tested.
-  Run apps with `mix run`. Several example headers suggest starting them from
-  `iex -S mix`, which is wrong and due for correction with the examples.
+  Run apps with `mix run`; every example header says so.
   The `:ssh` backend (1.1+) avoids the contention altogether.
 - Mouse: no drag gestures, no motion without a button held, no double-click —
   until an application needs one.
@@ -142,14 +155,14 @@ What's stubbed / missing — the honest list:
 
 ## Versioning
 
-- **0.x** — API may break. We document breaking changes in CHANGELOG.
+- **0.x** — API may break. Breaking changes are documented in the CHANGELOG.
 - **1.0** — locked public API. The core is certain: `Harlock`, `Harlock.App`,
   `Harlock.Elements`, `Harlock.Cmd`, `Harlock.Sub`, `Harlock.Render.Style`,
   `Harlock.Layout`, `Harlock.Text`. The rest of what is documented today —
   `Harlock.Test`, `Harlock.Theme`, `Harlock.Focus`, the widget helper modules,
   `Harlock.TextBuffer`, `Harlock.UndoStack`, `Harlock.Width`, `Harlock.Telemetry`,
   `Harlock.Bench`, and `Harlock.Terminal.Termios`, the one terminal module with
-  public documentation — is decided module by module in v0.9's freeze pass.
+  public documentation — is decided module by module in v0.10's freeze pass.
   Internal modules (the runtime, the renderer, the rest of the terminal layer)
   stay `@moduledoc false` and remain free to change without notice.
 
@@ -883,8 +896,9 @@ and metrics helper stay in 1.1+ because of it.
 It did not survive an audit of what the library cannot do. A terminal UI library
 that cannot style a word inside a sentence, hand the terminal to `$EDITOR`, or
 notice the window being resized is not ready to freeze. So the basics came first
-and shipped as v0.8.0; the freeze prep that was the second half of this
-milestone follows as v0.9.
+and shipped as v0.8.0. The freeze prep that was the second half of this milestone
+was split again: v0.9 built the examples into real applications on those basics,
+and v0.10 makes the freeze decisions they turned up.
 
 ### The missing basics
 
@@ -1046,12 +1060,26 @@ provide it itself (principle 8). Each item says which applies.
 
 ---
 
-## v0.9 — freeze prep (next, and the last milestone before 1.0)
+## v0.9 — built on real applications ✓ (shipped as v0.9.0)
 
-The second half of what v0.8 was planned to be. Nothing in this milestone adds a
-feature: it is the work that decides what 1.0 commits to. The freeze decisions
-depend on the shapes v0.8 settled and on what building a real application on
-them turns up.
+Planned as freeze prep: build real applications on v0.8's basics, then decide
+what 1.0 commits to. The first half turned into a release of its own. Rebuilding
+every example on the basics found defects no test had caught and widgets a
+terminal UI library is expected to have, and those were fixed and added rather
+than held for the freeze. What it left open is the agenda for v0.10.
+
+What came out of it, fixed or added in 0.9.0:
+
+- Dialogs cover what is behind them; `Focus.current/0` in `view/1` is not a
+  frame late; log output no longer draws over a running app.
+- `{:harlock_focus, from, to}` tells an app when focus moves.
+- `radio_group/1`; check lists and list boxes on `list/2`; clicks in a
+  `textarea`; clicks on a `focus_proxy` box's border.
+- Ctrl-Z inside a program started by `Cmd.exec` suspends to the shell.
+- Every example tested under `test/examples`, started as `--run` starts it and
+  compiled without warnings; a new example, `editor`.
+
+The entries below record each example's findings as they were found.
 
 ### Build one real application first
 
@@ -1279,6 +1307,43 @@ things, both fixed:
 2. **The README's `overview` snippet had drifted from the example** ✓, in its
    comments. A test now compares the two.
 
+## v0.10 — freeze decisions (next, and the last milestone before 1.0)
+
+The second half of the original freeze prep. Nothing here is planned as a
+feature: it is the work that decides what 1.0 commits to. Some answers will be
+additions, and those are cheaper before the freeze than after, because the
+shape they give an existing element is what gets frozen.
+
+### Questions the examples left open
+
+Each is written up in full under the v0.9 entry of the example that raised it.
+Decide each one — add, reshape, or leave as it is and say so — before freezing.
+
+1. **An app is never told the terminal size** (`editor`). Wrapped text in a
+   `viewport` cannot be sized. Options: `viewport(content_height: :auto)`, a
+   size message to `update/2`, or both.
+2. **`table` has no message for Enter** (`editor`, `contacts`). Opening the
+   selected row needs a raw key clause guarded by `Focus.current/0`; a routed
+   `{:harlock_submit, id}` would match `menu` and `tree`.
+3. **Table cells, box titles, tab labels and radio options take plain strings**
+   (`contacts`). Styled runs there would be additive, but they are the shape
+   those options freeze with.
+4. **`focus_proxy` names one id** (`contacts`). A pane of several controls can
+   neither light its border nor take clicks for them.
+5. **An app cannot move focus** (`showcase`, `nodes`, `contacts`). No initial
+   focus, no focus after saving, no focus into a tab's body. A `Cmd` or an
+   option; and whether a request from `update/2` overrides a trap.
+6. **The wheel does not reach an enclosing viewport** (`showcase`). A long form
+   does not scroll on the wheel over its fields. Bubbling is easy; reporting an
+   offset for a viewport without a focus id is the decision.
+7. **A windowed table cannot be moved through row by row from the keyboard**
+   (`nodes`). Moving `:focused_row` inside the window and scrolling at its edges
+   would give the arrows a second meaning.
+8. **A table header does not take clicks** (`sysmon`). Sort-by-column needs a
+   `{:column, …}` part and a message for it.
+
+### An application built by someone else
+
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
 
@@ -1313,7 +1378,8 @@ Two calls that should be made in the audit rather than by default:
   guides (`guides/getting_started.md`, `guides/widgets.md`,
   `guides/testing.md`, `guides/embedding.md`).
 - **Examples expansion**: filemgr (two-pane), todo (text_input + list),
-  log_viewer (viewport + filter), git_branch_picker (tree).
+  log_viewer (viewport + filter), git_branch_picker (tree) — only where one would
+  exercise something the ten examples do not.
 - **Caps refinement**: detect terminfo entries properly; fallback table for
   common terminals. Whether the caps struct becomes public is a freeze decision
   — see above — not a side effect of documenting it. The low-capability path
@@ -1326,8 +1392,8 @@ Two calls that should be made in the audit rather than by default:
 ## v1.0 — stable API
 
 - Public API frozen per the `@moduledoc` decisions above.
-- v0.8's missing basics landed and v0.9's freeze prep complete, including at
-  least one real application built on the API.
+- v0.8's missing basics landed, v0.9's applications built on them, and v0.10's
+  freeze decisions made, including an application built by someone else.
 - Announcement post + Reddit/Elixir Forum thread.
 - Minimum supported: Elixir 1.19+, OTP 26+ — matching the `elixir: "~> 1.19"`
   requirement `mix.exs` already ships. CI tests OTP 28 only, so the OTP floor

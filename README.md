@@ -152,7 +152,7 @@ Harlock.run(Overview, nil, mouse: true)
 
 ```elixir
 def deps do
-  [{:harlock, "~> 0.8"}]
+  [{:harlock, "~> 0.9"}]
 end
 ```
 
@@ -192,7 +192,7 @@ Compared to alternatives:
 
 ## Status
 
-Harlock is `v0.8`. The API is intentionally narrow and stable for the
+Harlock is `v0.9`. The API is intentionally narrow and stable for the
 primitives it ships; widgets and ergonomics are still landing.
 Anything `@moduledoc false` is internal and free to change.
 
@@ -207,6 +207,7 @@ Anything `@moduledoc false` is internal and free to change.
 | Focus traversal + focus_trap overlays | ✓ |
 | Focus-aware key routing (`viewport` / `tabs` / `text_input` / `textarea` / `menu` / `select` / `tree` / `table` / `button` / `checkbox` / `radio_group`) | ✓ |
 | Wide-grapheme width (CJK, emoji, ZWJ, flags) | ✓ |
+| Log output held back while an app runs, printed after it exits | ✓ (v0.9) |
 | Theme tokens (`:header`, `:focus`, `:selection`, `:border`, `:primary`, `:accent`, `:muted`, `:error`) | ✓ (full set in v0.4) |
 | Built-in themes (`:default` / `:dark` / `:high_contrast`) | ✓ (v0.4) |
 | Caps-aware color downgrade (truecolor → 256 → 16 → mono) | ✓ (v0.4) |
@@ -224,7 +225,7 @@ Anything `@moduledoc false` is internal and free to change.
 | `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ |
 | `:telemetry` events (frame render, input dispatch, cmd, reader) | ✓ |
 | Modified arrows / Home / End / F-keys (parser) | ✓ |
-| Mouse: clicks on elements and the items inside them, wheel scrolls (`mouse: true`) | ✓ (v0.8) |
+| Mouse: clicks on elements and the items inside them, wheel scrolls (`mouse: true`) | ✓ (v0.8; `textarea`, radio and check-list clicks v0.9) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | `tree` / `menu` / `select` widgets | ✓ (v0.5) |
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
@@ -241,15 +242,15 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ## Examples
 
 ```sh
-./scripts/run.sh counter    # simplest possible app — count up/down
+./scripts/run.sh counter    # simplest possible app — count up/down, by key or button
 ./scripts/run.sh sysmon     # live BEAM process monitor: sort, pause, dialogs with buttons, mouse
 ./scripts/run.sh contacts   # contact manager: search, list, dialog with buttons, mouse
 ./scripts/run.sh showcase   # tabs, viewport, widgets, form inputs, key and mouse events
-./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
+./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing, undo, click to place
 ./scripts/run.sh explorer   # tree + select + menu: async-loaded nodes, focus changes, mouse
 ./scripts/run.sh dashboard  # telemetry + logger subscriptions: sparkline, scrollable log, controls
 ./scripts/run.sh nodes      # BEAM node explorer: windowed table, lazy supervision tree, mouse
-./scripts/run.sh overview   # the README's second snippet
+./scripts/run.sh overview   # the README's second snippet: table, viewport, Cmd, mouse
 ./scripts/run.sh editor     # file browser: open files in $VISUAL/$EDITOR, Ctrl-Z, mouse
 ```
 
@@ -257,6 +258,10 @@ The `scripts/run.sh` wrapper is in the GitHub repo — clone the repo to
 run the examples. The hex package itself is the library; apps depend
 on `:harlock` and build their own runtime entry point (see the Counter
 snippet above).
+
+Every example runs with the mouse on and has tests under `test/examples`, which
+start each one with the options its `--run` uses and fail if any example
+compiles with a warning.
 
 `contacts` exercises most of the core primitives: tab focus traversal,
 text_input fields, buttons and a checkbox, an overlay with focus_trap,
@@ -311,6 +316,16 @@ by a click elsewhere, through `{:harlock_focus, from, to}`. The filtered node
 list is rebuilt from the model in `view/1` rather than handed to the widget,
 because the model owns what is displayed. The mouse works throughout: node
 markers, rows, filter choices, actions, and pane borders.
+
+`sysmon` is a live process table refreshed on a timer. A radio group picks the
+sort order, unticking Live drops the interval from `subs/1` so the rows hold
+still for reading, and help and quit are overlays with buttons that trap
+focus while `y`, `n` and Esc keep working.
+
+`notes` is one `textarea` and one `update/2` clause for every edit: typing,
+word motions and kills, vertical motion that keeps its goal column, and a click
+that places the cursor all arrive as the same `{:harlock_edit, …}` message.
+Undo and redo come from `Harlock.UndoStack`, held in the model.
 
 ## Testing your app
 

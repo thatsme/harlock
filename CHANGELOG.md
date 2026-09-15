@@ -10,6 +10,32 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-09-15
+
+Built on real applications: every example rebuilt on v0.8's basics, and what
+that turned up fixed or added rather than held for the freeze — log output
+drawn over the screen, dialogs that let the background show through, a
+focus reading a frame late, and the input widgets a settings or order form is
+made of: radio groups, check lists, list boxes, clicks in a textarea. The
+questions it left open are the agenda for v0.10, in the roadmap.
+
+**Upgrading from 0.8.**
+
+- Every app receives `{:harlock_focus, from, to}` when focus moves, including
+  the first focus at start. An `update/2` without a catch-all clause needs one.
+- Space on a focused `table` or `list` with `selection: {:multi, set}` now
+  arrives as `{:harlock_toggle, id, row_id}` instead of a raw key.
+- Log output is held back while an app runs and printed after it exits, rather
+  than written over the screen. To see log events inside an app, use
+  `Sub.logger/1`.
+- A `box` with `focus_proxy` takes clicks on its border and padding for the
+  child it mirrors; `handle_mouse: false` on the box turns that off.
+- `view/1` can run twice for one frame, when settling focus moves it — a first
+  frame, a trap opening or closing. A view that only builds elements is
+  unaffected.
+- Ctrl-Z inside a program started by `Cmd.exec` stops the app with it under a
+  job-control shell, instead of resuming the program at once.
+
 ### Fixed
 
 - **Log output no longer draws over a running app.** The console logger writes
@@ -1652,7 +1678,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/thatsme/harlock/releases/tag/v0.9.0
 [0.8.0]: https://github.com/thatsme/harlock/releases/tag/v0.8.0
 [0.7.0]: https://github.com/thatsme/harlock/releases/tag/v0.7.0
 [0.6.0]: https://github.com/thatsme/harlock/releases/tag/v0.6.0
