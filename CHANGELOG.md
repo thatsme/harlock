@@ -96,6 +96,14 @@ changes are called out in the relevant release notes.
   `test/examples/sysmon_test.exs` covers it. It raised a question for the 1.0
   freeze, recorded in the roadmap: a table header does not take clicks, so
   sorting by column title is not possible.
+- **`counter`, `notes` and `overview` get a light pass.** `counter` has `-` and
+  `+` buttons beside its keys; `notes` styles its status line and takes clicks
+  to place the cursor; `overview` takes clicks on tasks and the wheel on the
+  log. All three start with the mouse on. The README's second snippet, which
+  quotes `overview`, now starts it with `mouse: true`, and
+  `test/examples/overview_test.exs` fails when the snippet and the example
+  differ — they had drifted apart in their comments. `counter` and `notes`
+  gain tests in `test/examples/counter_notes_test.exs`.
 - **The examples are checked for compile warnings.** They are scripts, so
   `mix compile --warnings-as-errors` never saw them, and a warning in
   `examples/dashboard.exs` reached a user.
@@ -109,6 +117,13 @@ changes are called out in the relevant release notes.
 
 ### Added
 
+- **A click in a `textarea` places the cursor**, delivered as
+  `{:harlock_edit, id, {value, cursor}}` as it is for `text_input`. The click
+  maps through the rows the last frame drew, so it lands correctly in wrapped
+  and scrolled text, and past the end of a row it lands at the end. A click
+  also ends a run of vertical motion, so the next ↑ or ↓ in a textarea aims at
+  the clicked column rather than an older goal. Only `text_input` took clicks
+  before; a click in a textarea focused it and did nothing else.
 - **`radio_group/1`** — every option shown, one chosen, drawn as `(•) label` /
   `( ) label`, one per row or side by side (`direction: :horizontal`). When
   focused, the arrows move the choice itself, wrapping, with Home / End to the

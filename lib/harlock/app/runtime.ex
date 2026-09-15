@@ -250,7 +250,7 @@ defmodule Harlock.App.Runtime do
         state = focus_by_mouse(state, id)
 
         with {:noreply, state} <- announce_focus({:noreply, render(state)}) do
-          case click_messages(state, id, part, col - 1) do
+          case click_messages(state, id, part, {col - 1, row - 1}) do
             [] -> {:noreply, state}
             messages -> apply_updates(state, messages)
           end
@@ -292,56 +292,61 @@ defmodule Harlock.App.Runtime do
 
   defp announce_focus(result), do: result
 
-  defp focus_by_mouse(%{focused: id} = state, id), do: state
+  # A click ends any run of vertical motion, so the goal column goes either way:
+  # the next ↑ in a textarea aims at the clicked column, not an older one.
+  defp focus_by_mouse(%{focused: id} = state, id), do: %{state | goal_column: nil}
   defp focus_by_mouse(state, id), do: %{state | focused: id, goal_column: nil, dirty: true}
 
   # One clause per widget and part; a part the widget does not act on is []:
   # the press has already moved focus.
-  defp click_messages(state, id, part, col),
-    do: widget_click(Map.get(state.routed_widgets, id), part, id, state, col)
+  defp click_messages(state, id, part, pos),
+    do: widget_click(Map.get(state.routed_widgets, id), part, id, state, pos)
 
-  defp widget_click(%Element{type: :button}, nil, id, _state, _col), do: [{:harlock_submit, id}]
+  defp widget_click(%Element{type: :button}, nil, id, _state, _pos), do: [{:harlock_submit, id}]
 
-  defp widget_click(%Element{type: :checkbox, opts: opts}, nil, id, _state, _col),
+  defp widget_click(%Element{type: :checkbox, opts: opts}, nil, id, _state, _pos),
     do: [{:harlock_toggle, id, not Keyword.fetch!(opts, :checked)}]
 
   # A row drawn with a checkbox marker is a checkbox: a click moves the focus
   # there and toggles it, where a plain row only takes the focus.
-  defp widget_click(%Element{type: :table, opts: opts}, {:row, row_id}, id, _state, _col) do
+  defp widget_click(%Element{type: :table, opts: opts}, {:row, row_id}, id, _state, _pos) do
     if Keyword.get(opts, :marker) == :checkbox,
       do: [{:harlock_select, id, row_id}, {:harlock_toggle, id, row_id}],
       else: [{:harlock_select, id, row_id}]
   end
 
-  defp widget_click(%Element{type: :tabs}, {:tab, tab_id}, id, _state, _col),
+  defp widget_click(%Element{type: :tabs}, {:tab, tab_id}, id, _state, _pos),
     do: [{:harlock_select, id, tab_id}]
 
-  defp widget_click(%Element{type: :radio_group, opts: opts}, {:option, value}, id, _state, _col) do
+  defp widget_click(%Element{type: :radio_group, opts: opts}, {:option, value}, id, _state, _pos) do
     if value == Keyword.get(opts, :value), do: [], else: [{:harlock_select, id, value}]
   end
 
   # A click activates, as Enter does after the arrows moved there.
-  defp widget_click(%Element{type: :menu}, {:item, item_id}, id, _state, _col),
+  defp widget_click(%Element{type: :menu}, {:item, item_id}, id, _state, _pos),
     do: [{:harlock_select, id, item_id}, {:harlock_submit, id}]
 
   # The marker expands or collapses; the rest of the row selects.
-  defp widget_click(%Element{type: :tree}, {:marker, node_id}, id, _state, _col),
+  defp widget_click(%Element{type: :tree}, {:marker, node_id}, id, _state, _pos),
     do: [{:harlock_toggle, id, node_id}]
 
-  defp widget_click(%Element{type: :tree}, {:node, node_id}, id, _state, _col),
+  defp widget_click(%Element{type: :tree}, {:node, node_id}, id, _state, _pos),
     do: [{:harlock_select, id, node_id}]
 
   # On the control, the action key: the app opens the list, or commits the
   # highlight if it is already open. On a choice: highlight it, then commit.
-  defp widget_click(%Element{type: :select}, nil, id, _state, _col), do: [{:harlock_submit, id}]
+  defp widget_click(%Element{type: :select}, nil, id, _state, _pos), do: [{:harlock_submit, id}]
 
-  defp widget_click(%Element{type: :select}, {:choice, item_id}, id, _state, _col),
+  defp widget_click(%Element{type: :select}, {:choice, item_id}, id, _state, _pos),
     do: [{:harlock_select, id, item_id}, {:harlock_submit, id}]
 
-  defp widget_click(%Element{type: :text_input, opts: opts}, nil, id, state, col),
+  defp widget_click(%Element{type: :text_input, opts: opts}, nil, id, state, {col, _row}),
     do: text_input_click(state, id, opts, col)
 
-  defp widget_click(_element, _part, _id, _state, _col), do: []
+  defp widget_click(%Element{type: :textarea, opts: opts}, nil, id, state, pos),
+    do: textarea_click(state, id, opts, pos)
+
+  defp widget_click(_element, _part, _id, _state, _pos), do: []
 
   # Move the cursor to the clicked column. The input draws from its first
   # grapheme, so a column maps straight to the grapheme covering it; past the
@@ -355,6 +360,26 @@ defmodule Harlock.App.Runtime do
       if Keyword.get(opts, :password, false),
         do: min(column, String.length(value)),
         else: cursor_at_column(value, column)
+
+    if new_cursor == cursor, do: [], else: [{:harlock_edit, id, {value, new_cursor}}]
+  end
+
+  # Map the clicked cell to a display row and column inside the area, through
+  # the rows the last frame drew: scrolled by its top row, wrapped at its width.
+  # A click past the end of a row lands at the end of it.
+  defp textarea_click(state, id, opts, {col, row}) do
+    value = Keyword.fetch!(opts, :value)
+    cursor = Keyword.fetch!(opts, :cursor)
+    rect = HitRegions.rect_of(state.hit_regions, id)
+    metrics = Map.get(state.widget_metrics, id, %{})
+
+    new_cursor =
+      Harlock.TextArea.visual_cursor_at(
+        value,
+        Map.get(metrics, :textarea_top, 0) + row - rect.row,
+        col - rect.col,
+        Map.get(metrics, :textarea_wrap_width)
+      )
 
     if new_cursor == cursor, do: [], else: [{:harlock_edit, id, {value, new_cursor}}]
   end

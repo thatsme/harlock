@@ -18,6 +18,7 @@
 #     That is runtime-held state; the app never sees it.
 #   * Word motions and kills (Alt-B / Alt-F, Ctrl-W, Alt-Backspace, Ctrl-K,
 #     Ctrl-U, Ctrl-Y) come from Harlock.TextBuffer, shared with text_input.
+#   * A click places the cursor, wrapped or not, through the same message.
 
 defmodule Notes do
   use Harlock.App
@@ -89,13 +90,16 @@ defmodule Notes do
               placeholder: @placeholder,
               placeholder_style: [dim: true]
             ),
-            text(
-              "line #{line + 1}, col #{column + 1}   " <>
-                "#{TextArea.line_count(m.body)} lines   " <>
-                "wrap #{if m.wrap, do: "on", else: "off"}   " <>
-                "undo #{UndoStack.depth(m.undo)}",
-              style: [fg: :cyan]
-            ),
+            text([
+              {"line ", dim: true},
+              {"#{line + 1}", fg: :cyan, bold: true},
+              {", col ", dim: true},
+              {"#{column + 1}", fg: :cyan, bold: true},
+              {"   #{TextArea.line_count(m.body)} lines   wrap ", dim: true},
+              if(m.wrap, do: {"on", fg: :green}, else: {"off", fg: :yellow}),
+              {"   undo ", dim: true},
+              {"#{UndoStack.depth(m.undo)}", fg: :cyan}
+            ]),
             text(
               "[F2] wrap  [Ctrl-Z/R] undo/redo  [Ctrl-W/K/U] kill  [Ctrl-Y] yank  [Esc] quit",
               style: [dim: true]
@@ -104,11 +108,16 @@ defmodule Notes do
         )
     )
   end
+
+  @doc false
+  # The options `--run` starts the app with. The tests start it with these too,
+  # so a test cannot pass on an option the real app never sets.
+  def run_opts, do: [mouse: true]
 end
 
 # `--run` starts the app; without it the file only defines the module, which is
-# how the smoke tests load it.
+# how the tests load it.
 case System.argv() do
-  ["--run"] -> Harlock.run(Notes)
+  ["--run"] -> Harlock.run(Notes, nil, Notes.run_opts())
   _ -> :ok
 end

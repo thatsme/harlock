@@ -3,10 +3,11 @@
 # or:
 #   mix run examples/overview.exs --run
 #
-# End-to-end example for the README: focus traversal (Tab/Shift-Tab),
-# a focusable table with single-row selection, a focusable viewport whose
-# scroll keys arrive as routed {:harlock_scroll, ...} messages, and a Cmd
-# round-trip.
+# End-to-end example for the README, which quotes the module: focus traversal
+# (Tab/Shift-Tab), a focusable table with single-row selection, a focusable
+# viewport whose scroll keys arrive as routed {:harlock_scroll, ...} messages, a
+# Cmd round-trip, and the mouse: a click selects a task, the wheel scrolls the
+# log.
 
 defmodule Overview do
   use Harlock.App
@@ -39,13 +40,11 @@ defmodule Overview do
 
   def update({:refreshed, lines}, m), do: %{m | log: lines ++ m.log}
 
-  # R2 auto-routing: when the focused viewport handles a scroll key, the
-  # runtime computes the new offset and delivers this message. The app
-  # only needs to write where the offset lives on the model.
+  # The runtime auto-routes scroll keys to the focused viewport and
+  # delivers this message; the app just writes where the offset lives.
   def update({:harlock_scroll, :log, new_offset}, m), do: %{m | log_offset: new_offset}
 
-  # A focused table routes row movement the same way tabs and menu do. This
-  # replaced a Focus.current() dispatch plus three clauses of index arithmetic.
+  # A focused table routes row movement too, so there is no key dispatch here.
   def update({:harlock_select, :tasks, id}, m), do: %{m | selected: id}
 
   def update(_, m), do: m
@@ -62,9 +61,8 @@ defmodule Overview do
               border: :rounded,
               border_style: [dim: true],
               focus_style: [fg: :cyan, bold: true],
-              # :tasks lives on the table so the runtime can route row movement
-              # to it; the box mirrors its focus for the border, the same
-              # arrangement the Log box below uses for its viewport.
+              # :tasks lives on the table so row movement routes to it; the box
+              # mirrors its focus for the border.
               focus_proxy: :tasks,
               child:
                 table(
@@ -85,9 +83,8 @@ defmodule Overview do
               border: :rounded,
               border_style: [dim: true],
               focus_style: [fg: :cyan, bold: true],
-              # The :log id lives on the viewport inside, because that is what
-              # has to receive the scroll keys. focus_proxy: lets the box light
-              # up with it without joining focus traversal.
+              # :log lives on the viewport, because that is what receives the
+              # scroll keys. focus_proxy: lights the box up with it.
               focus_proxy: :log,
               child:
                 viewport(
@@ -103,14 +100,15 @@ defmodule Overview do
             )
           ]
         ),
-        text("Tab focus  arrows/PgUp/PgDn scroll  r refresh  q quit", style: [dim: true])
+        text("Tab focus  arrows/PgUp/PgDn or wheel scroll  click select  r refresh  q quit",
+          style: [dim: true]
+        )
       ]
     )
   end
-
 end
 
 case System.argv() do
-  ["--run"] -> Harlock.run(Overview)
+  ["--run"] -> Harlock.run(Overview, nil, mouse: true)
   _ -> :ok
 end

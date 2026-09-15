@@ -233,6 +233,80 @@ defmodule Harlock.App.RuntimeMouseTest do
     end
   end
 
+  defmodule TextAreaApp do
+    use Harlock.App
+
+    def init({value, cursor, wrap}), do: %{value: value, cursor: cursor, wrap: wrap}
+
+    def update({:harlock_edit, :notes, {value, cursor}}, m),
+      do: %{m | value: value, cursor: cursor}
+
+    def update(_, m), do: m
+
+    # Row 1 is a line of text; the textarea is rows 2–4, columns 3–12.
+    def view(m) do
+      vbox(
+        constraints: [length: 1, length: 3, fill: 1],
+        children: [
+          text("above"),
+          hbox(
+            constraints: [length: 2, length: 10, fill: 1],
+            children: [
+              spacer(),
+              textarea(focusable: :notes, value: m.value, cursor: m.cursor, wrap: m.wrap),
+              spacer()
+            ]
+          ),
+          spacer()
+        ]
+      )
+    end
+  end
+
+  describe "a click in a textarea" do
+    defp start_area(value, cursor, wrap \\ false),
+      do:
+        Harlock.Test.start_app(TextAreaApp, {value, cursor, wrap}, rows: 6, cols: 20, mouse: true)
+
+    test "places the cursor at the clicked line and column", %{} do
+      h = start_area("first\nsecond line\nthird", 0)
+
+      # Row 3 is the second line; column 5 is two cells into the area.
+      Harlock.Test.send_mouse(h, :press, :left, 5, 3)
+      assert Harlock.Test.model(h).cursor == String.length("first\n") + 2
+
+      # Past the end of a line: the end of that line.
+      Harlock.Test.send_mouse(h, :press, :left, 11, 2)
+      assert Harlock.Test.model(h).cursor == String.length("first")
+      Harlock.Test.stop(h)
+    end
+
+    test "counts display rows when wrapping and scrolled", %{} do
+      # Ten-cell rows: "aaaaaaaaaa" "bbbbbbbbbb" on one logical line, then more
+      # lines, with the cursor at the end so the area has scrolled down.
+      value = String.duplicate("a", 10) <> String.duplicate("b", 10) <> "\nc\nd\ne"
+      h = start_area(value, String.length(value), true)
+
+      # Five display rows, three visible: the top one drawn is "c" (row 2).
+      Harlock.Test.send_mouse(h, :press, :left, 3, 2)
+      assert Harlock.Test.model(h).cursor == 21
+      Harlock.Test.stop(h)
+    end
+
+    test "a click ends a run of vertical motion", %{} do
+      h = start_area("abcdef\nab\nabcdef", 5)
+
+      # ↓ from column 5 onto a two-column line remembers column 5 as the goal.
+      Harlock.Test.send_key(h, :down)
+      # Clicking column 1 of that line replaces the goal; ↓ then keeps column 1.
+      Harlock.Test.send_mouse(h, :press, :left, 4, 3)
+      Harlock.Test.send_key(h, :down)
+
+      assert Harlock.Test.model(h).cursor == String.length("abcdef\nab\n") + 1
+      Harlock.Test.stop(h)
+    end
+  end
+
   defmodule ItemsApp do
     use Harlock.App
 

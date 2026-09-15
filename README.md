@@ -137,14 +137,15 @@ defmodule Overview do
             )
           ]
         ),
-        text("Tab focus  arrows/PgUp/PgDn scroll  r refresh  q quit", style: [dim: true])
+        text("Tab focus  arrows/PgUp/PgDn or wheel scroll  click select  r refresh  q quit",
+          style: [dim: true]
+        )
       ]
     )
   end
-
 end
 
-Harlock.run(Overview)
+Harlock.run(Overview, nil, mouse: true)
 ```
 
 ## Installation

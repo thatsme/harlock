@@ -221,14 +221,18 @@ defmodule Harlock.Element.Renderer do
       style = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
       wrap_width = if Keyword.get(el.opts, :wrap, false) and region.w > 0, do: region.w
 
-      # The runtime needs the wrap width to route vertical motion by display
-      # row rather than logical line. nil when wrapping is off, which is
-      # exactly what TextArea.apply_key/5 expects.
-      WidgetMetrics.record(Keyword.get(el.opts, :focusable), %{textarea_wrap_width: wrap_width})
-
       rows = TextArea.visual_rows(value, wrap_width)
       {cursor_row, cursor_column} = TextArea.visual_position(value, cursor, wrap_width)
       top = TextArea.scroll_to_reveal(scroll, value, cursor, region.h, wrap_width)
+
+      # The runtime needs the wrap width to route vertical motion by display
+      # row rather than logical line — nil when wrapping is off, which is
+      # exactly what TextArea.apply_key/5 expects — and the first display row
+      # drawn, to map a click back to a cursor.
+      WidgetMetrics.record(Keyword.get(el.opts, :focusable), %{
+        textarea_wrap_width: wrap_width,
+        textarea_top: top
+      })
 
       frame =
         rows

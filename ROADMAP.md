@@ -1267,6 +1267,18 @@ the wheel on the table. It found one question:
    but it would be a new message shape, and table cells taking only plain
    strings means a sort arrow in the title is not styled either.
 
+**`counter`, `notes` and `overview`**, a light pass — buttons in `counter`,
+clicks in `notes` and `overview`, and the mouse on in all three. It found two
+things, both fixed:
+
+1. **A click in a `textarea` did not place the cursor** ✓. `text_input` had
+   taken clicks since the mouse arrived; a textarea only took focus. The click
+   now maps through the rows the last frame drew — wrapped and scrolled — to a
+   cursor, as `{:harlock_edit, …}`, and ends a run of vertical motion so the
+   goal column follows it.
+2. **The README's `overview` snippet had drifted from the example** ✓, in its
+   comments. A test now compares the two.
+
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
 

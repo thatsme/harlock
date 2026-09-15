@@ -155,8 +155,9 @@ defmodule Harlock.App do
       * a closed `select` — `{:harlock_submit, id}`, so the app opens it; one
         of its open choices — `{:harlock_select, id, item}` then
         `{:harlock_submit, id}`, so the app commits it;
-      * a `text_input` — `{:harlock_edit, id, {value, cursor}}` with the
-        cursor at the clicked column;
+      * a `text_input` or `textarea` — `{:harlock_edit, id, {value, cursor}}`
+        with the cursor at the clicked column, and in a textarea the clicked
+        line, counted in display rows when it wraps or scrolls;
     * the wheel over a `viewport` scrolls three lines as
       `{:harlock_scroll, id, offset}`, and over a `table` moves one row as
       the arrow keys would, without moving focus.
