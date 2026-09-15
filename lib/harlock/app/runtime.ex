@@ -89,6 +89,9 @@ defmodule Harlock.App.Runtime do
         routed_widgets: %{},
         widget_metrics: %{},
         goal_column: nil,
+        # One kill ring for every routed text_input and textarea, as a terminal
+        # has one: Ctrl-W in one input, Ctrl-Y in another.
+        kill_ring: [],
         subs: %{},
         pending_cmd: init_cmd,
         keeper: Keyword.get(opts, :keeper),
@@ -607,17 +610,24 @@ defmodule Harlock.App.Runtime do
       # freshness argument as viewport_h above.
       wrap_width = get_in(state.widget_metrics, [focus_id, :textarea_wrap_width])
 
-      case Harlock.TextArea.apply_key(event, value, cursor, [], wrap_width, state.goal_column) do
+      case Harlock.TextArea.apply_key(
+             event,
+             value,
+             cursor,
+             state.kill_ring,
+             wrap_width,
+             state.goal_column
+           ) do
         # Unchanged still records the goal — an ↑ on the first row moves nothing
         # but owns the column, which is what lets ↓↓↑↑ come back to it. The key
         # itself still falls through to update/2, as it did before routing
         # carried state.
-        {:edit, ^value, ^cursor, _ring, goal} ->
-          {:pass, %{state | goal_column: goal}}
+        {:edit, ^value, ^cursor, ring, goal} ->
+          {:pass, %{state | goal_column: goal, kill_ring: ring}}
 
-        {:edit, new_value, new_cursor, _ring, goal} ->
+        {:edit, new_value, new_cursor, ring, goal} ->
           {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}},
-           %{state | goal_column: goal}}
+           %{state | goal_column: goal, kill_ring: ring}}
 
         :noop ->
           {:pass, %{state | goal_column: nil}}
@@ -630,12 +640,13 @@ defmodule Harlock.App.Runtime do
   defp route_to_widget(%Element{type: :text_input} = el, event, focus_id, state) do
     with {:ok, value} <- Keyword.fetch(el.opts, :value),
          {:ok, cursor} <- Keyword.fetch(el.opts, :cursor) do
-      case Harlock.TextBuffer.apply_key(event, value, cursor) do
-        {:edit, ^value, ^cursor} ->
-          {:pass, state}
+      case Harlock.TextBuffer.apply_key(event, value, cursor, state.kill_ring) do
+        {:edit, ^value, ^cursor, ring} ->
+          {:pass, %{state | kill_ring: ring}}
 
-        {:edit, new_value, new_cursor} ->
-          {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}}, state}
+        {:edit, new_value, new_cursor, ring} ->
+          {:routed, {:harlock_edit, focus_id, {new_value, new_cursor}},
+           %{state | kill_ring: ring}}
 
         :submit ->
           {:routed, {:harlock_submit, focus_id}, state}

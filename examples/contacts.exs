@@ -1,4 +1,4 @@
-# Contacts — a multi-pane TUI showcasing Harlock v0.2:
+# Contacts — a multi-pane TUI:
 #
 #   - vbox / hbox / box layout with titled borders
 #   - table (used as a list) with row selection and focus highlighting
@@ -15,6 +15,7 @@
 # Shortcuts (also shown in the bottom bar):
 #
 #   Tab / Shift-Tab — cycle focus between widgets
+#   typing          — filters the list while the search box is focused
 #   Up / Down       — when the list is focused, move the selection
 #   a               — open the "new contact" modal (when list is focused)
 #   e               — open the "edit contact" modal (when list is focused)
@@ -27,14 +28,13 @@ defmodule ContactsApp do
   use Harlock.App
 
   alias Harlock.Focus
-  alias Harlock.TextBuffer
 
   @initial_contacts [
-    %{id: 1, name: "Alice Wong",   email: "alice@example.com",   phone: "+1 555 0100"},
-    %{id: 2, name: "Bob Martin",   email: "bob@example.com",     phone: "+1 555 0101"},
-    %{id: 3, name: "Charlie Kim",  email: "charlie@example.com", phone: "+1 555 0102"},
-    %{id: 4, name: "Diana Patel",  email: "diana@example.com",   phone: "+1 555 0103"},
-    %{id: 5, name: "Erik Hansen",  email: "erik@example.com",    phone: "+1 555 0104"}
+    %{id: 1, name: "Alice Wong", email: "alice@example.com", phone: "+1 555 0100"},
+    %{id: 2, name: "Bob Martin", email: "bob@example.com", phone: "+1 555 0101"},
+    %{id: 3, name: "Charlie Kim", email: "charlie@example.com", phone: "+1 555 0102"},
+    %{id: 4, name: "Diana Patel", email: "diana@example.com", phone: "+1 555 0103"},
+    %{id: 5, name: "Erik Hansen", email: "erik@example.com", phone: "+1 555 0104"}
   ]
 
   def init(_) do
@@ -75,75 +75,34 @@ defmodule ContactsApp do
     %{model | modal: nil, status: "Cancelled"}
   end
 
+  # Every text_input here is routed: edits arrive as {:harlock_edit, id, …} and
+  # Enter as {:harlock_submit, id}, so the clauses only say where the value lives.
+
   # Modal: submit on Enter from any field.
-  def update({:key, :enter, []}, %{modal: m} = model) when not is_nil(m) do
+  def update({:harlock_submit, field}, %{modal: m} = model)
+      when not is_nil(m) and field in [:modal_name, :modal_email, :modal_phone] do
     start_save(model, m)
   end
 
-  # Modal: route key events to the focused text_input field.
-  def update({:key, _, _} = event, %{modal: m} = model) when not is_nil(m) do
-    case Focus.current() do
-      field when field in [:modal_name, :modal_email, :modal_phone] ->
-        {value_key, cursor_key} = modal_field_keys(field)
-        value = Map.fetch!(m, value_key)
-        cursor = Map.fetch!(m, cursor_key)
-
-        case TextBuffer.apply_key(event, value, cursor) do
-          {:edit, v, c} ->
-            new_modal = m |> Map.put(value_key, v) |> Map.put(cursor_key, c)
-            %{model | modal: new_modal}
-
-          _ ->
-            model
-        end
-
-      _ ->
-        model
-    end
+  def update({:harlock_edit, field, {value, cursor}}, %{modal: m} = model)
+      when not is_nil(m) and field in [:modal_name, :modal_email, :modal_phone] do
+    {value_key, cursor_key} = modal_field_keys(field)
+    %{model | modal: m |> Map.put(value_key, value) |> Map.put(cursor_key, cursor)}
   end
 
-  # No-modal shortcuts — only active when the list is focused, so typing
-  # 'q' or 'a' into the search input doesn't accidentally trigger them.
-  def update({:key, {:char, ?q}, []}, model) do
-    if Focus.current() == :contact_list, do: :quit, else: search_key(model, {:char, ?q})
-  end
+  # Search box.
+  def update({:harlock_edit, :search, {value, cursor}}, model),
+    do: %{model | filter: value, filter_cursor: cursor}
 
-  def update({:key, {:char, ?a}, []}, model) do
-    if Focus.current() == :contact_list,
-      do: open_new_modal(model),
-      else: search_key(model, {:char, ?a})
-  end
-
-  def update({:key, {:char, ?e}, []}, model) do
-    if Focus.current() == :contact_list,
-      do: open_edit_modal(model),
-      else: search_key(model, {:char, ?e})
-  end
-
-  def update({:key, {:char, ?d}, []}, model) do
-    if Focus.current() == :contact_list,
-      do: delete_focused(model),
-      else: search_key(model, {:char, ?d})
-  end
+  # Shortcuts — keys typed into a focused input are routed to it as edits, so
+  # these only see raw keys when the list has focus.
+  def update({:key, {:char, ?q}, []}, model), do: on_list(model, fn -> :quit end)
+  def update({:key, {:char, ?a}, []}, model), do: on_list(model, fn -> open_new_modal(model) end)
+  def update({:key, {:char, ?e}, []}, model), do: on_list(model, fn -> open_edit_modal(model) end)
+  def update({:key, {:char, ?d}, []}, model), do: on_list(model, fn -> delete_focused(model) end)
 
   # List navigation: the focused table routes Up / Down itself.
   def update({:harlock_select, :contact_list, id}, model), do: %{model | focused_id: id}
-
-  # Catch-all: route remaining key events to the search input when it has focus.
-  def update({:key, _, _} = event, model) do
-    case Focus.current() do
-      :search ->
-        {:key, key, mods} = event
-
-        case TextBuffer.apply_key({:key, key, mods}, model.filter, model.filter_cursor) do
-          {:edit, v, c} -> %{model | filter: v, filter_cursor: c}
-          _ -> model
-        end
-
-      _ ->
-        model
-    end
-  end
 
   def update(_event, model), do: model
 
@@ -456,15 +415,8 @@ defmodule ContactsApp do
     end
   end
 
-  defp search_key(model, key) do
-    if Focus.current() == :search do
-      case TextBuffer.apply_key({:key, key, []}, model.filter, model.filter_cursor) do
-        {:edit, v, c} -> %{model | filter: v, filter_cursor: c}
-        _ -> model
-      end
-    else
-      model
-    end
+  defp on_list(model, action) do
+    if Focus.current() == :contact_list and model.modal == nil, do: action.(), else: model
   end
 
   defp modal_field_keys(:modal_name), do: {:name, :name_cursor}

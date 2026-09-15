@@ -29,10 +29,10 @@ defmodule Harlock.TextBuffer do
         end
       end
 
-  ## Auto-routing (v0.4)
+  ## Auto-routing
 
   When a `text_input` element is focused, the runtime routes its keys
-  through `apply_key/3` automatically and delivers the result to
+  through `apply_key/4` automatically, holding the kill ring, and delivers the result to
   `update/2` — the app's clauses get to the point:
 
       text_input(focusable: :search, value: m.search, cursor: m.cursor)
@@ -320,9 +320,10 @@ defmodule Harlock.TextBuffer do
         end
       end
 
-  The runtime's auto-routing (R2) calls `apply_key/3`, which threads an empty
-  ring — so kills still delete, but yank is a no-op. Set `handle_keys: false`
-  on the element and call this function directly to opt into the ring.
+  A focused `text_input` or `textarea` already gets this through the runtime's
+  key routing, which holds one kill ring for the app — so text killed in one
+  input can be yanked into another. Call this directly only for an element with
+  `handle_keys: false`, holding the ring yourself.
   """
   @spec apply_key({:key, any(), [atom()]}, String.t(), cursor(), kill_ring()) :: ring_event()
 

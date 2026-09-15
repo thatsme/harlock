@@ -931,4 +931,44 @@ defmodule Harlock.App.RuntimeWidgetRoutingTest do
       Harlock.Test.stop(h)
     end
   end
+
+  defmodule KillRingApp do
+    @moduledoc false
+    use Harlock.App
+
+    def init(_), do: %{a: "hello world", a_cursor: 11, b: "", b_cursor: 0}
+
+    def update({:harlock_edit, :a, {v, c}}, m), do: %{m | a: v, a_cursor: c}
+    def update({:harlock_edit, :b, {v, c}}, m), do: %{m | b: v, b_cursor: c}
+    def update(_, m), do: m
+
+    def view(m) do
+      vbox(
+        constraints: [length: 1, length: 1],
+        children: [
+          text_input(focusable: :a, value: m.a, cursor: m.a_cursor),
+          text_input(focusable: :b, value: m.b, cursor: m.b_cursor)
+        ]
+      )
+    end
+  end
+
+  describe "kill ring under routing" do
+    test "Ctrl-Y yanks what Ctrl-W killed, in the same input or another" do
+      h = Harlock.Test.start_app(KillRingApp)
+
+      Harlock.Test.send_key(h, {:char, ?w}, [:ctrl])
+      assert Harlock.Test.model(h).a == "hello "
+
+      Harlock.Test.send_key(h, {:char, ?y}, [:ctrl])
+      assert Harlock.Test.model(h).a == "hello world"
+
+      Harlock.Test.send_key(h, {:char, ?w}, [:ctrl])
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, {:char, ?y}, [:ctrl])
+      assert Harlock.Test.model(h).b == "world"
+
+      Harlock.Test.stop(h)
+    end
+  end
 end
