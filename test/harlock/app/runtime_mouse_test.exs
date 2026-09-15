@@ -166,6 +166,132 @@ defmodule Harlock.App.RuntimeMouseTest do
     Harlock.Test.stop(h)
   end
 
+  defmodule ItemsApp do
+    use Harlock.App
+
+    # Records every routed message, so tests can check both what arrived and in
+    # which order.
+    def init(_),
+      do: %{log: [], open: false, highlight: :red, value: :red, name: "héllo日本", cursor: 0}
+
+    def update({:harlock_select, :colour, id} = msg, m),
+      do: %{m | log: m.log ++ [msg], highlight: id}
+
+    def update({:harlock_submit, :colour} = msg, m) do
+      m = %{m | log: m.log ++ [msg]}
+      if m.open, do: %{m | open: false, value: m.highlight}, else: %{m | open: true}
+    end
+
+    def update({:harlock_edit, :name, {v, c}} = msg, m),
+      do: %{m | log: m.log ++ [msg], name: v, cursor: c}
+
+    def update({tag, _, _} = msg, m) when tag in [:harlock_select, :harlock_toggle],
+      do: %{m | log: m.log ++ [msg]}
+
+    def update({:harlock_submit, _} = msg, m), do: %{m | log: m.log ++ [msg]}
+    def update(_, m), do: m
+
+    def view(m) do
+      vbox(
+        constraints: [length: 2, length: 2, length: 1, length: 2, length: 1, length: 1, fill: 1],
+        children: [
+          table(
+            focusable: :rows,
+            columns: [column(width: {:fill, 1}, render: &to_string/1)],
+            rows: [:alpha, :beta],
+            row_id: & &1,
+            focused_row: :alpha,
+            show_header: false
+          ),
+          menu(focusable: :actions, items: [{:open, "Open"}, {:quit, "Quit"}], active: :open),
+          tabs(focusable: :nav, items: [{:one, "One"}, {:two, "Two"}], active: :one),
+          tree(
+            focusable: :files,
+            nodes: [%{id: :dir, label: "dir", children: [%{id: :f, label: "f", children: []}]}],
+            expanded: MapSet.new([:dir]),
+            focused: :dir
+          ),
+          text_input(focusable: :name, value: m.name, cursor: m.cursor),
+          select(
+            focusable: :colour,
+            items: [{:red, "Red"}, {:green, "Green"}],
+            value: m.value,
+            highlight: m.highlight,
+            open: m.open
+          ),
+          text("")
+        ]
+      )
+    end
+  end
+
+  describe "clicks on items inside widgets" do
+    setup do
+      h = Harlock.Test.start_app(ItemsApp, nil, rows: 14, cols: 30, mouse: true)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    defp log(h), do: Harlock.Test.model(h).log
+
+    test "a table row selects it", %{h: h} do
+      Harlock.Test.send_mouse(h, :press, :left, 5, 2)
+      assert log(h) == [{:harlock_select, :rows, :beta}]
+      assert Harlock.Test.focused(h) == :rows
+    end
+
+    test "a menu item is selected and activated, in that order", %{h: h} do
+      Harlock.Test.send_mouse(h, :press, :left, 2, 4)
+      assert log(h) == [{:harlock_select, :actions, :quit}, {:harlock_submit, :actions}]
+    end
+
+    test "a tab selects it", %{h: h} do
+      Harlock.Test.send_mouse(h, :press, :left, 10, 5)
+      assert log(h) == [{:harlock_select, :nav, :two}]
+    end
+
+    test "a tree's marker toggles the node; the rest of the row selects it", %{h: h} do
+      Harlock.Test.send_mouse(h, :press, :left, 1, 6)
+      assert log(h) == [{:harlock_toggle, :files, :dir}]
+
+      Harlock.Test.send_mouse(h, :press, :left, 7, 7)
+      assert List.last(log(h)) == {:harlock_select, :files, :f}
+    end
+
+    test "a click in a text input moves the cursor to that column, by grapheme", %{h: h} do
+      # "héllo日本": columns 0-4 are h é l l o, then 日 covers 5-6 and 本 7-8.
+      Harlock.Test.send_mouse(h, :press, :left, 3, 8)
+      assert Harlock.Test.model(h).cursor == 2
+
+      Harlock.Test.send_mouse(h, :press, :left, 8, 8)
+      assert Harlock.Test.model(h).cursor == 6
+
+      Harlock.Test.send_mouse(h, :press, :left, 25, 8)
+      assert Harlock.Test.model(h).cursor == 7
+
+      # Clicking where the cursor already is changes nothing.
+      Harlock.Test.send_mouse(h, :press, :left, 25, 8)
+      assert length(log(h)) == 3
+    end
+
+    test "a select opens from its control and commits a clicked choice", %{h: h} do
+      Harlock.Test.send_mouse(h, :press, :left, 2, 9)
+      assert Harlock.Test.model(h).open == true
+
+      # The list opens below the control: border on row 10, choices from row 11.
+      Harlock.Test.send_mouse(h, :press, :left, 3, 12)
+
+      assert Harlock.Test.model(h).value == :green
+      assert Harlock.Test.model(h).open == false
+
+      assert log(h) == [
+               {:harlock_submit, :colour},
+               {:harlock_select, :colour, :green},
+               {:harlock_submit, :colour}
+             ]
+    end
+  end
+
   describe "terminal sequences" do
     test "entering turns mouse reporting on only when asked" do
       on = Ansi.enter(mouse: true) |> IO.iodata_to_binary()

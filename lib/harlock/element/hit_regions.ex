@@ -9,6 +9,11 @@ defmodule Harlock.Element.HitRegions do
   # after the whole tree. The topmost region containing a point is the one
   # that was hit.
   #
+  # A region can name a part of its element — {:row, row_id} in a table,
+  # {:marker, node_id} on a tree node's expand marker — recorded as the widget
+  # draws that part, after the element's own region and so on top of it. A
+  # click resolves to the element and, when it landed on one, the part.
+  #
   # A region's id is nil for an occluder: an overlay panel or a float, which
   # covers whatever was drawn beneath it without being focusable itself. A
   # click on a modal's blank space must not reach the widget under it.
@@ -25,7 +30,7 @@ defmodule Harlock.Element.HitRegions do
 
   @key :harlock_hit_regions
 
-  @type region :: %{id: any(), rect: Rect.t()}
+  @type region :: %{id: any(), rect: Rect.t(), part: any()}
 
   @spec clear() :: :ok
   def clear do
@@ -33,9 +38,12 @@ defmodule Harlock.Element.HitRegions do
     :ok
   end
 
-  @doc "Record `rect` for focus id `id`, or an occluder when `id` is nil."
-  @spec record(any(), Rect.t()) :: :ok
-  def record(id, %Rect{} = rect), do: add([%{id: id, rect: rect}])
+  @doc """
+  Record `rect` for focus id `id`, or an occluder when `id` is nil. `part`
+  names the part of the element the rect covers; nil for the element itself.
+  """
+  @spec record(any(), Rect.t(), any()) :: :ok
+  def record(id, %Rect{} = rect, part \\ nil), do: add([%{id: id, rect: rect, part: part}])
 
   @doc "Append already-built regions, in draw order, to the current scope."
   @spec add([region()]) :: :ok
@@ -63,15 +71,27 @@ defmodule Harlock.Element.HitRegions do
     regions
   end
 
-  @doc "The id of the topmost region containing 0-indexed `{row, col}`, or nil."
-  @spec at([region()], non_neg_integer(), non_neg_integer()) :: {:hit, any()} | :miss
+  @doc "The topmost region containing 0-indexed `{row, col}`: its id and part."
+  @spec at([region()], non_neg_integer(), non_neg_integer()) :: {:hit, any(), any()} | :miss
   def at(regions, row, col) do
     regions
     |> Enum.reverse()
     |> Enum.find(&contains?(&1.rect, row, col))
     |> case do
       nil -> :miss
-      %{id: id} -> {:hit, id}
+      %{id: id, part: part} -> {:hit, id, part}
+    end
+  end
+
+  @doc "The rect of `id`'s own region (not a part), topmost if recorded more than once."
+  @spec rect_of([region()], any()) :: Rect.t() | nil
+  def rect_of(regions, id) do
+    regions
+    |> Enum.filter(&(&1.id == id and &1.part == nil))
+    |> List.last()
+    |> case do
+      nil -> nil
+      %{rect: rect} -> rect
     end
   end
 

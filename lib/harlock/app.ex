@@ -113,8 +113,18 @@ defmodule Harlock.App do
   frame laid each focusable element out — the topmost one, so an overlay wins
   over what it covers. The same messages as the keyboard arrive:
 
-    * a left press focuses the element, and on a `button` or `checkbox` also
-      delivers `{:harlock_submit, id}` or `{:harlock_toggle, id, checked}`;
+    * a left press focuses the element, and depending on where it landed:
+      * `button` — `{:harlock_submit, id}`;
+      * `checkbox` — `{:harlock_toggle, id, checked}`;
+      * a `table` row, a tab, a tree node — `{:harlock_select, id, item}`;
+      * a tree node's expand marker — `{:harlock_toggle, id, node_id}`;
+      * a `menu` item — `{:harlock_select, id, item}` then
+        `{:harlock_submit, id}`: a click activates, as Enter does;
+      * a closed `select` — `{:harlock_submit, id}`, so the app opens it; one
+        of its open choices — `{:harlock_select, id, item}` then
+        `{:harlock_submit, id}`, so the app commits it;
+      * a `text_input` — `{:harlock_edit, id, {value, cursor}}` with the
+        cursor at the clicked column;
     * the wheel over a `viewport` scrolls three lines as
       `{:harlock_scroll, id, offset}`, and over a `table` moves one row as
       the arrow keys would, without moving focus.

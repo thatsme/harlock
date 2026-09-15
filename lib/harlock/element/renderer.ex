@@ -115,6 +115,14 @@ defmodule Harlock.Element.Renderer do
     draw_element(el, region, frame, focused)
   end
 
+  # The id whose parts a widget records, or nil when it takes no clicks — not
+  # focusable, or opted out with handle_mouse: false. A select's dropdown menu
+  # is not focusable itself; it records its choices for the select that owns it.
+  defp hit_id(opts) do
+    id = Keyword.get(opts, :focusable) || Keyword.get(opts, :hit_owner)
+    if id != nil and Keyword.get(opts, :handle_mouse, true), do: id
+  end
+
   defp draw_element(_element, %Rect{w: 0}, frame, _focused), do: frame
   defp draw_element(_element, %Rect{h: 0}, frame, _focused), do: frame
 
@@ -287,7 +295,8 @@ defmodule Harlock.Element.Renderer do
 
     sep_style = %Style{dim: true}
 
-    render_tabs(frame, region, items, active, separator, inactive_style, active_style, sep_style)
+    styles = %{inactive: inactive_style, active: active_style, separator: sep_style}
+    render_tabs(frame, region, items, active, separator, styles, hit_id(el.opts))
   end
 
   defp draw_element(%Element{type: :menu} = el, region, frame, focused) do
@@ -303,6 +312,9 @@ defmodule Harlock.Element.Renderer do
       |> Keyword.get(:active_style, default_menu_active_style(is_focused?))
       |> Style.from()
 
+    owner = hit_id(el.opts)
+    part_tag = if Keyword.has_key?(el.opts, :hit_owner), do: :choice, else: :item
+
     # One row per item, top-aligned; anything past the region's height clips,
     # matching list/2. A menu that can outgrow its space belongs in a viewport.
     items
@@ -310,7 +322,9 @@ defmodule Harlock.Element.Renderer do
     |> Enum.with_index()
     |> Enum.reduce(frame, fn {{id, label}, index}, acc ->
       style = if id == active, do: active_style, else: base
-      render_cell(acc, region.row + index, region.col, region.w, label, align, style)
+      y = region.row + index
+      if owner, do: HitRegions.record(owner, Rect.new(y, region.col, region.w, 1), {part_tag, id})
+      render_cell(acc, y, region.col, region.w, label, align, style)
     end)
   end
 
@@ -346,7 +360,7 @@ defmodule Harlock.Element.Renderer do
     frame = if is_focused?, do: Frame.set_focus_rect(frame, rect_of(region)), else: frame
 
     if open? and items != [] do
-      push_dropdown(el, region, items, value)
+      push_dropdown(el, region, items, value, hit_id(el.opts))
     end
 
     frame
@@ -404,6 +418,20 @@ defmodule Harlock.Element.Renderer do
         style = if row.node.id == focused_id, do: row_style, else: base
 
         prefix_w = min(Width.string_width(prefix), region.w)
+
+        if hit = hit_id(el.opts) do
+          HitRegions.record(hit, Rect.new(y, region.col, region.w, 1), {:node, row.node.id})
+
+          # The marker is the first two cells of the label; drawn over the row,
+          # recorded over it too, so a click there toggles rather than selects.
+          if Tree.expandable?(row.node) and prefix_w + 2 <= region.w do
+            HitRegions.record(
+              hit,
+              Rect.new(y, region.col + prefix_w, 2, 1),
+              {:marker, row.node.id}
+            )
+          end
+        end
 
         acc
         |> render_cell(y, region.col, prefix_w, prefix, :left, guide)
@@ -630,6 +658,10 @@ defmodule Harlock.Element.Renderer do
       y = region.row + header_h + idx
       row_id = row_id_fn.(row)
       style = row_style(row_id, idx, focused_row, selection, table_focused?, styles)
+
+      if hit = hit_id(el.opts),
+        do: HitRegions.record(hit, Rect.new(y, region.col, region.w, 1), {:row, row_id})
+
       render_row(acc, y, columns, col_rects, row, style)
     end)
   end
@@ -744,9 +776,8 @@ defmodule Harlock.Element.Renderer do
          items,
          active,
          separator,
-         inactive_style,
-         active_style,
-         sep_style
+         styles,
+         hit
        ) do
     {_, _, frame} =
       Enum.reduce(items, {region.col, true, frame}, fn {id, label}, {col, first?, f} ->
@@ -755,15 +786,19 @@ defmodule Harlock.Element.Renderer do
           if first? do
             f
           else
-            Frame.write(f, region.row, col, separator, sep_style)
+            Frame.write(f, region.row, col, separator, styles.separator)
           end
 
         col = if first?, do: col, else: col + Width.string_width(separator)
         label_text = " #{label} "
-        style = if id == active, do: active_style, else: inactive_style
+        style = if id == active, do: styles.active, else: styles.inactive
 
         f = Frame.write(f, region.row, col, label_text, style)
         new_col = col + Width.string_width(label_text)
+
+        if hit,
+          do: HitRegions.record(hit, Rect.new(region.row, col, new_col - col, 1), {:tab, id})
+
         {new_col, false, f}
       end)
 
@@ -837,7 +872,7 @@ defmodule Harlock.Element.Renderer do
   # whatever the rest of the tree draws after the control, and the control can
   # sit anywhere in the layout. Floats also own the flipping, since only the top
   # level knows the screen bounds.
-  defp push_dropdown(el, region, items, value) do
+  defp push_dropdown(el, region, items, value, owner) do
     highlight = Keyword.get(el.opts, :highlight, value)
     max_h = Keyword.get(el.opts, :max_height, 8)
 
@@ -848,9 +883,11 @@ defmodule Harlock.Element.Renderer do
       |> Enum.map(fn {_id, label} -> Width.string_width(label) end)
       |> Enum.max(fn -> 0 end)
 
+    menu_opts = [items: items, active: highlight, style: Theme.get(:primary)]
+
     menu = %Element{
       type: :menu,
-      opts: [items: items, active: highlight, style: Theme.get(:primary)],
+      opts: if(owner, do: [hit_owner: owner] ++ menu_opts, else: menu_opts),
       children: []
     }
 

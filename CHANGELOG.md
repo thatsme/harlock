@@ -12,12 +12,23 @@ changes are called out in the relevant release notes.
 
 ### Added
 
-- **Mouse support, phase 1.** `Harlock.run(app, arg, mouse: true)` turns on
-  mouse reporting. A left press focuses the element under the pointer and
-  presses a `button` (`{:harlock_submit, id}`) or toggles a `checkbox`
-  (`{:harlock_toggle, id, checked}`); the wheel scrolls a `viewport` three
-  lines (`{:harlock_scroll, id, offset}`) or moves a `table` one row. These are
-  the messages keyboard routing already sends. Anything not routed arrives in
+- **Mouse support.** `Harlock.run(app, arg, mouse: true)` turns on mouse
+  reporting. A left press focuses the element under the pointer and acts on
+  what it landed on, with the messages keyboard routing already sends:
+
+  | Click on | Message |
+  |---|---|
+  | a `button` / `checkbox` | `{:harlock_submit, id}` / `{:harlock_toggle, id, checked}` |
+  | a `table` row, a tab, a tree node | `{:harlock_select, id, item}` |
+  | a tree node's expand marker | `{:harlock_toggle, id, node_id}` |
+  | a `menu` item | `{:harlock_select, id, item}`, then `{:harlock_submit, id}` |
+  | a closed `select` / one of its open choices | `{:harlock_submit, id}` / select, then submit |
+  | a `text_input` | `{:harlock_edit, id, {value, cursor}}`, cursor at the clicked column |
+
+  A menu click activates rather than only highlighting, as Enter does, and a
+  tree's expand marker toggles while the rest of the row selects — so no
+  double-click is needed for either. The wheel scrolls a `viewport` three lines
+  (`{:harlock_scroll, id, offset}`) or moves a `table` one row. Anything not routed arrives in
   `update/2` as `{:mouse, action, button, col, row, mods}`, and a click outside
   an open focus trap is never routed. `handle_mouse: false` opts an element out.
 
@@ -27,14 +38,15 @@ changes are called out in the relevant release notes.
   records a pty's output to check it is.
 
   The runtime finds the target from rectangles the renderer records for each
-  focusable element as it lays it out. Overlays and floating panels record
+  focusable element, and for each clickable part of one — a row, a tab, a
+  marker — as it draws it. Overlays and floating panels record
   occluders so a click on a modal's blank space does not reach what is under
   it, and a viewport records its contents where they are scrolled into view.
   No measurable render cost in `Harlock.Bench`. `Harlock.Test.send_mouse/6` and
   a `:mouse` option on `start_app/3` drive it in tests.
 
-  Clicks on the items inside widgets — rows, menu items, tree nodes, tabs, an
-  open `select` — come next.
+  Not yet: drag gestures, motion with no button held, and double-click, which
+  wait for an application that needs them.
 
 - **`Cmd.suspend/0` — job control.** Ctrl-Z to the shell, `fg` to come back,
   as in vim or `less`. In raw mode Ctrl-Z is an ordinary key, so an app binds

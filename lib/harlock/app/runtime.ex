@@ -213,13 +213,14 @@ defmodule Harlock.App.Runtime do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  # Mouse routing. The renderer records where each focusable element landed
-  # (Harlock.Element.HitRegions); the topmost one under the pointer is the
-  # target. A left press focuses it and presses a button or toggles a checkbox;
-  # the wheel scrolls a viewport or moves through a table. Both reuse the
-  # messages keyboard routing already sends. Everything else — a miss, a
-  # release, a drag, another button, an element outside an open focus trap —
-  # arrives in update/2 as the raw {:mouse, …} event, never both.
+  # Mouse routing. The renderer records where each focusable element landed,
+  # and where each clickable part of it was drawn (HitRegions); the topmost
+  # region under the pointer is the target. A left press focuses the element
+  # and, depending on what it landed on, sends the messages keyboard routing
+  # already uses. The wheel scrolls a viewport or moves through a table.
+  # Everything else — a miss, a release, a drag, another button, an element
+  # outside an open focus trap — arrives in update/2 as the raw {:mouse, …}
+  # event, never both.
   #
   # Widget messages need the element, which comes from routed_widgets, so an
   # element with handle_keys: false is still focused by a click but gets no
@@ -227,7 +228,7 @@ defmodule Harlock.App.Runtime do
   defp handle_mouse({:mouse, action, button, col, row, _mods} = event, state) do
     target =
       case HitRegions.at(state.hit_regions, row - 1, col - 1) do
-        {:hit, id} when id != nil -> if id in active_ids(state), do: id
+        {:hit, id, part} when id != nil -> if id in active_ids(state), do: {id, part}
         _ -> nil
       end
 
@@ -235,15 +236,15 @@ defmodule Harlock.App.Runtime do
       {_, _, nil} ->
         apply_update(state, event)
 
-      {:press, :left, id} ->
+      {:press, :left, {id, part}} ->
         state = focus_by_mouse(state, id)
 
-        case click_message(state, id) do
-          nil -> {:noreply, render(state)}
-          message -> apply_update(state, message)
+        case click_messages(state, id, part, col - 1) do
+          [] -> {:noreply, render(state)}
+          messages -> apply_updates(state, messages)
         end
 
-      {wheel, _, id} when wheel in [:wheel_up, :wheel_down] ->
+      {wheel, _, {id, _part}} when wheel in [:wheel_up, :wheel_down] ->
         apply_update(state, wheel_message(state, id, wheel) || event)
 
       _ ->
@@ -251,20 +252,86 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  # Some clicks are two messages — choosing a menu item is selecting it and
+  # activating it — delivered in order, each seeing the model the previous one
+  # produced, and stopping if one quits.
+  defp apply_updates(state, [message]), do: apply_update(state, message)
+
+  defp apply_updates(state, [message | rest]) do
+    case apply_update(state, message) do
+      {:noreply, state} -> apply_updates(state, rest)
+      stop -> stop
+    end
+  end
+
   defp focus_by_mouse(%{focused: id} = state, id), do: state
   defp focus_by_mouse(state, id), do: %{state | focused: id, goal_column: nil, dirty: true}
 
-  defp click_message(state, id) do
-    case Map.get(state.routed_widgets, id) do
-      %Element{type: :button} ->
-        {:harlock_submit, id}
+  defp click_messages(state, id, part, col) do
+    case {Map.get(state.routed_widgets, id), part} do
+      {%Element{type: :button}, nil} ->
+        [{:harlock_submit, id}]
 
-      %Element{type: :checkbox, opts: opts} ->
-        {:harlock_toggle, id, not Keyword.fetch!(opts, :checked)}
+      {%Element{type: :checkbox, opts: opts}, nil} ->
+        [{:harlock_toggle, id, not Keyword.fetch!(opts, :checked)}]
+
+      {%Element{type: :table}, {:row, row_id}} ->
+        [{:harlock_select, id, row_id}]
+
+      {%Element{type: :tabs}, {:tab, tab_id}} ->
+        [{:harlock_select, id, tab_id}]
+
+      # A click activates, as Enter does after the arrows moved there.
+      {%Element{type: :menu}, {:item, item_id}} ->
+        [{:harlock_select, id, item_id}, {:harlock_submit, id}]
+
+      # The marker expands or collapses; the rest of the row selects.
+      {%Element{type: :tree}, {:marker, node_id}} ->
+        [{:harlock_toggle, id, node_id}]
+
+      {%Element{type: :tree}, {:node, node_id}} ->
+        [{:harlock_select, id, node_id}]
+
+      # On the control, the action key: the app opens the list, or commits the
+      # highlight if it is already open. On a choice: highlight it, then commit.
+      {%Element{type: :select}, nil} ->
+        [{:harlock_submit, id}]
+
+      {%Element{type: :select}, {:choice, item_id}} ->
+        [{:harlock_select, id, item_id}, {:harlock_submit, id}]
+
+      {%Element{type: :text_input, opts: opts}, nil} ->
+        text_input_click(state, id, opts, col)
 
       _ ->
-        nil
+        []
     end
+  end
+
+  # Move the cursor to the clicked column. The input draws from its first
+  # grapheme, so a column maps straight to the grapheme covering it; past the
+  # end of the value it is the end.
+  defp text_input_click(state, id, opts, col) do
+    value = Keyword.fetch!(opts, :value)
+    cursor = Keyword.fetch!(opts, :cursor)
+    column = col - HitRegions.rect_of(state.hit_regions, id).col
+
+    new_cursor =
+      if Keyword.get(opts, :password, false),
+        do: min(column, String.length(value)),
+        else: cursor_at_column(value, column)
+
+    if new_cursor == cursor, do: [], else: [{:harlock_edit, id, {value, new_cursor}}]
+  end
+
+  defp cursor_at_column(value, column) do
+    value
+    |> String.graphemes()
+    |> Enum.reduce_while({0, 0}, fn grapheme, {index, width} ->
+      next = width + Harlock.Width.width(grapheme)
+      if next > column, do: {:halt, {index, width}}, else: {:cont, {index + 1, next}}
+    end)
+    |> elem(0)
   end
 
   # Three lines per notch for a viewport, as terminals and pagers scroll; one
@@ -278,7 +345,7 @@ defmodule Harlock.App.Runtime do
       %Element{type: :viewport, opts: opts} ->
         offset = Keyword.fetch!(opts, :offset)
         content_height = Keyword.fetch!(opts, :content_height)
-        height = region_height(state.hit_regions, id)
+        height = HitRegions.rect_of(state.hit_regions, id).h
 
         new_offset =
           Enum.reduce(1..@wheel_lines, offset, fn _, o ->
@@ -296,10 +363,6 @@ defmodule Harlock.App.Runtime do
       _ ->
         nil
     end
-  end
-
-  defp region_height(regions, id) do
-    regions |> Enum.filter(&(&1.id == id)) |> List.last() |> Map.fetch!(:rect) |> Map.fetch!(:h)
   end
 
   # Undo the handover. Entering the alternate screen clears it, so the previous
