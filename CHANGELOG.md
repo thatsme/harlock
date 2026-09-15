@@ -80,6 +80,14 @@ changes are called out in the relevant release notes.
   mouse on, and takes `running: false` to start paused.
   `test/examples/dashboard_test.exs` covers it. Trying it in a terminal found
   the log output fixed above.
+- **`examples/nodes.exs` is rebuilt on the new basics**: a clickable tab bar,
+  the wheel on the process list, a click on a process showing its status,
+  current function, links, queue and memory underneath, a styled header and
+  system stats, and a click on a supervisor's marker to expand it. The process
+  list and memory are filled at start instead of after the first sample.
+  `test/examples/nodes_test.exs` covers it — the example had no tests. It
+  raised a question for the 1.0 freeze, recorded in the roadmap: a windowed
+  table cannot be moved through row by row from the keyboard.
 - **The examples are checked for compile warnings.** They are scripts, so
   `mix compile --warnings-as-errors` never saw them, and a warning in
   `examples/dashboard.exs` reached a user.

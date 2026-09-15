@@ -1241,6 +1241,19 @@ widget it needed was already there, but running it found a defect no test had:
    terminal is restored. No option for it yet; printing live or dropping
    instead are possible additions if an app needs them.
 
+**`examples/nodes.exs`**, reworked — clickable tabs, the wheel on the process
+list, a click on a process showing its details, styled header and system
+stats. It found one question:
+
+1. **A windowed table cannot be moved through row by row from the keyboard.**
+   With a window function the arrows move `:offset`, by design, since there is
+   no row set to walk — so the only way to choose a process is a click, and a
+   keyboard user cannot pick one at all. `focused_row` does style a row inside
+   the window, so moving it within the visible rows and scrolling at the edges
+   is possible without knowing the total; the question is whether that belongs
+   in the routing, at the cost of a second meaning for the arrows. The tab bar
+   taking the first focus came up again too: see "An app cannot move focus".
+
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
 

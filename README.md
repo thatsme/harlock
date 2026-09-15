@@ -247,7 +247,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
 ./scripts/run.sh explorer   # tree + select + menu: async-loaded nodes, focus changes, mouse
 ./scripts/run.sh dashboard  # telemetry + logger subscriptions: sparkline, scrollable log, controls
-./scripts/run.sh nodes      # BEAM node explorer: windowed table, lazy supervision tree
+./scripts/run.sh nodes      # BEAM node explorer: windowed table, lazy supervision tree, mouse
 ./scripts/run.sh overview   # the README's second snippet
 ./scripts/run.sh editor     # file browser: open files in $VISUAL/$EDITOR, Ctrl-Z, mouse
 ```
@@ -277,7 +277,10 @@ window function, because enumerating pids is one cheap list while
 `Process.info/2` on all of them is not, so only the rows about to be drawn get
 hydrated. The supervision tree loads children through a `Cmd` on expansion,
 because `which_children/1` is a call into another process and the window
-function runs during rendering.
+function runs during rendering. With the mouse, the tabs switch on a click, the
+wheel scrolls the process list, a click on a process shows its status, current
+function, links and queue underneath, and a click on a marker expands a
+supervisor.
 
 `dashboard` wires two push subscriptions into one screen: `Sub.telemetry`
 feeds job durations to a `sparkline`, `Sub.logger` turns log calls into

@@ -16,10 +16,13 @@
 #
 #   * table's window function — the process list is thousands of rows on a busy
 #     node. Pids are cheap to enumerate; Process.info is not, so only the visible
-#     window gets hydrated.
+#     window gets hydrated. The wheel scrolls it; a click on a process shows its
+#     details underneath.
 #   * tree's lazy children — a supervision tree is exactly this shape. Expanding
-#     a supervisor calls which_children through a Cmd rather than up front.
+#     a supervisor calls which_children through a Cmd rather than up front. A
+#     click on a marker expands it.
 #   * sparkline + Sub.interval — memory sampled on a timer.
+#   * tabs — clickable, or 1 / 2 / 3 from anywhere.
 #
 # Everything here is standard OTP introspection. No dependencies.
 
@@ -31,18 +34,23 @@ defmodule Nodes do
   @history 120
   @refresh 1_000
 
+  @tabs [processes: "1 processes", supervisors: "2 supervisors", memory: "3 memory"]
+
   def init(_) do
     %{
       node: Node.self(),
       tab: :processes,
-      pids: [],
+      # Listed at once rather than on the first sample, so the table is not
+      # empty for a second after starting.
+      pids: Process.list(),
       proc_offset: 0,
+      selected: nil,
       roots: [],
       expanded: MapSet.new(),
       focused: nil,
-      memory: [],
-      procs: 0,
-      status: "1 processes  2 supervisors  3 memory"
+      memory: [div(:erlang.memory(:total), 1024)],
+      procs: :erlang.system_info(:process_count),
+      status: nil
     }
   end
 
@@ -61,17 +69,22 @@ defmodule Nodes do
 
   # -- tabs ------------------------------------------------------------------
 
-  def update({:key, {:char, ?1}, []}, m), do: %{m | tab: :processes}
-  def update({:key, {:char, ?2}, []}, m), do: load_roots(%{m | tab: :supervisors})
-  def update({:key, {:char, ?3}, []}, m), do: %{m | tab: :memory}
+  def update({:harlock_select, :tabs, tab}, m), do: switch(m, tab)
+
+  def update({:key, {:char, c}, []}, m) when c in ?1..?3,
+    do: switch(m, @tabs |> Enum.at(c - ?1) |> elem(0))
 
   # -- process list ----------------------------------------------------------
   #
   # The table owns no scroll state, so :offset lives here — the same arrangement
   # viewport has, and the same routed message. Six hand-written key clauses used
   # to sit here before `table` became auto-routed; this is what replaced them.
+  #
+  # A window function moves the offset, not a focused row, so the arrows scroll
+  # and choosing a process is a click.
 
   def update({:harlock_scroll, :procs, offset}, m), do: %{m | proc_offset: offset}
+  def update({:harlock_select, :procs, pid}, m), do: %{m | selected: pid}
 
   # -- supervision tree ------------------------------------------------------
 
@@ -91,10 +104,13 @@ defmodule Nodes do
 
   def update({:children, id, children}, m), do: %{m | roots: mark(m.roots, id, children)}
 
-  def update({:harlock_submit, :sups}, m), do: %{m | status: "leaf: #{inspect(m.focused)}"}
+  def update({:harlock_submit, :sups}, m), do: %{m | status: "leaf #{inspect(m.focused)}"}
 
   def update({:key, :escape, []}, _m), do: :quit
   def update(_event, m), do: m
+
+  defp switch(m, :supervisors), do: load_roots(%{m | tab: :supervisors})
+  defp switch(m, tab), do: %{m | tab: tab}
 
   defp load_roots(%{roots: []} = m) do
     roots = root_supervisors()
@@ -107,46 +123,63 @@ defmodule Nodes do
 
   def view(m) do
     vbox(
-      constraints: [length: 1, fill: 1, length: 1],
+      constraints: [length: 1, length: 1, fill: 1, length: 1],
       children: [
-        text(header(m), style: [reverse: true]),
+        text(header(m)),
+        tabs(focusable: :tabs, items: @tabs, active: m.tab, separator: "  "),
         body(m),
-        text(m.status, style: [dim: true])
+        keybar(
+          bindings: [{"Tab", "focus"}, {"1-3", "tabs"}, {"wheel", "scroll"}, {"Esc", "quit"}],
+          right: if(m.status, do: " #{m.status} ", else: "")
+        )
       ]
     )
   end
 
   defp header(m) do
-    "#{m.node}   procs #{m.procs}   " <>
-      "mem #{m.memory |> List.first(0) |> div(1024)}MB   " <>
-      "[#{tab_label(m.tab)}]"
+    [
+      {" #{m.node} ", bold: true, reverse: true},
+      "   procs ",
+      {"#{m.procs}", bold: true},
+      "   mem ",
+      {"#{m.memory |> List.first(0) |> div(1024)} MB", bold: true, fg: :cyan}
+    ]
   end
 
-  defp tab_label(:processes), do: "processes"
-  defp tab_label(:supervisors), do: "supervisors"
-  defp tab_label(:memory), do: "memory"
-
   defp body(%{tab: :processes} = m) do
-    box(
-      title: "processes (#{length(m.pids)})",
-      border: :rounded,
-      child:
-        table(
-          focusable: :procs,
-          columns: [
-            column(title: "pid", width: {:length, 14}, render: & &1.pid),
-            column(title: "name / initial call", width: {:fill, 2}, render: & &1.name),
-            column(title: "reds", width: {:length, 12}, render: & &1.reductions),
-            column(title: "mem", width: {:length, 10}, render: & &1.memory),
-            column(title: "msgq", width: {:length, 6}, render: & &1.queue)
-          ],
-          row_id: & &1.pid,
-          offset: m.proc_offset,
-          # The point of the window function: enumerating pids is one cheap list,
-          # but Process.info on every one of them is not. Only the rows about to
-          # be drawn get hydrated.
-          rows: fn offset, limit -> hydrate(m.pids, offset, limit) end
+    vbox(
+      constraints: [fill: 1, length: 4],
+      children: [
+        box(
+          title: "processes (#{length(m.pids)})",
+          border: :rounded,
+          focus_proxy: :procs,
+          child:
+            table(
+              focusable: :procs,
+              columns: [
+                column(title: "pid", width: {:length, 14}, render: & &1.pid),
+                column(title: "name / initial call", width: {:fill, 2}, render: & &1.name),
+                column(title: "reds", width: {:length, 12}, render: & &1.reductions),
+                column(title: "mem", width: {:length, 10}, render: & &1.memory),
+                column(title: "msgq", width: {:length, 6}, render: & &1.queue)
+              ],
+              row_id: & &1.raw,
+              offset: m.proc_offset,
+              focused_row: m.selected,
+              # The point of the window function: enumerating pids is one cheap
+              # list, but Process.info on every one of them is not. Only the rows
+              # about to be drawn get hydrated.
+              rows: fn offset, limit -> hydrate(m.pids, offset, limit) end
+            )
+        ),
+        box(
+          title: "selected",
+          border: :rounded,
+          padding: {0, 1},
+          child: text(details(m.selected))
         )
+      ]
     )
   end
 
@@ -178,11 +211,7 @@ defmodule Nodes do
           title: "system",
           border: :rounded,
           padding: {0, 1},
-          child:
-            vbox(
-              constraints: List.duplicate({:length, 1}, 6),
-              children: Enum.map(system_lines(), &text/1)
-            )
+          child: text(system_lines())
         )
       ]
     )
@@ -202,12 +231,19 @@ defmodule Nodes do
   end
 
   defp row_for(pid) do
-    case Process.info(pid, [:registered_name, :initial_call, :reductions, :memory, :message_queue_len]) do
+    case Process.info(pid, [
+           :registered_name,
+           :initial_call,
+           :reductions,
+           :memory,
+           :message_queue_len
+         ]) do
       nil ->
         nil
 
       info ->
         %{
+          raw: pid,
           pid: inspect(pid),
           name: describe(info[:registered_name], info[:initial_call]),
           reductions: to_string(info[:reductions]),
@@ -216,6 +252,37 @@ defmodule Nodes do
         }
     end
   end
+
+  # One process's worth of Process.info, for the selected one only.
+  defp details(nil), do: [{"click a process to see it here", dim: true}]
+
+  defp details(pid) do
+    case Process.info(pid, [:status, :current_function, :links, :message_queue_len, :memory]) do
+      nil ->
+        [{inspect(pid), bold: true}, {"  has exited", fg: :red}]
+
+      info ->
+        {mod, fun, arity} = info[:current_function]
+        queue = info[:message_queue_len]
+
+        [
+          {inspect(pid), bold: true},
+          label("status"),
+          {"#{info[:status]}", fg: :green},
+          label("in"),
+          "#{inspect(mod)}.#{fun}/#{arity}",
+          "\n",
+          label("links", false),
+          "#{length(info[:links])}",
+          label("msgq"),
+          {"#{queue}", fg: if(queue > 0, do: :yellow, else: :default)},
+          label("mem"),
+          "#{info[:memory]} B"
+        ]
+    end
+  end
+
+  defp label(name, gap \\ true), do: {if(gap, do: "   #{name} ", else: "#{name} "), fg: :cyan}
 
   defp describe([], {m, f, a}), do: "#{inspect(m)}.#{f}/#{a}"
   defp describe(name, _initial) when is_atom(name), do: to_string(name)
@@ -285,19 +352,30 @@ defmodule Nodes do
 
   defp system_lines do
     [
-      "process_count   #{:erlang.system_info(:process_count)} / #{:erlang.system_info(:process_limit)}",
-      "atom_count      #{:erlang.system_info(:atom_count)} / #{:erlang.system_info(:atom_limit)}",
-      "ets_count       #{length(:ets.all())}",
-      "schedulers      #{:erlang.system_info(:schedulers_online)}",
-      "run_queue       #{:erlang.statistics(:run_queue)}",
-      "uptime          #{:erlang.statistics(:wall_clock) |> elem(0) |> div(1000)}s"
+      {"process_count  ", fg: :cyan},
+      "#{:erlang.system_info(:process_count)} / #{:erlang.system_info(:process_limit)}\n",
+      {"atom_count     ", fg: :cyan},
+      "#{:erlang.system_info(:atom_count)} / #{:erlang.system_info(:atom_limit)}\n",
+      {"ets_count      ", fg: :cyan},
+      "#{length(:ets.all())}\n",
+      {"schedulers     ", fg: :cyan},
+      "#{:erlang.system_info(:schedulers_online)}\n",
+      {"run_queue      ", fg: :cyan},
+      "#{:erlang.statistics(:run_queue)}\n",
+      {"uptime         ", fg: :cyan},
+      "#{:erlang.statistics(:wall_clock) |> elem(0) |> div(1000)}s"
     ]
   end
+
+  @doc false
+  # The options `--run` starts the app with. The tests start it with these too,
+  # so a test cannot pass on an option the real app never sets.
+  def run_opts, do: [mouse: true]
 end
 
 # `--run` starts the app; without it the file only defines the module, which is
-# how the smoke tests load it.
+# how the tests load it.
 case System.argv() do
-  ["--run"] -> Harlock.run(Nodes)
+  ["--run"] -> Harlock.run(Nodes, nil, Nodes.run_opts())
   _ -> :ok
 end
