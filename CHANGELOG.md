@@ -10,6 +10,18 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **`examples/editor.exs`** — a file browser that opens the selected file in
+  `$VISUAL`, then `$EDITOR`, then `vi` with `Cmd.exec`, reloads the preview when
+  the editor exits, suspends to the shell on Ctrl-Z, and takes the mouse. The
+  first example built on v0.8's basics; `test/examples/editor_test.exs` covers
+  it under the test backend. Building it surfaced two API questions for the
+  1.0 freeze, recorded in the roadmap: an app is never told the terminal's size,
+  so wrapped text in a `viewport` cannot be sized, and `table` has no message
+  for Enter. Using it in a real terminal found a third: Ctrl-Z inside a program
+  started by `Cmd.exec` did nothing.
+
 ## [0.8.0] — 2026-09-15
 
 The missing basics: what a terminal UI library has to provide because an

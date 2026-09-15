@@ -1098,10 +1098,35 @@ a timer. It found two things, both now decisions rather than surprises:
    consumes navigation keys that previously reached `update/2`. Opt out with
    `handle_keys: false`.
 
-`nodes.exs` predates v0.8's basics, and no example uses styled text, `button`,
-`checkbox`, `Cmd.exec`, `Cmd.suspend` or the mouse yet. Reworking the examples
-onto them — including an editor example for `Cmd.exec`, and correcting the
-headers that suggest running from IEx — is the next pass of this item.
+`nodes.exs` predates v0.8's basics. Reworking the examples onto them is the
+current pass of this item, and every awkward spot it finds is recorded here as a
+question for the freeze rather than worked around quietly.
+
+**`examples/editor.exs`** — a file list, a preview, `Cmd.exec` on `$VISUAL` /
+`$EDITOR` / `vi`, `Cmd.suspend`, the mouse, styled status lines. It found two
+things:
+
+1. **An app is never told the terminal's size.** Resize is handled entirely
+   inside the runtime; `update/2` receives no event and `view/1` no dimensions.
+   That makes wrapped text in a `viewport` impossible to size: `viewport` takes
+   `:content_height` from the app, and `Harlock.Text.height/2` needs the pane's
+   width, which only the renderer knows. The editor shows its preview unwrapped
+   because of it. Two shapes would close it, not mutually exclusive: a
+   `viewport(content_height: :auto)` that measures its child at the width it
+   lays out, or a size message delivered to `update/2` on start and on every
+   resize. The first keeps apps free of layout arithmetic; the second is what an
+   app laying out by breakpoints would want anyway.
+2. **`table` has no message for Enter.** `menu` and `tree` deliver
+   `{:harlock_submit, id}` on Enter; `table` routes only the arrows, so "open
+   the selected row" needs a raw `{:key, :enter, []}` clause guarded by
+   `Focus.current()`. A routed `{:harlock_submit, id}` on Enter would be
+   additive and consistent with the other list widgets.
+3. **Ctrl-Z inside a program started by `Cmd.exec` did nothing.** The helper
+   resumed a stopped program, since there is no job table to hand it to — so
+   Ctrl-Z in vim neither suspended vim nor returned to the shell, which is not
+   what anyone used to a terminal expects. Being addressed: when the program
+   stops and a job-control shell is available, Harlock stops too, and `fg`
+   resumes both.
 
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.

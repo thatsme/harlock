@@ -245,6 +245,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh dashboard  # telemetry + logger subscriptions into a sparkline
 ./scripts/run.sh nodes      # BEAM node explorer: windowed table, lazy supervision tree
 ./scripts/run.sh overview   # the README's second snippet
+./scripts/run.sh editor     # file browser: open files in $VISUAL/$EDITOR, Ctrl-Z, mouse
 ```
 
 The `scripts/run.sh` wrapper is in the GitHub repo — clone the repo to
@@ -281,6 +282,13 @@ UI exactly as it would for a real query. Point the same subscription at
 `[:ecto, :repo, :query]` and nothing else changes. Pausing removes only the
 interval from `subs/1`, so you can watch the runtime stop one subscription and
 leave the others running.
+
+`editor` is a file browser that hands the terminal to your editor. Enter, or
+the "Open in editor" button, runs `$VISUAL`, then `$EDITOR`, then `vi` on the
+selected file through `Cmd.exec`; the app redraws and reloads the preview when
+the editor exits. Ctrl-Z suspends to the shell through `Cmd.suspend`, and the
+mouse selects files, presses the button and scrolls the preview. Without a
+directory argument it works on a scratch directory of sample files.
 
 `explorer` puts `tree`, `select` and `menu` in one app. Its `deps` node
 starts with nothing loaded: expanding it marks the node in flight, returns
