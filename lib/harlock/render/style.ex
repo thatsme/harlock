@@ -107,7 +107,7 @@ defmodule Harlock.Render.Style do
     * `:truecolor` — colors pass through unchanged
 
   When no caps are installed (e.g. tests rendering through the test
-  backend) the default is `:truecolor`, matching v0.3 behaviour exactly.
+  backend) the default is `:truecolor`.
   """
   alias Harlock.Terminal.Caps
 

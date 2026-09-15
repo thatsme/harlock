@@ -4,8 +4,9 @@
 #   mix run examples/overview.exs --run
 #
 # End-to-end example for the README: focus traversal (Tab/Shift-Tab),
-# a focusable table with single-row selection, a focusable viewport
-# scrolling via Harlock.Viewport.apply_key/4, and a Cmd round-trip.
+# a focusable table with single-row selection, a focusable viewport whose
+# scroll keys arrive as routed {:harlock_scroll, ...} messages, and a Cmd
+# round-trip.
 
 defmodule Overview do
   use Harlock.App

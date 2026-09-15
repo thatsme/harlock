@@ -34,6 +34,8 @@ defmodule Harlock.Test do
 
   Options:
     * `:rows`, `:cols` — the size of the test screen (default 24×80).
+    * `:name` — base name for the app's processes (default: a unique one),
+      useful when a test needs to address them.
     * `:theme` — as for `Harlock.run/3`.
     * `:exec` — stands in for the programs `Harlock.Cmd.exec/3` would run,
       since there is no terminal to hand over. A function receiving the
@@ -166,7 +168,8 @@ defmodule Harlock.Test do
 
   @doc """
   Inject a resize event. Stand-in for SIGWINCH in headless tests — the
-  runtime updates its dimensions, discards `prev_frame`, and re-renders.
+  runtime updates its dimensions, clears the screen, and redraws at the new
+  size.
   The test writer's cell buffer is resized first so the new frame has
   somewhere to land.
   """

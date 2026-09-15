@@ -1,10 +1,11 @@
 # Run with:
 #   ./scripts/run.sh notes
 #
-# Or from iex:
-#   iex -S mix
-#   iex> c "examples/notes.exs"
-#   iex> Harlock.run(Notes)
+# or directly:
+#   mix run examples/notes.exs --run
+#
+# Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
+# would not receive keystrokes.
 #
 # A one-widget note editor, kept deliberately small to show how little an app
 # has to do to get a full multi-line editor:
@@ -105,8 +106,8 @@ defmodule Notes do
   end
 end
 
-# If running via `mix run examples/notes.exs` (rather than loading via iex),
-# kick off the app immediately.
+# `--run` starts the app; without it the file only defines the module, which is
+# how the smoke tests load it.
 case System.argv() do
   ["--run"] -> Harlock.run(Notes)
   _ -> :ok

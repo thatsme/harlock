@@ -2,9 +2,9 @@ defmodule Harlock.Terminal.Termios do
   @moduledoc """
   POSIX termios access for `/dev/tty` via a small NIF.
 
-  Most Harlock apps don't touch this directly — the runtime owns one
-  control fd for the app's lifecycle (snapshot on init, restore on
-  terminate) and input is delivered via `arm_select/1` + `read_nonblock/2`.
+  Most Harlock apps don't touch this directly — the app's terminal
+  keeper process owns one control fd for the app's lifecycle (snapshot on
+  init, restore on terminate) and input is delivered via `arm_select/1` + `read_nonblock/2`.
   The module is documented so you can drive termios from your own
   code if you need raw mode outside the Harlock runtime.
 

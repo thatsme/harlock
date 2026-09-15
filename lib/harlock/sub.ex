@@ -81,7 +81,7 @@ defmodule Harlock.Sub do
   ## Attachment happens on the first render
 
   `subs/1` is consulted while rendering, so a push-shaped subscription is not
-  listening the instant `Harlock.run/2` is called — anything emitted before that
+  listening the instant `Harlock.run/3` is called — anything emitted before that
   first render is not delivered. This rarely matters for a dashboard watching a
   running system, but it does mean a test that emits immediately after starting
   an app is racing the attach, and it makes this the wrong tool for capturing

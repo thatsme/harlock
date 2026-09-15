@@ -1,4 +1,4 @@
-# Harlock termios NIF
+# Harlock native code: the termios NIF and the exec helper
 
 `termios.c` and `exec_helper.c` are the only C in Harlock. They exist because
 the BEAM cannot interact with the controlling terminal through `:os.cmd`,
@@ -38,9 +38,14 @@ process, so it retains the controlling terminal; the syscalls run in
 the calling thread, so they reach the kernel reliably regardless of
 which Erlang process invoked them.
 
-## Public API
+## API
 
-| NIF                          | Purpose                                          |
+`Harlock.Terminal.Termios` wraps the NIF. The first group of functions is
+documented for driving termios outside the Harlock runtime; the second is
+`@doc false`, the native half of `Cmd.exec` and `Cmd.suspend` rather than an
+API of its own.
+
+| Function                     | Purpose                                          |
 | ---------------------------- | ------------------------------------------------ |
 | `open/0`                     | open `/dev/tty` (O_RDWR \| O_NOCTTY \| O_NONBLOCK), returns resource |
 | `close/1`                    | `SELECT_STOP` + close (via stop callback)        |
@@ -49,6 +54,7 @@ which Erlang process invoked them.
 | `winsize/1`                  | `ioctl(TIOCGWINSZ)`                              |
 | `arm_select/1`               | `enif_select_read` — get `{:tty_ready, ref}` on data |
 | `read_nonblock/2`            | `read(2)` with EAGAIN → `:wouldblock`, 0 → `:eof` |
+| *internal:*                  |                                                  |
 | `exec_start/3`               | run a program as the terminal's foreground process group (below) |
 | `exec_arm/1` / `exec_read/1` | `enif_select_read` on the helper's status pipe; the exit result |
 | `exec_kill/1`                | `SIGKILL` to the program's process group         |
@@ -56,9 +62,6 @@ which Erlang process invoked them.
 | `foreground?/1`              | `tcgetpgrp(fd) == getpgrp()`                     |
 | `job_control?/1`             | foreground, and parent in the same session but another process group |
 | `suspend/0`                  | `kill(0, SIGTSTP)` — stop this BEAM's process group |
-
-The `exec_*` functions are `@doc false`: they are the native half of handing
-the terminal to another program, not an API of their own.
 
 All NIFs run on dirty I/O schedulers except `arm_select` and `exec_arm`,
 which must run on a normal scheduler so `enif_select_read` correctly
@@ -122,8 +125,8 @@ and re-arms. This is the same path BEAM's built-in drivers use.
 
 ## Owner-pid check
 
-Each NIF that touches the fd verifies the calling process is the one
-that opened it:
+The two NIFs that read the fd, `arm_select` and `read_nonblock`, verify
+the calling process is the one that opened it:
 
 ```c
 ErlNifPid caller;
@@ -224,17 +227,16 @@ under `mix run`.
 ## Caveats and known limitations
 
 - **Single-reader constraint.** Only one Harlock app per BEAM can
-  usefully own `/dev/tty`. `Harlock.run/3` doesn't enforce this yet —
-  v0.3 should detect and refuse.
+  usefully own `/dev/tty`. `Harlock.run/3` does not detect a second one.
 - **Non-tty environments.** `Termios.open/0` returns
   `{:error, :no_tty}` when `/dev/tty` is unavailable (CI, piped stdin).
   Keeper surfaces this to stderr and halts the supervisor cleanly.
 - **EOF handling.** A `read(2)` returning 0 means the terminal was
   closed (ssh disconnect, tmux kill-window). The Reader surfaces this
   as `{:harlock_event, {:harlock_tty_lost, :eof}}` to the runtime and
-  terminates; the supervisor's `rest_for_one` then takes down the
-  rest of the tree and Keeper's `terminate/2` restores termios before
-  the BEAM exits.
+  terminates. It is a permanent child and the supervisor allows no
+  restarts, so the whole tree shuts down, and Keeper's `terminate/2`
+  restores termios before the BEAM exits.
 
 ## Building
 
@@ -254,13 +256,16 @@ Linux, which has no such flag.
 
 ## Verifying hostile conditions
 
-The automated test suite covers the non-tty path (`Termios.open/0`
-returns `{:error, :no_tty}` cleanly). Everything else requires a real
-terminal and gets verified manually. Walk through these any time you
-touch the NIF, the Reader, or the Keeper:
+The test suite covers the non-tty path (`Termios.open/0` returns
+`{:error, :no_tty}` cleanly). The smoke tests in `priv/`, run by
+`scripts/smoke.sh` in a real pty and in CI, cover resize, crash
+restoration, `Cmd.exec`, suspend under a job-control shell, and mouse
+reporting. What they cannot automate — killing the BEAM outright and
+closing the terminal window — is checked by hand after changes to the
+NIF, the Reader, or the Keeper:
 
 1. **Clean quit.** Run `./scripts/run.sh contacts`. Press Tab to verify
-   focus cycling. Press `q` (or Ctrl+C). Confirm: the terminal returns
+   focus cycling, then Ctrl+C. Confirm: the terminal returns
    to a usable shell prompt with echo working — no need to `stty sane`
    manually.
 2. **Crash mid-session.** While the demo is running, in another shell

@@ -22,7 +22,7 @@ defmodule Harlock.Tree do
   Lazy nodes are why this is worth modelling explicitly. A tree over a
   filesystem or a remote node cannot load eagerly, so expanding one is a side
   effect: the app receives `{:harlock_toggle, id, node_id}`, flips the node to
-  `:loading`, returns a `Cmd`, and swaps in `{:loaded, children}` as a list when
+  `:loading`, returns a `Cmd`, and replaces `:children` with the loaded list when
   the result arrives. The widget renders each state without needing to know
   which one it is looking at.
 

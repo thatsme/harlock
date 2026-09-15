@@ -1,10 +1,11 @@
 # Run with:
 #   ./scripts/run.sh explorer
 #
-# Or from iex:
-#   iex -S mix
-#   iex> c "examples/explorer.exs"
-#   iex> Harlock.run(Explorer)
+# or directly:
+#   mix run examples/explorer.exs --run
+#
+# Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
+# would not receive keystrokes.
 #
 # The three widgets added in v0.5, in one app:
 #
@@ -263,8 +264,8 @@ defmodule Explorer do
   end
 end
 
-# If running via `mix run examples/explorer.exs` (rather than loading via iex),
-# kick off the app immediately.
+# `--run` starts the app; without it the file only defines the module, which is
+# how the smoke tests load it.
 case System.argv() do
   ["--run"] -> Harlock.run(Explorer)
   _ -> :ok

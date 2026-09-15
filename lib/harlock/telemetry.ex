@@ -36,14 +36,17 @@ defmodule Harlock.Telemetry do
 
   ### `[:harlock, :cmd, :dispatch]`
 
-  Emitted when a `Cmd` is handed to the task supervisor.
+  Emitted when the runtime dispatches a `Cmd` returned from `init/1` or
+  `update/2`.
 
     * **measurements**: `%{count: 1}`
-    * **metadata**: `%{kind: :fun | :batch | :map | :none}`
+    * **metadata**: `%{kind: :fun | :batch | :map | :none | :exec | :suspend}`
 
   ### `[:harlock, :cmd, :complete]`
 
-  Emitted when a `Cmd` task returns (success or `{:cmd_error, _}`).
+  Emitted when a `Cmd.from/1` task returns (success or `{:cmd_error, _}`).
+  `exec` and `suspend` are carried out by the runtime rather than a task and do
+  not emit it.
 
     * **measurements**: `%{duration: native}`
     * **metadata**: `%{status: :ok | :error}`

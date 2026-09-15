@@ -45,10 +45,9 @@ defmodule Harlock.TextArea do
   vertical motion through CJK text lands where it looks like it should, and
   wrapping breaks where the text actually reaches the edge.
 
-  Vertical motion clamps the column to the target row's width. There is no
-  goal-column memory, so moving down through a short row and on to a long one
-  leaves the cursor at the short row's width rather than restoring the
-  original column.
+  Vertical motion remembers a goal column: moving down through a short row and
+  on to a long one restores the original column, as editors do. `apply_key/6`
+  threads it; under the runtime's key routing that is done for you.
   """
 
   alias Harlock.TextBuffer
@@ -415,7 +414,8 @@ defmodule Harlock.TextArea do
 
       def update({:paste, text}, model) do
         clean = Harlock.TextArea.expand_tabs(text)
-        %{model | body: TextBuffer.insert(model.body, model.cursor, clean)}
+        {body, cursor} = TextBuffer.insert(model.body, model.cursor, clean)
+        %{model | body: body, cursor: cursor}
       end
 
   Stops are measured in display cells, so a tab following `日` advances from

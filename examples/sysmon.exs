@@ -3,10 +3,11 @@
 # Run with:
 #   ./scripts/run.sh sysmon
 #
-# Or from iex:
-#   iex -S mix
-#   iex> c "examples/sysmon.exs"
-#   iex> Harlock.run(Sysmon)
+# or directly:
+#   mix run examples/sysmon.exs --run
+#
+# Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
+# would not receive keystrokes.
 #
 # Keys:
 #   ↑/↓ or j/k   move cursor

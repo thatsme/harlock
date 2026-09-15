@@ -2,12 +2,16 @@ defmodule Harlock.App do
   @moduledoc """
   Behaviour for Harlock applications.
 
-  An app defines three callbacks:
+  An app defines three callbacks, and optionally a fourth:
 
-    * `init/1` — returns the initial model from an arbitrary init argument.
+    * `init/1` — returns the initial model from an arbitrary init argument,
+      optionally paired with a `Cmd` to run at start.
     * `update/2` — given an event and the current model, returns the next
-      model, optionally paired with a `Cmd`. Return `:quit` to exit the app.
+      model, optionally paired with a `Cmd`. Return `:quit` to exit the app,
+      or `{:quit, cmd}` to dispatch a last `Cmd` on the way out.
     * `view/1` — given the current model, returns an element tree.
+    * `subs/1` (optional) — given the current model, returns the
+      `Harlock.Sub` subscriptions that should be active.
 
   The simplest app:
 
@@ -35,10 +39,10 @@ defmodule Harlock.App do
   directly.
 
   **Tab / Shift-Tab are consumed by the runtime for focus traversal
-  whenever the current tree contains at least one focusable element**
-  and do **not** reach `update/2` in that case. (When the tree has no
-  focusables to cycle, the keys fall through as raw `{:key, :tab, …}`
-  events.) Apps that previously dispatched on `{:key, :tab, []}` for
+  whenever pressing them moves focus** — that is, when two or more
+  focusable elements are in scope — and do **not** reach `update/2` in
+  that case. (With nothing to move focus to, the keys fall through as raw
+  `{:key, :tab, …}` events.) Apps that previously dispatched on `{:key, :tab, []}` for
   sub-navigation — for example, cycling a custom highlight — should
   bind that gesture to a non-Tab key the moment a focusable widget
   enters the tree, or the binding will be silently shadowed.
@@ -50,8 +54,12 @@ defmodule Harlock.App do
       `{:key, :tab, [:shift]}`. `key` is an atom for named keys
       (`:up`, `:enter`, `:escape`, …), `{:char, codepoint}` for
       printables, `{:f, n}` for function keys.
+    * `{:paste, binary}` — text pasted into the terminal, delivered whole
+      (bracketed paste) rather than as a key per character.
+    * `{:mouse, action, button, col, row, mods}` — with mouse reporting on;
+      see "Mouse" below.
 
-  Focus-aware widget routing (R2, v0.4). When a focusable widget
+  Focus-aware widget routing. When a focusable widget
   (`viewport`, `tabs`, `text_input`, `textarea`, `menu`, `select`,
   `tree`, `table`, `button`, `checkbox`) carries a `:focusable` id and is focused, the runtime
   translates relevant keys into widget-shaped messages **before**
@@ -85,9 +93,9 @@ defmodule Harlock.App do
             {%{m | nodes: mark_loading(m.nodes, id)}, Cmd.from(fn -> fetch(id) end)}
           end
 
-    * `{:harlock_edit, focus_id, {new_value, new_cursor}}` — focused
-      `text_input` accepted a printable character, arrow, backspace, or
-      delete:
+    * `{:harlock_edit, focus_id, {new_value, new_cursor}}` — a focused
+      `text_input` or `textarea` changed its value or cursor: typing,
+      motion, deletion, readline editing, or a click placing the cursor:
 
           def update({:harlock_edit, :search, {v, c}}, m),
             do: %{m | search: v, search_cursor: c}
@@ -134,7 +142,9 @@ defmodule Harlock.App do
   releases, drags, other buttons, a wheel with nothing left to scroll, and
   anything outside an open focus trap. `col` and `row` are 1-indexed, as the
   terminal reports them. An element with `handle_mouse: false` is never the
-  target, but still covers what lies beneath it.
+  target, but still covers what lies beneath it. One with `handle_keys: false`
+  is still focused by a click but gets no widget message from the mouse
+  either, since the mouse and the keyboard route through the same element.
 
   Cmd results and Sub-produced messages have whatever shape the app
   defined via `Cmd.map/2` and friends — those are not part of the

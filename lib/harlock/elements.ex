@@ -9,24 +9,40 @@ defmodule Harlock.Elements do
   the tree once per dirty frame and produces a `Frame` ready for the
   diff renderer.
 
-  ## Primitives
+  ## Layout
 
-    * `text/2` — text content: styled runs, newlines, optional wrap and align
-    * `button/2` / `checkbox/2` — focusable controls; Enter / Space are routed
-    * `text_input/1` — single-line editable input (paired with
-      `Harlock.TextBuffer`)
     * `vbox/1` / `hbox/1` — vertical / horizontal stacks with layout
-      constraints (`:length`, `:percentage`, `:fill`)
+      constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`; see
+      `Harlock.Layout`)
     * `box/1` — single-child container with border + title + padding
     * `spacer/0` — empty element that occupies a layout slot
     * `overlay/1` — render a foreground element on top of a background
       with optional `focus_trap`
-    * `table/1` / `list/2` — row-based primitives with selection and
-      focus highlighting
-    * `column/1` — column spec for `table/1`
+    * `viewport/1` — scrollable container
 
-  All elements that accept focus take a `:focusable` opt — the runtime
-  walks the tree to collect focusable ids for Tab traversal.
+  ## Content
+
+    * `text/2` — text content: styled runs, newlines, optional wrap and align
+    * `table/1` / `list/2` — row-based primitives with selection and
+      focus highlighting; `column/1` specifies a table column
+    * `tree/1` — expandable hierarchy with lazily loaded children
+    * `progress/1`, `spinner/1`, `sparkline/1` — progress and trends
+    * `statusbar/1`, `keybar/1` — single-line bars
+
+  ## Input
+
+    * `button/2` / `checkbox/2` — focusable controls
+    * `text_input/1` / `textarea/1` — single- and multi-line editable text
+    * `tabs/1`, `menu/1`, `select/1` — choosing among items
+
+  ## Focus and routing
+
+  Elements that accept focus take a `:focusable` id; the runtime walks the
+  tree to collect those ids for Tab traversal. A focused widget has its keys
+  routed for it and the result delivered as a message — see `Harlock.App`
+  for the vocabulary. Two options apply to every focusable element:
+  `handle_keys: false` delivers raw key events instead, and
+  `handle_mouse: false` keeps the element from being a mouse target.
   """
 
   alias Harlock.{Element, Element.Column}
@@ -215,7 +231,11 @@ defmodule Harlock.Elements do
     * `:selection`   — `:none` | `{:single, id}` | `{:multi, MapSet}`
     * `:show_header` — default `true`
     * `:offset`      — first visible row, for a window function (default `0`)
-    * `:focusable`, `:focus_trap` — same as other elements
+    * `:header_style`, `:row_style`, `:alt_row_style`, `:selected_style`,
+      `:focus_style` — styles for the header, rows, alternate rows, selected
+      rows, and the focused row; unset ones come from the theme
+    * `:focusable`, `:focus_trap`, `:handle_keys`, `:handle_mouse` — same as
+      other elements
 
   ## Auto-routing
 
@@ -329,12 +349,15 @@ defmodule Harlock.Elements do
       right edge (default `false`). The scrollbar consumes one column
       from the child's available width.
     * `:scrollbar_style` — `%Style{}` for the scrollbar track + thumb
+    * `:focusable`, `:handle_keys`, `:handle_mouse` — same as other elements
 
   The viewport renders the child into a temporary frame of
   `width × content_height`, then blits rows `offset..offset+visible_height`
-  into the real region. The app owns the scroll offset; pair with
-  `Harlock.Viewport.apply_key/4` in `update/2` to translate scroll-key
-  events into new offsets.
+  into the real region. The app owns the scroll offset. When the viewport is
+  focusable, scroll keys (and the mouse wheel over it) arrive as
+  `{:harlock_scroll, focus_id, new_offset}` for `update/2` to write back;
+  `Harlock.Viewport.apply_key/4` does the same arithmetic for an app that
+  sets `handle_keys: false`.
 
   Vertical-only for now. The child is given full width (minus scrollbar
   column if enabled) so horizontal layout proceeds normally.
@@ -368,16 +391,17 @@ defmodule Harlock.Elements do
 
   Optional:
     * `:placeholder`      — shown when value is empty and the input isn't focused
-    * `:max_length`       — soft hint; the element doesn't enforce it, but
-      `Harlock.TextBuffer.apply_key/3` respects it if you wire it in your app
     * `:style`            — `%Style{}` for the value text
     * `:placeholder_style`— `%Style{}` for the placeholder
     * `:password`         — when true, render each grapheme as `•`
 
-  The element is a dumb renderer. The app's `update/2` owns the value and
-  cursor; call `Harlock.TextBuffer.apply_key/3` to react to key events
-  when this input is focused. When focused, the renderer positions the
-  terminal cursor at the visual column matching `:cursor`.
+  The app's `update/2` owns the value and cursor. When the input is focused,
+  the runtime routes keys for it: edits arrive as
+  `{:harlock_edit, focus_id, {value, cursor}}` and Enter as
+  `{:harlock_submit, focus_id}`, and a click places the cursor. Use
+  `Harlock.TextBuffer.apply_key/3` directly only with `handle_keys: false`.
+  When focused, the renderer positions the terminal cursor at the visual
+  column matching `:cursor`.
   """
   @spec text_input(keyword()) :: Element.t()
   def text_input(opts) when is_list(opts) do
@@ -531,10 +555,11 @@ defmodule Harlock.Elements do
     * `:active` — id of the currently active tab
 
   Optional:
-    * `:focusable` — focus id; when focused, Left/Right cycle tabs (use
-      `Harlock.Tabs.apply_key/3` in `update/2`)
+    * `:focusable` — focus id; when focused, Left/Right/Home/End deliver
+      `{:harlock_select, focus_id, id}`, as does a click on a tab
     * `:style`         — `%Style{}` for inactive tabs (default `Theme.get(:header)`)
-    * `:active_style`  — `%Style{}` for the active tab (default `Theme.get(:focus)`)
+    * `:active_style`  — `%Style{}` for the active tab (default `Theme.get(:focus)`
+      when focused, `Theme.get(:header)` otherwise)
     * `:separator`     — string between tabs (default `" │ "`)
 
   Renders only the tab bar — the body for the active tab is rendered

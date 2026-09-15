@@ -1,6 +1,6 @@
-# Showcase — a multi-tab demo of the v0.3 widget set, migrated to the
-# v0.4 R2 routed-message idiom (focused-widget keys are auto-routed by
-# the runtime; this app's update/2 owns no manual apply_key dispatch):
+# Showcase — a multi-tab demo of several widgets, using routed messages
+# (focused-widget keys are routed by the runtime; this app's update/2 owns
+# no manual apply_key dispatch):
 #
 #   - `tabs/1`         — horizontal tab bar
 #   - `viewport/1`     — scrollable container with scroll-into-view
@@ -14,16 +14,17 @@
 #
 #   ./scripts/run.sh showcase
 #
-# Tabs (Left/Right or 1-4 to switch):
+# Tabs (Shift-Left / Shift-Right, or 1-4 outside the Form tab, to switch):
 #
 #   1. Logs    — viewport scrolling over 200 lines, scrollbar, focus follows
 #   2. Form    — 14 text_inputs inside a viewport; Tab cycles fields and
 #                scroll-into-view + cursor remap keep the focused field visible
 #   3. Widgets — progress bar + spinner + animated statusbar via Sub.interval
-#   4. Keys    — captures and displays the last 12 key events (use this to try
-#                modified arrows like Ctrl-Up, Shift-Right, etc.)
+#   4. Keys    — captures and displays the last 12 key events (try modified
+#                arrows like Ctrl-Up or Alt-Left; Shift-Left/Right, 1-4 and q
+#                keep their meanings above)
 #
-# Quit: Ctrl-C from anywhere, or 'q' when the tab bar / logs tab is focused.
+# Quit: Ctrl-C from anywhere, or 'q' whenever no form field is focused.
 
 defmodule ShowcaseApp do
   use Harlock.App
@@ -90,7 +91,7 @@ defmodule ShowcaseApp do
   end
 
   # Tab switching: 1-4 number keys (when not inside the Form tab where it
-  # would be typed into a field), and Ctrl-Left / Ctrl-Right.
+  # would be typed into a field), and Shift-Left / Shift-Right.
   def update({:key, {:char, c}, []}, model)
       when c in [?1, ?2, ?3, ?4] and model.tab != :form do
     %{model | tab: tab_for_digit(c)}
@@ -160,7 +161,7 @@ defmodule ShowcaseApp do
 
   defp header(_model) do
     text(
-      " Harlock v0.4 Showcase " <>
+      " Harlock Showcase " <>
         String.duplicate(" ", 80) <> " viewport · tabs · widgets · modified keys ",
       style: %Style{bold: true, fg: :cyan, reverse: true}
     )

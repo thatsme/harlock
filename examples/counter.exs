@@ -1,10 +1,11 @@
 # Run with:
 #   ./scripts/run.sh counter
 #
-# Or from iex:
-#   iex -S mix
-#   iex> c "examples/counter.exs"
-#   iex> Harlock.run(Counter)
+# or directly:
+#   mix run examples/counter.exs --run
+#
+# Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
+# would not receive keystrokes.
 
 defmodule Counter do
   use Harlock.App
@@ -38,8 +39,8 @@ defmodule Counter do
   end
 end
 
-# If running via `mix run examples/counter.exs` (rather than loading via iex),
-# kick off the app immediately.
+# `--run` starts the app; without it the file only defines the module, which is
+# how the smoke tests load it.
 case System.argv() do
   ["--run"] -> Harlock.run(Counter)
   _ -> :ok

@@ -25,10 +25,11 @@ defmodule Harlock.Tabs do
     * `Home` / `End` — first / last
     * anything else — `:noop`
 
-  ## Auto-routing (v0.4)
+  ## Auto-routing
 
   When a `tabs` element carries a `:focusable` id, the runtime calls
-  `apply_key/3` automatically and delivers the result to `update/2` as
+  `apply_key/3` automatically (and, with `mouse: true`, a click on a tab
+  delivers the same message) and delivers the result to `update/2` as
   `{:harlock_select, focus_id, new_id}` — the app only writes where
   the active tab id lives on the model:
 

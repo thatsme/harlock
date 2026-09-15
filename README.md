@@ -7,10 +7,10 @@
 
 A pure-Elixir TUI framework for Unix terminals. TEA-style
 model / update / view loop on top of OTP, with first-class focus
-traversal, layout constraints, ANSI cell-diff rendering, and a small
-termios NIF for direct `/dev/tty` control.
+traversal, layout constraints, mouse support, ANSI cell-diff rendering,
+and a small termios NIF for direct `/dev/tty` control.
 
-![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.7.0/screenshots/showcase.jpg)
+![Harlock showcase](https://raw.githubusercontent.com/thatsme/harlock/v0.8.0/screenshots/showcase.jpg)
 
 ```elixir
 defmodule Counter do
@@ -34,6 +34,9 @@ end
 
 Harlock.run(Counter)
 ```
+
+Run it with `mix run`. Not from an IEx prompt: IEx's own terminal driver reads
+the same tty, and the app would not receive keystrokes.
 
 A more realistic app wires focus traversal, a selectable table, a
 scrollable viewport, and a side-effect via `Cmd` — all together. Tab
@@ -146,13 +149,14 @@ Harlock.run(Overview)
 
 ```elixir
 def deps do
-  [{:harlock, "~> 0.7"}]
+  [{:harlock, "~> 0.8"}]
 end
 ```
 
-Harlock builds a small C NIF (`c_src/termios.c`, ~250 LOC of POSIX) for
-termios access — `elixir_make` handles this automatically. Requires a
-C compiler and `make` available at install time. macOS, Linux, and
+Harlock builds a small termios NIF (`c_src/termios.c`) and an exec helper
+(`c_src/exec_helper.c`, installed as `priv/harlock_exec`, which `Cmd.exec`
+uses to run programs with the terminal) — `elixir_make` handles both
+automatically. Requires a C compiler and `make` available at install time. macOS, Linux, and
 \*BSD are supported; Windows native is not (WSL works).
 
 ## Why Harlock
@@ -160,9 +164,9 @@ C compiler and `make` available at install time. macOS, Linux, and
 If you've written a Phoenix LiveView app you already know how to use
 Harlock — `init / update / view`, message-passing for events,
 side-effects as `Cmd` values. The runtime is a single OTP supervision
-tree: terminal owner → IO → cmd executor → TEA loop, with terminal
-restoration guaranteed on any crash path via the supervisor's
-`rest_for_one` strategy.
+tree: terminal owner → IO → cmd executor → TEA loop. Any crash shuts the
+tree down and the terminal owner restores the tty — checked in a real pty
+for crashes, killed supervisors, and programs started with `Cmd.exec`.
 
 Compared to alternatives:
 
@@ -171,20 +175,21 @@ Compared to alternatives:
   focus, layout, dirty-flag rendering, async cmds, resize handling.
 - **[Ratatouille](https://hex.pm/packages/ratatouille)** wraps termbox
   via a C port. Solid, but the C dep is bigger and the runtime model
-  is its own thing. Harlock is pure-Erlang for rendering with a small
-  in-process NIF only for termios — closer to "Elixir all the way
-  down" if that matters to you.
+  is its own thing. Harlock is pure Elixir for rendering, with a small
+  in-process NIF only for terminal control — closer to "Elixir all the
+  way down" if that matters to you.
 - **ratatui-via-port** approaches (Rust binary speaking a wire
   protocol to BEAM) ship as two artifacts: your Elixir release plus a
   separately-compiled Rust binary that has to be on `PATH` at runtime.
-  Harlock ships as one mix release — no extra binary, no version-skew
-  between BEAM and renderer. The element tree is also ordinary Elixir
+  Harlock ships as one mix dependency — its only native pieces build
+  from source with it, and there is no version-skew between BEAM and
+  renderer. The element tree is also ordinary Elixir
   data, which makes testing and composition easier than a wire-protocol
   boundary.
 
 ## Status
 
-Harlock is `v0.7`. The API is intentionally narrow and stable for the
+Harlock is `v0.8`. The API is intentionally narrow and stable for the
 primitives it ships; widgets and ergonomics are still landing.
 Anything `@moduledoc false` is internal and free to change.
 
@@ -193,8 +198,8 @@ Anything `@moduledoc false` is internal and free to change.
 | TEA runtime (`init` / `update` / `view` / `subs`) | ✓ |
 | OTP supervision + terminal restoration | ✓ |
 | Cmd executor (`Cmd.from`, `Cmd.batch`, `Cmd.map`) | ✓ |
-| Running another program with the terminal (`Cmd.exec`) | ✓ (unreleased) |
-| Job control: Ctrl-Z / `fg` (`Cmd.suspend`) | ✓ (unreleased) |
+| Running another program with the terminal (`Cmd.exec`) | ✓ (v0.8) |
+| Job control: Ctrl-Z / `fg` (`Cmd.suspend`) | ✓ (v0.8) |
 | Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ |
 | Focus traversal + focus_trap overlays | ✓ |
 | Focus-aware key routing (`viewport` / `tabs` / `text_input` / `textarea` / `menu` / `select` / `tree` / `table` / `button` / `checkbox`) | ✓ |
@@ -204,22 +209,23 @@ Anything `@moduledoc false` is internal and free to change.
 | Caps-aware color downgrade (truecolor → 256 → 16 → mono) | ✓ (v0.4) |
 | Table style cascade (`:header_style` / `:row_style` / `:alt_row_style` / `:selected_style` / `:focus_style`) | ✓ (v0.4) |
 | `:default` theme byte-identical to v0.3 (golden-frame pin) | ✓ (v0.4) |
-| SIGWINCH resize via `ioctl(TIOCGWINSZ)` NIF | ✓ |
+| Terminal resize reflows (SIGWINCH, `ioctl(TIOCGWINSZ)`) | ✓ (v0.8; broken before) |
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
-| Styled runs, newlines, wrap and align in `text` (`Harlock.Text`) | ✓ (unreleased) |
-| `button` / `checkbox` | ✓ (unreleased) |
-| Readline editing in `text_input` / `textarea` (word motions, kill ring, yank) | ✓ (v0.4.2) |
+| Styled runs, newlines, wrap and align in `text` (`Harlock.Text`) | ✓ (v0.8) |
+| `button` / `checkbox` | ✓ (v0.8) |
+| Readline editing in `text_input` / `textarea` (word motions, kills) | ✓ (v0.4.2) |
+| Yank (`Ctrl-Y`) in routed inputs, one kill ring per app | ✓ (v0.8) |
 | `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ |
 | `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ |
 | `:telemetry` events (frame render, input dispatch, cmd, reader) | ✓ |
 | Modified arrows / Home / End / F-keys (parser) | ✓ |
-| Mouse: clicks on elements and the items inside them, wheel scrolls (`mouse: true`) | ✓ (unreleased) |
+| Mouse: clicks on elements and the items inside them, wheel scrolls (`mouse: true`) | ✓ (v0.8) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | `tree` / `menu` / `select` widgets | ✓ (v0.5) |
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
 | Goal-column memory for `textarea` vertical motion | ✓ (v0.4.3) |
 | Undo / redo (`Harlock.UndoStack`, app-held) | ✓ (v0.5) |
-| Push-shaped `Sub` kinds (`telemetry` / `logger` / `source`) | ✓ (v0.7) |
+| Push-shaped `Sub` kinds (`telemetry` / `logger` / `source`) | ✓ (v0.6; `source` v0.7) |
 | `Sub` kinds with real logic (`file` / `port`) | 1.1+ |
 | Windowed `table` rows (`fn offset, limit -> rows`) | ✓ (v0.7) |
 | `sparkline` widget | ✓ (v0.6) |
@@ -238,6 +244,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh explorer   # tree + select + menu, with async-loaded nodes
 ./scripts/run.sh dashboard  # telemetry + logger subscriptions into a sparkline
 ./scripts/run.sh nodes      # BEAM node explorer: windowed table, lazy supervision tree
+./scripts/run.sh overview   # the README's second snippet
 ```
 
 The `scripts/run.sh` wrapper is in the GitHub repo — clone the repo to
@@ -249,12 +256,12 @@ snippet above).
 text_input fields, an overlay with focus_trap, async save via
 `Cmd.from`, custom theme, status bar with current-focus indicator.
 
-`showcase` is a four-tab tour of everything that landed in v0.3 — a
+`showcase` is a four-tab tour of the display widgets — a
 200-row scrollable log viewer with `viewport` + scrollbar, a long form
 that uses scroll-into-view to keep the focused field visible, a
 widget gallery with animated progress/spinner/statusbar/keybar, and a
 key-event inspector you can use to try out modified arrows
-(Ctrl-Up, Shift-Right, etc.).
+(Ctrl-Up, Alt-Left, etc.).
 
 `nodes` is a BEAM node explorer — `observer` for people on SSH — and the
 largest example: a process list, supervision trees, and memory over time. It
@@ -265,7 +272,7 @@ hydrated. The supervision tree loads children through a `Cmd` on expansion,
 because `which_children/1` is a call into another process and the window
 function runs during rendering.
 
-`dashboard` wires both v0.6 subscriptions into one screen: `Sub.telemetry`
+`dashboard` wires two push subscriptions into one screen: `Sub.telemetry`
 feeds job durations to a `sparkline`, `Sub.logger` turns log calls into
 `update/2` messages, and `Sub.interval` drives the workload. It emits its own
 telemetry because a standalone example has nothing else to listen to — but the
@@ -307,8 +314,10 @@ boundary is mocked.
 
 ## Smoke tests
 
-A handful of scripts in `priv/*_smoke.exs` exercise the real
-runtime + termios NIF via `script(1)`:
+The scripts in `priv/*_smoke.exs` exercise the real runtime and termios NIF
+in a pty via `script(1)`: resize, crash restoration, `Cmd.exec` and typed
+input to the program it runs, suspend under a job-control shell, mouse
+reporting, and two examples. They run in CI.
 
 ```sh
 ./scripts/smoke.sh
@@ -319,8 +328,7 @@ Picks the right flag syntax for BSD vs util-linux `script` automatically.
 ## Contributing
 
 Issues and PRs welcome at <https://github.com/thatsme/harlock>. The
-codebase is small enough (~3k LOC of Elixir + ~250 LOC of C) to read
-in an afternoon. Start with `lib/harlock/app/runtime.ex` — everything
+codebase is about 10k lines of Elixir and under 1k lines of C. Start with `lib/harlock/app/runtime.ex` — everything
 else is reachable from there.
 
 ## License

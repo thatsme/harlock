@@ -1,10 +1,11 @@
 # Run with:
 #   ./scripts/run.sh dashboard
 #
-# Or from iex:
-#   iex -S mix
-#   iex> c "examples/dashboard.exs"
-#   iex> Harlock.run(Dashboard)
+# or directly:
+#   mix run examples/dashboard.exs --run
+#
+# Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
+# would not receive keystrokes.
 #
 # The v0.6 event-source seam, end to end:
 #
@@ -170,8 +171,8 @@ defmodule Dashboard do
   end
 end
 
-# If running via `mix run examples/dashboard.exs` (rather than loading via iex),
-# kick off the app immediately.
+# `--run` starts the app; without it the file only defines the module, which is
+# how the smoke tests load it.
 case System.argv() do
   ["--run"] -> Harlock.run(Dashboard)
   _ -> :ok

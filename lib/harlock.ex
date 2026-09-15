@@ -4,11 +4,15 @@ defmodule Harlock do
 
   The two entry points:
 
-    * `Harlock.run/2` — blocking. Starts the app, returns when it exits.
-    * `Harlock.start_link/2` — non-blocking. Returns a supervisor pid for
+    * `Harlock.run/3` — blocking. Starts the app, returns when it exits.
+    * `Harlock.start_link/3` — non-blocking. Returns a supervisor pid for
       embedding inside an existing OTP application.
 
-  v0.1 is under construction; the smoke functions are scaffold tooling.
+  An app owns the terminal it runs in, so start it with `mix run`, not from an
+  IEx prompt: IEx's own terminal driver reads the same tty, and the app does
+  not receive keystrokes.
+
+  `smoke/0` and `smoke_crash/0` are diagnostics for the terminal layer.
   """
 
   alias Harlock.Terminal.{Ansi, Caps, Tty}
@@ -120,9 +124,11 @@ defmodule Harlock do
   Start an app under the caller's supervision tree without blocking.
 
   Returns `{:ok, sup_pid}`. The caller is responsible for handling the
-  supervisor's lifecycle (linking, monitoring, stopping). Useful when
-  embedding Harlock inside a larger OTP app — e.g. a Phoenix project with a
-  dev-mode TUI dashboard.
+  supervisor's lifecycle (linking, monitoring, stopping), and receives
+  `{:harlock_done, reason}` when the app ends itself. Useful when embedding
+  Harlock inside a larger OTP app that owns its terminal. The IEx caveat in
+  the module documentation applies here too, so a dashboard in a project
+  usually started with `iex -S mix` needs a separate `mix run` entry point.
 
   Accepts the same options as `run/3`.
   """

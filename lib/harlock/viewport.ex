@@ -25,7 +25,7 @@ defmodule Harlock.Viewport do
 
       def view(m) do
         viewport(
-          child: vbox(children: Enum.map(m.items, &text(content: &1))),
+          child: vbox(children: Enum.map(m.items, &text/1)),
           offset: m.offset,
           content_height: length(m.items)
         )
@@ -36,10 +36,11 @@ defmodule Harlock.Viewport do
   `:home`/`:end` jump to the extremes. Any other key returns the
   offset unchanged.
 
-  ## Auto-routing (v0.4)
+  ## Auto-routing
 
   When a viewport element carries a `:focusable` id, the runtime
-  routes the six scroll keys to `apply_key/4` automatically and
+  routes the six scroll keys to `apply_key/4` automatically (and the
+  mouse wheel, with `mouse: true`) and
   delivers the result to `update/2` as
   `{:harlock_scroll, focus_id, new_offset}` — the app only has to
   write where the offset lives on the model:

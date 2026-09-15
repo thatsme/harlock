@@ -2,13 +2,11 @@ defmodule Harlock.Theme do
   @moduledoc """
   Visual theme tokens used by the renderer.
 
-  v0.2 shipped the minimum surface the renderer actually reads
-  (`:header`, `:focus`, `:selection`, `:border`). v0.4 adds the
-  general-purpose tokens app authors reach for —
-  `:primary`, `:accent`, `:muted`, `:error` — and ships three built-in
-  themes plus caps-aware color downgrade so the same theme renders
-  reasonably on truecolor, 256-color, 16-color, and monochrome
-  terminals.
+  The renderer reads `:header`, `:focus`, `:selection`, `:border` and
+  `:primary`; `:accent`, `:muted` and `:error` are general-purpose tokens
+  for apps. Three built-in themes ship, and colors are downgraded to what
+  the terminal supports, so the same theme renders reasonably on
+  truecolor, 256-color, 16-color, and monochrome terminals.
 
   Tokens (each a `Harlock.Render.Style.t()`):
 
@@ -38,7 +36,7 @@ defmodule Harlock.Theme do
 
   ## Built-in themes
 
-    * `:default` — what v0.3 produced. Minimal, terminal-native colors.
+    * `:default` — minimal, terminal-native colors.
     * `:dark` — opinionated dark palette suitable for cave-dwellers.
     * `:high_contrast` — bright primaries / strong borders, biased for
       readability over aesthetics.
@@ -94,11 +92,10 @@ defmodule Harlock.Theme do
             error: %Style{fg: :red}
 
   @doc """
-  The default theme. Matches the pre-theming hard-coded values exactly so
-  apps without a custom theme render byte-identically across v0.3 and
-  v0.4. New v0.4 tokens (`:primary`/`:accent`/`:muted`/`:error`) carry
-  sensible defaults but are not read by the renderer itself — they're
-  available only to apps that explicitly opt in via `get/1`.
+  The default theme. Minimal, terminal-native colors; its output is pinned
+  byte-for-byte by a golden-frame test so it does not drift between releases.
+  `:primary` is the default style for `menu`, `tree` and a `select`'s open
+  list; `:accent`, `:muted` and `:error` are for apps, via `get/1`.
   """
   @spec default() :: t()
   def default, do: %__MODULE__{}

@@ -1,7 +1,7 @@
 defmodule Harlock.MixProject do
   use Mix.Project
 
-  @version "0.7.0"
+  @version "0.8.0"
   @source_url "https://github.com/thatsme/harlock"
 
   def project do
@@ -53,8 +53,8 @@ defmodule Harlock.MixProject do
     """
     A pure-Elixir TUI framework for Unix terminals. TEA-style model / update /
     view loop on top of OTP, with first-class focus traversal, layout
-    constraints, ANSI cell-diff rendering, and a thin termios NIF for direct
-    /dev/tty control.
+    constraints, mouse support, ANSI cell-diff rendering, and a small termios
+    NIF for direct /dev/tty control.
     """
   end
 
@@ -106,7 +106,7 @@ defmodule Harlock.MixProject do
         "ROADMAP.md",
         "CHANGELOG.md",
         "LICENSE",
-        "c_src/README.md": [filename: "termios_nif", title: "Termios NIF"]
+        "c_src/README.md": [filename: "termios_nif", title: "Native code"]
       ],
       groups_for_modules: [
         Apps: [
@@ -114,26 +114,44 @@ defmodule Harlock.MixProject do
           Harlock.App,
           Harlock.Cmd,
           Harlock.Sub,
+          Harlock.Sub.Logger,
           Harlock.Focus,
-          Harlock.Theme,
+          Harlock.Theme
+        ],
+        Elements: [
+          Harlock.Elements,
+          Harlock.Element,
+          Harlock.Element.Column,
+          Harlock.Text,
+          Harlock.Layout,
+          Harlock.Layout.Rect
+        ],
+        "Widget helpers": [
+          Harlock.Table,
+          Harlock.Tabs,
+          Harlock.Menu,
+          Harlock.Select,
+          Harlock.Tree,
+          Harlock.Viewport,
           Harlock.TextBuffer,
           Harlock.TextArea,
-          Harlock.Elements,
-          Harlock.Element.Column
-        ],
-        Widgets: [
-          Harlock.Tabs,
-          Harlock.Viewport
-        ],
-        Instrumentation: [
-          Harlock.Telemetry
+          Harlock.UndoStack
         ],
         Testing: [
           Harlock.Test
         ],
+        Instrumentation: [
+          Harlock.Telemetry,
+          Harlock.Bench
+        ],
         Rendering: [
           Harlock.Render.Style,
+          Harlock.Render.Buffer,
+          Harlock.Render.Cell,
           Harlock.Width
+        ],
+        "Low level": [
+          Harlock.Terminal.Termios
         ]
       ]
     ]

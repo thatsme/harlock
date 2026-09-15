@@ -1,10 +1,11 @@
 # Run with:
 #   ./scripts/run.sh nodes
 #
-# Or from iex:
-#   iex -S mix
-#   iex> c "examples/nodes.exs"
-#   iex> Harlock.run(Nodes)
+# or directly:
+#   mix run examples/nodes.exs --run
+#
+# Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
+# would not receive keystrokes.
 #
 # A BEAM node explorer: process list, supervision trees, and memory over time.
 # `observer` for people on SSH, and the first application built on Harlock rather
@@ -294,8 +295,8 @@ defmodule Nodes do
   end
 end
 
-# If running via `mix run examples/nodes.exs` (rather than loading via iex),
-# kick off the app immediately.
+# `--run` starts the app; without it the file only defines the module, which is
+# how the smoke tests load it.
 case System.argv() do
   ["--run"] -> Harlock.run(Nodes)
   _ -> :ok

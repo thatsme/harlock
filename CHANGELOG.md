@@ -10,6 +10,19 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-15
+
+The missing basics: what a terminal UI library has to provide because an
+application cannot. Terminal resize, styled text, handing the terminal to
+another program, job control, and the mouse — plus two defects found on the
+way, a resize path that had never worked outside tests and a crash path that
+left the terminal broken.
+
+**Upgrading from 0.7.** A focusable `table` now consumes navigation keys that
+used to reach `update/2`, and `"\n"` in a `text` binary starts a new line; see
+Changed. Apps must run under `mix run`, not IEx. The build now also compiles
+`priv/harlock_exec`.
+
 ### Added
 
 - **Mouse support.** `Harlock.run(app, arg, mouse: true)` turns on mouse
@@ -29,8 +42,10 @@ changes are called out in the relevant release notes.
   tree's expand marker toggles while the rest of the row selects — so no
   double-click is needed for either. The wheel scrolls a `viewport` three lines
   (`{:harlock_scroll, id, offset}`) or moves a `table` one row. Anything not routed arrives in
-  `update/2` as `{:mouse, action, button, col, row, mods}`, and a click outside
-  an open focus trap is never routed. `handle_mouse: false` opts an element out.
+  `update/2` as `{:mouse, action, button, col, row, mods}`, except that a left
+  press on a focusable element is always taken as a focus change even when it
+  produces no widget message. A click outside an open focus trap is never
+  routed. `handle_mouse: false` opts an element out.
 
   Opt-in because while reporting is on, the terminal's own drag-to-select needs
   a modifier. Reporting is turned off by the leave sequence every exit already
@@ -92,8 +107,9 @@ changes are called out in the relevant release notes.
   ```
 
   The result is `{:ok, exit_status}`, or `{:error, reason}` for a signal, a
-  program that could not be started, a bad `:cd`, or a second exec while one
-  runs. `:env` adds to the environment, with `nil` unsetting a variable. There
+  program that could not be started, a bad `:cd`, a second exec while one runs,
+  or the app ending while the program ran (`:killed`); `Harlock.Cmd` lists them
+  all. `:env` adds to the environment, with `nil` unsetting a variable. There
   is no shell in between.
 
   While the program runs, keystrokes, Ctrl-C and resizes go to it, not the app.
@@ -110,9 +126,9 @@ changes are called out in the relevant release notes.
   VM is stopped), a helper process to collect the exit status (the BEAM ignores
   `SIGCHLD`), and closing the BEAM's descriptors before the program starts.
   Verified in real ptys on macOS and Linux by `priv/exec_native_smoke.exs` and
-  `priv/exec_runtime_smoke.exs`, both in CI, and by `priv/exec_input_smoke.exs`,
+  `priv/exec_runtime_smoke.exs`, and by `priv/exec_input_smoke.exs`,
   which types into the pty and checks the keystrokes reach the program rather
-  than the paused app. `scripts/smoke.sh` pipes a smoke test's
+  than the paused app — all three in CI on Linux. `scripts/smoke.sh` pipes a smoke test's
   `<name>.drive.sh`, when it has one, into the pty as typed input.
 
   **The build now produces a second binary,** `priv/harlock_exec`, next to the
@@ -198,11 +214,9 @@ changes are called out in the relevant release notes.
   genuine freeze question — the alternative is an async fetch protocol, which is
   considerably more API.
 
-  **`table` has no auto-routing,** so every scrollable table hand-writes the six
-  key clauses `viewport` gets for free. `nodes.exs` has them verbatim. Adding
-  `:table` to the auto-routed types would reuse the existing
-  `{:harlock_scroll, id, offset}` message and add no public surface; whether that
-  belongs in a milestone with no features is a decision, not an oversight.
+  **`table` had no auto-routing,** so every scrollable table hand-wrote the six
+  key clauses `viewport` gets for free, and `nodes.exs` had them verbatim — which
+  led to the next entry.
 
 - **`table` is now auto-routed**, closing the ergonomic gap `examples/nodes.exs`
   exposed. `Harlock.Table` provides the two pure helpers.
@@ -242,8 +256,9 @@ changes are called out in the relevant release notes.
   message usually lands in a catch-all, so the arrows go dead with no error.
   `examples/sysmon.exs` and `examples/contacts.exs` broke exactly this way and are
   migrated. The contact list no longer wraps from the last row to the first.
-- `scripts/smoke.sh` runs in CI and covers `examples/contacts.exs`. The examples
-  have no unit tests, and the regression above was only visible by running them.
+- `scripts/smoke.sh` runs in CI and covers `examples/contacts.exs`, including
+  typing into its inputs (see Fixed). Only `overview` and `showcase` have unit
+  tests, and these regressions were only visible by running the others.
 - `table/1` documents that a window function runs during rendering, and what
   therefore belongs in it.
 - **`"\n"` in a `text` binary now starts a new line.** It was previously dropped
@@ -251,6 +266,24 @@ changes are called out in the relevant release notes.
   `text` relying on that joins its lines itself now.
 
 ### Fixed
+
+- **`Ctrl-Y` yanks in routed `text_input` and `textarea`.** Key routing passed
+  an empty kill ring, so kills deleted text but yank restored nothing, although
+  the README listed yank as supported. The runtime now holds one kill ring for
+  the app, so text killed in one input can be yanked into another.
+
+- **`examples/contacts.exs` accepts typing again.** Its search box and dialog
+  fields matched raw keys, which routing has delivered as `{:harlock_edit, …}`
+  and `{:harlock_submit, …}` since v0.4, so typing did nothing and Enter did not
+  save. It now handles the routed messages, and its smoke test types into both.
+
+- **Documentation brought up to date with the code.** Among the corrections:
+  `viewport/1`, `text_input/1` and `tabs/1` no longer tell apps to call
+  `apply_key` themselves, which routing makes wrong; `text_input`'s
+  `:max_length`, which was never enforced, is no longer documented; `Harlock`'s
+  module docs give the right arities and warn against running apps from IEx, as
+  do the example headers, which suggested it; and the documentation sidebar
+  groups every public module.
 
 - **A crash in `update/2` now restores the terminal.** Previously the app's
   runtime died and nothing else happened: the supervisor kept the terminal
@@ -1468,7 +1501,8 @@ loop on top of OTP, no NIFs, no ports for the core rendering path.
 - Examples: `counter`, `sysmon`.
 - Smoke tests driven by `script(1)` (BSD vs util-linux flag handling).
 
-[Unreleased]: https://github.com/thatsme/harlock/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/thatsme/harlock/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/thatsme/harlock/releases/tag/v0.8.0
 [0.7.0]: https://github.com/thatsme/harlock/releases/tag/v0.7.0
 [0.6.0]: https://github.com/thatsme/harlock/releases/tag/v0.6.0
 [0.5.0]: https://github.com/thatsme/harlock/releases/tag/v0.5.0

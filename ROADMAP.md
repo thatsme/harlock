@@ -4,16 +4,21 @@ A pure-Elixir TUI framework for Unix terminals. TEA-style model/update/view
 loop on top of OTP, with a thin termios NIF for direct /dev/tty control.
 
 This roadmap is the working plan through v1.0 (stable API). It's a living
-document — revised as the design settles. v0.7.0 is current and published
+document — revised as the design settles. v0.8.0 is current and published
 on Hex.
 
-## Status snapshot (v0.7.0, current)
+## Status snapshot (v0.8.0, current)
 
 What works:
 
-- OTP supervision tree (`Keeper → Writer → Reader → Runtime`, `rest_for_one`,
-  `max_restarts: 0`). Terminal is restored on any crash via
-  `Keeper.terminate/2`. This is correct and load-bearing — don't regress it.
+- OTP supervision tree (`Keeper → Writer → Reader → TaskSupervisor → Runtime`,
+  `rest_for_one`, `max_restarts: 0`, runtime and task supervisor `:transient`).
+  Any crash shuts the tree down and `Keeper.terminate/2` restores the terminal —
+  including while `Cmd.exec` has handed it to another program. Load-bearing, and
+  covered by `priv/crash_smoke.exs` in a real pty.
+- `Harlock.run/3` returns `{:ok, reason}` when the app ends itself and
+  `{:error, reason}` when it goes down, and leaves the caller's exit trapping as
+  it found it.
 - TEA loop with `init/1`, `update/2`, `view/1`, optional `subs/1`. Dirty-flag
   rendering, no periodic polling.
 - `Cmd` executor for supervised side effects: `Cmd.from/1`, `Cmd.batch/1`,
@@ -24,8 +29,12 @@ What works:
   automatic stash/restore on open/close.
 - Focus-aware key routing (v0.4): the runtime dispatches navigation keys
   straight to the focused `viewport` / `tabs` / `text_input` / `textarea` /
-  `menu` / `select` / `tree` / `table` / `button` / `checkbox` and delivers the result as a message, so apps no
-  longer hand-wire `apply_key` helpers. `box(focus_proxy:)` lets a container
+  `menu` / `select` / `tree` / `table` / `button` / `checkbox` and delivers the
+  result as a message, so apps no longer hand-wire `apply_key` helpers.
+- Mouse (opt-in, `mouse: true`): clicks focus elements and act on buttons,
+  checkboxes, table rows, menu items, tree nodes and markers, tabs, `select`
+  choices and `text_input` positions; the wheel scrolls viewports and tables.
+  Routed through the same messages as keys, and turned off on every exit. `box(focus_proxy:)` lets a container
   mirror a child's focus for styling without joining traversal.
 - Push-shaped subscriptions: `Sub.telemetry` and `Sub.logger` turn `:telemetry`
   events and log calls into `update/2` messages, `Sub.source` subscribes to
@@ -44,8 +53,8 @@ What works:
   (`:default` / `:dark` / `:high_contrast`), caps-aware colour downgrade
   (truecolor → 256 → 16 → mono), and a table style cascade. `:default`-theme
   output is pinned byte-for-byte against v0.3.0 by a golden-frame test.
-- Primitives: `text` (styled runs, `\n`, wrap, align), `vbox`, `hbox`, `spacer`, `box` (4 border styles +
-  title + padding), `overlay` (5 anchors + focus trap), `table` / `list`
+- Primitives: `text` (styled runs, `\n`, wrap, align), `vbox`, `hbox`,
+  `spacer`, `box` (4 border styles + title + padding), `overlay` (5 anchors + focus trap), `table` / `list`
   (row-id identity, single/multi selection, header), `text_input`, `textarea`
   (multi-line, opt-in word wrap), `viewport`
   (render-then-clip + scroll-into-view + cursor remap), `progress`, `spinner`,
@@ -60,13 +69,18 @@ What works:
   `erl_signal_server`, Keeper reads `ioctl(TIOCGWINSZ)` through the NIF, and the
   runtime clears and redraws at the new size. Checked in a real pty in CI.
 - Input parser handles CSI/SS3, bracketed paste, XTerm focus reporting,
-  modified arrows (`CSI 1;5A`), Home / End, and F-keys.
+  modified arrows (`CSI 1;5A`), Home / End, F-keys, SGR mouse, and the Kitty
+  keyboard protocol's encoding.
 - `:telemetry` events for frame render, input dispatch, cmd, and reader.
-- Headless `IO.Test` backend selectable via `backend: :test` for
-  deterministic tests without a TTY, plus the `Harlock.Test` helper API.
+- A headless test backend, started through `Harlock.Test`, for deterministic
+  tests without a TTY — with stand-ins for `Cmd.exec` and `Cmd.suspend` and
+  synthetic mouse events.
 - Examples: `counter`, `sysmon`, `contacts`, `showcase`, `overview`, `notes`,
-  `explorer`, `dashboard`, `nodes`. Smoke
-  tests driven by `script(1)` (handles BSD vs util-linux flag differences).
+  `explorer`, `dashboard`, `nodes`.
+- Smoke tests in a real pty, run by `scripts/smoke.sh` in CI on Linux and checked
+  on macOS: the runtime, focus, resize, `Cmd.exec` (native layer, runtime
+  handover, typed input), crash restoration, suspend under a job-control shell,
+  mouse reporting on and off, and two examples.
 - Packaging and quality gates: Hex package metadata, published hexdocs, CI,
   Dialyzer, and Credo all wired in.
 
@@ -78,8 +92,8 @@ What's stubbed / missing — the honest list:
   it.
 - No windowed aggregation for metrics (rates, percentiles over a trailing
   window) — 1.1+. Counts and means are a few lines of `Enum` in the model.
-- Styled runs are accepted by `text` only. Box titles, tab labels and table
-  cells still take a plain binary.
+- Styled runs are accepted by `text`, `button` and `checkbox`. Box titles, tab
+  labels and table cells still take a plain binary.
 - **Apps do not work under IEx.** IEx's terminal driver reads the same tty, and a
   Harlock app started from an IEx prompt received no keystrokes when tested.
   Run apps with `mix run`. Several example headers suggest starting them from
@@ -96,14 +110,17 @@ What's stubbed / missing — the honest list:
 1. **OTP-first.** The supervision tree is the architecture. New features
    that need processes get their own child, supervised correctly.
 2. **No NIFs in the rendering path.** ANSI in, ANSI out. The termios NIF
-   shipped in v0.2 is the one allowed exception, strictly scoped to
-   /dev/tty control; new NIFs require the same level of justification.
+   shipped in v0.2 is the one allowed exception, strictly scoped to terminal
+   control: termios, window size, and handing the terminal to another program,
+   with its small `harlock_exec` helper. New native code requires the same
+   level of justification.
 3. **Phoenix devs feel at home.** `update/view/subs` mirrors LiveView's
    mental model on purpose, and subscribing to a `Phoenix.PubSub` topic is a
    one-liner — via `Sub.source/3` rather than a named `Sub.pubsub`, because
    principle 7 says the dependency belongs in the app rather than here.
-4. **Headless-testable.** Every new widget gets `IO.Test`-driven coverage.
-   No "works on my terminal" features.
+4. **Headless-testable.** Every new widget gets coverage under the test
+   backend, and every terminal behaviour a smoke test in a real pty. No "works
+   on my terminal" features.
 5. **Terminal restoration is sacred.** Any new IO path must survive crashes
    without leaving the terminal in raw mode / alt-screen. Test it.
 6. **Honest stubs over fake completeness.** Stub modules clearly say so in
@@ -119,19 +136,22 @@ What's stubbed / missing — the honest list:
 8. **Own what only the terminal owner can do.** Priority goes first to what an
    application cannot provide for itself: resize, handing the terminal to another
    program, suspend, terminal modes such as mouse reporting. Something an app can
-   build from existing elements in a few lines — a checkbox, a chart — can wait.
+   build from existing elements in a few lines — a gauge, a chart — can wait.
    Harlock is a foundation in the way curses is, and a gap in the first category
    is a gap no application can close.
 
 ## Versioning
 
 - **0.x** — API may break. We document breaking changes in CHANGELOG.
-- **1.0** — locked public API for `Harlock`, `Harlock.App`, `Harlock.Elements`,
-  `Harlock.Cmd`, `Harlock.Sub`, `Harlock.Render.Style`, `Harlock.Layout`,
-  `Harlock.Text`.
-  Internal modules — Harlock.App.Runtime, the rest of Harlock.Terminal.\*,
-  Harlock.Element.Renderer — stay `@moduledoc false` and remain free
-  to change without notice.
+- **1.0** — locked public API. The core is certain: `Harlock`, `Harlock.App`,
+  `Harlock.Elements`, `Harlock.Cmd`, `Harlock.Sub`, `Harlock.Render.Style`,
+  `Harlock.Layout`, `Harlock.Text`. The rest of what is documented today —
+  `Harlock.Test`, `Harlock.Theme`, `Harlock.Focus`, the widget helper modules,
+  `Harlock.TextBuffer`, `Harlock.UndoStack`, `Harlock.Width`, `Harlock.Telemetry`,
+  `Harlock.Bench`, and `Harlock.Terminal.Termios`, the one terminal module with
+  public documentation — is decided module by module in v0.9's freeze pass.
+  Internal modules (the runtime, the renderer, the rest of the terminal layer)
+  stay `@moduledoc false` and remain free to change without notice.
 
 ---
 
@@ -363,7 +383,8 @@ Shipped. App-owned scroll state, render-then-clip pipeline:
 - `Harlock.Viewport.apply_key/4` translates scroll keys
   (`:up | :down | :page_up | :page_down | :home | :end`) into a
   new clamped offset. Scroll keys are explicit — app calls the
-  helper from `update/2`, no runtime interception.
+  helper from `update/2`, no runtime interception. (Superseded by v0.4's
+  focus-aware routing, which intercepts them for a focused viewport.)
 
 ### Mouse events (parser) ✓
 
@@ -373,8 +394,9 @@ Parser landed. Emits
 :move | :wheel_up | :wheel_down`. Buttons: `:left | :middle | :right |
 :extra4 | :extra5`.
 
-**Runtime enabling + hit-test routing — deferred.** The runtime does
-not write `\e[?1006h` by default and does not route events to elements.
+**Runtime enabling + hit-test routing — deferred** (delivered in v0.8, item 5).
+At the time the runtime did not write `\e[?1006h` and did not route events to
+elements.
 Apps that need mouse input can write the enable sequence themselves and
 match on raw `(col, row)` in `update/2`. Hit-test infra (frames carry
 element bounds, runtime resolves cursor → element) waits on a real use
@@ -620,14 +642,14 @@ as a change. `examples/notes.exs` wires it to `Ctrl-Z` / `Ctrl-R`.
 
 ---
 
-## v0.6 — the event-source seam (next)
+## v0.6 — the event-source seam ✓ (shipped as v0.6.0)
 
 Split out of v0.5 so that milestone could close on the widget set alone.
 Nothing here is a widget, and holding `tree` / `menu` / `select` back until
 `Phoenix.PubSub` integration was also done would have left finished work
 unpublished for no reason.
 
-`Sub` currently has one kind, `:interval`, which is a *timer* — the runtime
+`Sub` then had one kind, `:interval`, which is a *timer* — the runtime
 wakes itself up. Everything else worth subscribing to is the opposite shape:
 an **external source pushes**, and the runtime has to receive without the
 source knowing anything about rendering. That is one seam, and the milestone
@@ -738,17 +760,120 @@ roadmap instead of implementing it.
 
 ### Harlock.Bench ✓
 
+`Harlock.Bench` measures render and diff over five
+canonical scenarios, reporting percentiles rather than a mean because a frame
+budget is about the slow frames. Public rather than dev-only, so app authors
+can measure their own views.
+
+First baseline, 200×80, 100 samples, one dev machine — useful for comparison
+against itself, not as an absolute:
+
+| scenario | p50 | p99 |
+|---|---|---|
+| `text_rows` | 3 481µs | 4 403µs |
+| `nested_boxes` | 8 499µs | 10 035µs |
+| `table_rows` | 11 878µs | 12 697µs |
+| `tree_expanded` | 12 083µs | 13 312µs |
+| `textarea_wrapped` | 19 148µs | 22 425µs |
+
+Three things this establishes, all of which were assumptions before:
+
+**A wrapped textarea missed a 60 Hz budget**, before the memo below. ~16 700µs per frame is
+the target and p50 is 19 148µs. Scaling confirms the cause is rewrapping the
+whole value: n=50 → 4 198µs, n=200 → 20 275µs, n=800 → 56 115µs, roughly
+linear in content. That was the number the textarea work had to beat, rather than a suspicion.
+
+**An unchanged frame is not free.** Diffing two identical 200×80 frames costs
+3 072µs at p50 — comparable to rendering `text_rows` outright, because the
+comparison walks all 16 000 cells with no early-out. The dirty-flag runtime
+only diffs when something changed, so this is not currently a live cost, but
+it caps how cheap a redraw can ever be.
+
+**The layout solver is not the bottleneck.** 24 levels of nested boxes cost
+less than half a wrapped textarea, which redirects optimisation effort away
+from where it might otherwise have gone first.
+
 ### Textarea wrap memoisation ✓
+
+Rescoped by what the benchmark
+actually showed, and smaller than it looked.
+
+A single render called `visual_rows/2` three times over: directly, then again
+inside `visual_position/3`, then again inside `scroll_to_reveal/5`. Removing
+that repetition needed no invalidation logic at all — `visual_rows/2` keeps a
+one-entry memo keyed by the value and width themselves, so a hit requires the
+key to match and there is nothing to get stale. Editing replaces the binary,
+the next call misses, and that is correct.
+
+| n paragraphs | redraw unchanged | while editing |
+|---|---|---|
+| 50 | 2 457µs | 3 686µs |
+| 200 | 5 734µs | 10 444µs |
+| 800 | 6 656µs | 21 196µs |
+
+Against the pre-memo 19 148µs at n=200, that is 1.8x on the editing path and
+3.3x on redrawing unchanged content. n=200 now fits a 60 Hz budget; n=800 does
+not.
+
+**What remains is bounded by profiling, not guesswork.** At n=200 wrapping is
+2 457µs of a 10 444µs render — 24% — and the rest is cell writing, which is
+bounded by region size rather than content. So a line-break index with
+per-line invalidation can only take a quarter off a mid-sized document. Its
+value grows with size, though, because wrapping scales with content while
+drawing does not: at n=800 wrapping is closer to half the cost. That makes it
+worth doing for large documents and not worth doing for typical ones — which
+is the opposite of the priority it had before it was measured.
 
 ### Windowed `table` rows ✓
 
+`:rows` accepts a
+`fn offset, limit -> rows` function as well as an enumerable, with `:offset`
+app-owned because keyset pagination has no row index to auto-centre on.
+
+The benchmark corrected the reason for doing it. Render cost is flat in row
+count already — 10 137µs at 200 rows, 8 908µs at 20 000 — because drawing is
+bounded by the region, and the `length/1` / `find_index/2` / `drop/2`
+traversals the list path performs are trivial beside cell writing. So this was
+never a rendering optimisation.
+
+What it actually buys is not *acquiring* rows nobody will see. A list-backed
+table over a query issues a query for every row; a windowed one asks for
+viewport-many. The benchmark could not show that because it pre-built an
+in-memory list, which is exactly the kind of measurement that confirms the
+wrong thing.
+
+No `Ecto.Queryable` adapter, deliberately — see the principle below. A
+query-backed table is a few lines of app code over the window function, and
+building it in-tree would put a database dependency inside a terminal UI
+library.
+
 ### `Sub.source/3` ✓
+
+Subscribe to anything that delivers Erlang messages; the subscribe function runs
+inside the subscription's own process. It removed `Sub.pubsub` from the plan —
+see guiding principle 7.
 
 ### Layout solver property tests ✓
 
+Twelve properties for the layout solver over
+generated constraint lists: sizes non-negative, one rect per constraint, slots
+contiguous and non-overlapping, cross axis untouched, `:max` never exceeded,
+`:length` honoured with slack absorbed, `:fill` proportional to weights,
+over-constraint truncating rather than crashing, zero regions yielding zero
+slots, and determinism.
+
+One of them was wrong before the solver was: "a split always consumes the whole
+region" fails for `[{:max, 0}]`, because filling the space would violate the cap
+the caller asked for. The solver is right and the invariant needed the
+condition, which is the sort of correction generated input produces and example
+tests do not.
+
+Running at StreamData's default 100 runs per property. Worth raising if the
+solver changes.
+
 ---
 
-## v0.8 — the missing basics, then freeze prep (next, and the last milestone before 1.0)
+## v0.8 — the missing basics ✓ (shipped as v0.8.0)
 
 An earlier version of this section declared v0.8 closed to features, on the
 argument that every feature added before 1.0 is another shape frozen
@@ -757,8 +882,9 @@ and metrics helper stay in 1.1+ because of it.
 
 It did not survive an audit of what the library cannot do. A terminal UI library
 that cannot style a word inside a sentence, hand the terminal to `$EDITOR`, or
-notice the window being resized is not ready to freeze. So v0.8 has two halves,
-in this order.
+notice the window being resized is not ready to freeze. So the basics came first
+and shipped as v0.8.0; the freeze prep that was the second half of this
+milestone follows as v0.9.
 
 ### The missing basics
 
@@ -782,8 +908,8 @@ provide it itself (principle 8). Each item says which applies.
    `priv/resize_smoke.exs` resizes its own pty and checks the runtime follows, in
    CI. This also unblocks `Sub.signal` (1.1+), which needs the same mechanism.
 
-2. **Styled and wrapped text** ✓ in `text`; box titles, tab labels and table
-   cells later. `text/2` took one binary, one style, one line, and clipped it.
+2. **Styled and wrapped text** ✓ in `text`, and in `button` and `checkbox`
+   labels; box titles, tab labels and table cells later. `text/2` took one binary, one style, one line, and clipped it.
    There was no way to bold one word or colour a value inside a sentence, and
    `"\n"` was silently dropped. `tabs`, `keybar` and `statusbar` each draw mixed
    styles with private code, so the library already needed styled runs and
@@ -861,18 +987,18 @@ provide it itself (principle 8). Each item says which applies.
    - **A way to get the exit status.** The BEAM ignores SIGCHLD, so the kernel
      discards a child's status at exit and `waitpid` never returns it — the first
      spike hung there. The spike defaulted SIGCHLD for the child's lifetime, which
-     is a VM-wide change; a small helper process that waits for the program and
-     reports its status leaves the VM's disposition alone and is the preferred
-     shape.
+     is a VM-wide change. What shipped instead is a small helper,
+     `priv/harlock_exec`, that waits for the program and reports its status,
+     leaving the VM's disposition alone.
    - **A child stopped by Ctrl-Z.** A program that does not handle SIGTSTP stops,
      and there is no job table to return to. Resuming it in the foreground is the
-     simplest defined behaviour.
+     simplest defined behaviour, and what the helper does.
 
    While the program runs, `update/2` keeps processing subscriptions and `Cmd`
    results but nothing is drawn, and one full redraw follows. A second exec while
-   one is running is refused. A crash while the terminal is handed over must still
-   restore it, reclaim the foreground, and kill the child's process group — the
-   same crash-path test the restore path already has.
+   one is running is refused. A crash while the terminal is handed over restores
+   it, reclaims the foreground, and kills the child's process group;
+   `priv/crash_smoke.exs` checks that in a real pty.
 
    `Cmd.suspend/0` is opt-in, not bound to Ctrl-Z by the runtime:
    `examples/notes.exs` and the `Harlock.UndoStack` docs already use Ctrl-Z for
@@ -895,8 +1021,9 @@ provide it itself (principle 8). Each item says which applies.
    - **Opt-in**, `Harlock.run(app, arg, mouse: true)`: while reporting is on,
      the terminal's own drag-to-select needs a modifier. Modes 1000, 1002 and
      1006; 1003 (motion with no button) is left off.
-   - **Off on every way out**: the disable sequence is part of `Ansi.leave/0`,
-     which quitting, crashing, `Cmd.exec` and `Cmd.suspend` all write.
+   - **Off on every way out**: the disable sequence is part of the terminal's
+     leave sequence, which quitting, crashing, `Cmd.exec` and `Cmd.suspend` all
+     write.
      `priv/mouse_smoke.exs` records the pty's output and checks the order of
      on and off for quit, crash and an exec round trip.
    - **Routed like keys**, no new message shapes: the renderer records each
@@ -913,16 +1040,21 @@ provide it itself (principle 8). Each item says which applies.
    - **Only if an application needs it**: drag gestures, motion with no button
      held, double-click.
 
-The second half is freeze prep, below, and it does not start until these land —
-the freeze decisions depend on the shape item 2 settled and on what building a
-real application on items 3–5 turns up.
+---
+
+## v0.9 — freeze prep (next, and the last milestone before 1.0)
+
+The second half of what v0.8 was planned to be. Nothing in this milestone adds a
+feature: it is the work that decides what 1.0 commits to. The freeze decisions
+depend on the shapes v0.8 settled and on what building a real application on
+them turns up.
 
 ### Build one real application first
 
 The highest-value item here, and the one most likely to be skipped.
 
-`table`'s window function and `Sub.source/3` are days old with no real-world
-use, and 1.0 commits to their shape permanently. Something substantial has to be
+`table`'s window function and `Sub.source/3` have no real-world use yet, and
+neither do most of v0.8's basics, and 1.0 commits to their shape permanently. Something substantial has to be
 built on this API before it is frozen — the node/distribution explorer is the
 obvious candidate, since `tree` with lazy children already fits a supervision
 tree and `Sub.telemetry` can feed it live numbers.
@@ -966,6 +1098,11 @@ a timer. It found two things, both now decisions rather than surprises:
    consumes navigation keys that previously reached `update/2`. Opt out with
    `handle_keys: false`.
 
+`nodes.exs` predates v0.8's basics, and no example uses styled text, `button`,
+`checkbox`, `Cmd.exec`, `Cmd.suspend` or the mouse yet. Reworking the examples
+onto them — including an editor example for `Cmd.exec`, and correcting the
+headers that suggest running from IEx — is the next pass of this item.
+
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
 
@@ -983,120 +1120,19 @@ Two calls that should be made in the audit rather than by default:
   documentation task: making it public means committing to its fields. Decide
   which, deliberately.
 
-### The rest of the Sub kinds — moved to 1.1+
-
-`Sub.file`, `Sub.port` and windowed aggregation were listed here and are now
-under **1.1+**, below. `Sub.pubsub` is dropped entirely — `Sub.source/3` covers
-it.
-
 ### Hardening
 
 - **Dialyzer clean** at `:underspecs` + `:overspecs`. Strict specs on all
   public functions.
-- **Property-based tests** — done for the layout solver, twelve properties over
-  generated constraint lists: sizes non-negative, one rect per constraint, slots
-  contiguous and non-overlapping, cross axis untouched, `:max` never exceeded,
-  `:length` honoured with slack absorbed, `:fill` proportional to weights,
-  over-constraint truncating rather than crashing, zero regions yielding zero
-  slots, and determinism.
-
-  One of them was wrong before the solver was: "a split always consumes the whole
-  region" fails for `[{:max, 0}]`, because filling the space would violate the cap
-  the caller asked for. The solver is right and the invariant needed the
-  condition, which is the sort of correction generated input produces and example
-  tests do not.
-
-  Running at StreamData's default 100 runs per property. Worth raising if the
-  solver changes.
-
-  **The frame-diff half is not done, and needs a prerequisite.** "Replay produces
-  an equivalent frame" requires interpreting the ANSI the differ emits, and
-  nothing in the tree can do that — the test backend's writer captures a cell
-  buffer written *through* the renderer, not a terminal emulator that consumes
-  escape sequences. Either a minimal ANSI interpreter gets written for tests
-  only, or this property gets dropped as costing more than it proves. Deciding
-  which is the actual open item; it is not a matter of writing the property.
-- **Benchmarks** ✓ — `Harlock.Bench` measures render and diff over five
-  canonical scenarios, reporting percentiles rather than a mean because a frame
-  budget is about the slow frames. Public rather than dev-only, so app authors
-  can measure their own views.
-
-  First baseline, 200×80, 100 samples, one dev machine — useful for comparison
-  against itself, not as an absolute:
-
-  | scenario | p50 | p99 |
-  |---|---|---|
-  | `text_rows` | 3 481µs | 4 403µs |
-  | `nested_boxes` | 8 499µs | 10 035µs |
-  | `table_rows` | 11 878µs | 12 697µs |
-  | `tree_expanded` | 12 083µs | 13 312µs |
-  | `textarea_wrapped` | 19 148µs | 22 425µs |
-
-  Three things this establishes, all of which were assumptions before:
-
-  **A wrapped textarea already misses a 60 Hz budget.** ~16 700µs per frame is
-  the target and p50 is 19 148µs. Scaling confirms the cause is rewrapping the
-  whole value: n=50 → 4 198µs, n=200 → 20 275µs, n=800 → 56 115µs, roughly
-  linear in content. That is the number the incremental-rewrap item below now
-  has to beat, rather than a suspicion.
-
-  **An unchanged frame is not free.** Diffing two identical 200×80 frames costs
-  3 072µs at p50 — comparable to rendering `text_rows` outright, because the
-  comparison walks all 16 000 cells with no early-out. The dirty-flag runtime
-  only diffs when something changed, so this is not currently a live cost, but
-  it caps how cheap a redraw can ever be.
-
-  **The layout solver is not the bottleneck.** 24 levels of nested boxes cost
-  less than half a wrapped textarea, which redirects optimisation effort away
-  from where it might otherwise have gone first.
-- **Incremental rewrap for `textarea`** — rescoped by what the benchmark
-  actually showed, and now smaller than it looked.
-
-  A single render called `visual_rows/2` three times over: directly, then again
-  inside `visual_position/3`, then again inside `scroll_to_reveal/5`. Removing
-  that repetition needed no invalidation logic at all — `visual_rows/2` keeps a
-  one-entry memo keyed by the value and width themselves, so a hit requires the
-  key to match and there is nothing to get stale. Editing replaces the binary,
-  the next call misses, and that is correct.
-
-  | n paragraphs | redraw unchanged | while editing |
-  |---|---|---|
-  | 50 | 2 457µs | 3 686µs |
-  | 200 | 5 734µs | 10 444µs |
-  | 800 | 6 656µs | 21 196µs |
-
-  Against the pre-memo 19 148µs at n=200, that is 1.8x on the editing path and
-  3.3x on redrawing unchanged content. n=200 now fits a 60 Hz budget; n=800 does
-  not.
-
-  **What remains is bounded by profiling, not guesswork.** At n=200 wrapping is
-  2 457µs of a 10 444µs render — 24% — and the rest is cell writing, which is
-  bounded by region size rather than content. So a line-break index with
-  per-line invalidation can only take a quarter off a mid-sized document. Its
-  value grows with size, though, because wrapping scales with content while
-  drawing does not: at n=800 wrapping is closer to half the cost. That makes it
-  worth doing for large documents and not worth doing for typical ones — which
-  is the opposite of the priority it had before it was measured.
-- **Windowed data access for `table`** ✓ — `:rows` now accepts a
-  `fn offset, limit -> rows` function as well as an enumerable, with `:offset`
-  app-owned because keyset pagination has no row index to auto-centre on.
-
-  The benchmark corrected the reason for doing it. Render cost is flat in row
-  count already — 10 137µs at 200 rows, 8 908µs at 20 000 — because drawing is
-  bounded by the region, and the `length/1` / `find_index/2` / `drop/2`
-  traversals the list path performs are trivial beside cell writing. So this was
-  never a rendering optimisation.
-
-  What it actually buys is not *acquiring* rows nobody will see. A list-backed
-  table over a query issues a query for every row; a windowed one asks for
-  viewport-many. The benchmark could not show that because it pre-built an
-  in-memory list, which is exactly the kind of measurement that confirms the
-  wrong thing.
-
-  No `Ecto.Queryable` adapter, deliberately — see the principle below. A
-  query-backed table is a few lines of app code over the window function, and
-  building it in-tree would put a database dependency inside a terminal UI
-  library.
+- **Property-based tests for frame diffing.** The layout solver has them (see
+  v0.7); "replaying the diff produces an equivalent frame" does not yet. It needs
+  the diff's ANSI interpreted back into cells, and the test backend's writer
+  already does that for the subset the renderer emits — cursor moves, clears and
+  style codes. Whether that subset is enough for the property, or a stricter
+  interpreter is needed, is the open question.
+- **Incremental rewrap for `textarea`** — the part the memo did not cover (see
+  v0.7): a line-break index with per-line invalidation, worth it for large
+  documents only.
 - **Documentation**: every public function has `@doc` + example. Module
   guides (`guides/getting_started.md`, `guides/widgets.md`,
   `guides/testing.md`, `guides/embedding.md`).
@@ -1114,11 +1150,12 @@ it.
 ## v1.0 — stable API
 
 - Public API frozen per the `@moduledoc` decisions above.
-- v0.8's missing basics landed and its freeze prep complete, including at least one real application built
-  on the API.
+- v0.8's missing basics landed and v0.9's freeze prep complete, including at
+  least one real application built on the API.
 - Announcement post + Reddit/Elixir Forum thread.
 - Minimum supported: Elixir 1.19+, OTP 26+ — matching the `elixir: "~> 1.19"`
-  requirement `mix.exs` already ships.
+  requirement `mix.exs` already ships. CI tests OTP 28 only, so the OTP floor
+  needs a CI job before 1.0 claims it.
 
 ---
 
@@ -1143,9 +1180,9 @@ No new design work.
 - `Sub.signal(:sigusr1, msg)` — **unblocked by v0.8 item 1.** The verification
   this waited on is done, and `Keeper`'s comment was wrong: handled signals go
   to the global `erl_signal_server` event manager, not to the caller, and
-  SIGWINCH reflow was not working at all. Once Keeper forwards through a
-  `:gen_event` handler, an app-level signal sub is a second consumer of the same
-  mechanism. It must not reset a signal to `:default` on teardown while another
+  SIGWINCH reflow was not working at all. Keeper now forwards through a
+  `:gen_event` handler, and an app-level signal sub would be a second consumer of
+  the same mechanism. It must not reset a signal to `:default` on teardown while another
   consumer — Keeper, or OTP's own `prim_tty_sighandler` — still depends on it.
 
 `Sub.pubsub` is **not** on this list. `Sub.source/3` covers it, and a named
@@ -1170,7 +1207,7 @@ rates, and percentiles that cannot be derived from a running total.
 - **Kitty keyboard protocol push.** Parser only. Needed for chords the legacy
   encoding cannot express, and not for Alt-modified letters, which already work.
 - **`:ssh` backend.** An IO seam addition rather than a redesign: the backend
-  seam already exists and `Harlock.IO.Test` proves a non-tty backend fits. It
+  seam already exists and the test backend proves a non-tty backend fits. It
   also sidesteps the `user_drv` contention problem entirely, since an SSH
   channel is not the controlling terminal. This is the prerequisite for Nerves
   over SSH, where the console is an Erlang shell rather than a pty.
@@ -1216,19 +1253,18 @@ than speculatively.
 - **Recording / replay** — log every event + final frame, replay
   deterministically for bug reports. Useful for headless testing too.
 
-## Notes for whoever picks this up
+## Architecture notes
 
-- The runtime is the spine. Don't add state to it casually — every field
-  is load-bearing for focus/render/sub lifecycle. New features that need
-  process state usually want their own GenServer, not a runtime field.
-- The renderer is pure. Keep it that way. If you find yourself wanting
-  `IO.puts` in there, you're doing it wrong.
-- Always test the crash path. `priv/crash_smoke.exs` is the template — crash
-  the app on a real pty, assert the terminal is restored. New IO paths get the
-  same treatment. It exists because the previous argument for clean teardown
-  was never tested, and was wrong: see the next note.
-- Read the `App.Supervisor` comment block before changing supervisor
-  config. The `rest_for_one` + `:transient` runtime + Keeper-first
-  ordering is the entire correctness argument for clean teardown. The runtime
+- The runtime is the spine. Every field in its state is load-bearing for the
+  focus, render and subscription lifecycle, so features that need process state
+  usually get their own GenServer rather than a runtime field.
+- The renderer is pure: an element tree in, a frame out, no I/O.
+- Every IO path has a crash-path test. `priv/crash_smoke.exs` is the template —
+  crash the app on a real pty, assert the terminal is restored. It exists because
+  the earlier argument for clean teardown was never tested, and was wrong: see
+  the next note.
+- The comment block in the app supervisor carries the correctness argument for
+  clean teardown: `rest_for_one`, a `:transient` runtime, and Keeper as the
+  first child. The runtime
   was `:temporary` until a crash test showed that a temporary child's crash
   shuts nothing down, leaving the terminal raw.

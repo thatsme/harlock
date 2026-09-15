@@ -48,7 +48,13 @@ defmodule Harlock.Cmd do
     * `{:error, {:exec, reason}}` — it could not be started, e.g. `:enoent`
       when `program` is not on `PATH`.
     * `{:error, {:chdir, reason}}` — the `:cd` directory could not be entered.
+    * `{:error, :killed}` — the program was killed with the app, which ended
+      while it ran.
     * `{:error, :busy}` — another program is already running.
+    * `{:error, :not_foreground}` — the app does not hold the terminal's
+      foreground, so it cannot hand it over.
+    * other `{:error, {stage, reason}}` pairs for failures setting the program
+      up (opening the terminal, a pipe, starting it), which are rare.
     * `{:error, :no_terminal}` — the app is not attached to a terminal, as under
       the test backend without an `:exec` stub (see `Harlock.Test.start_app/3`).
 
@@ -77,11 +83,12 @@ defmodule Harlock.Cmd do
   without a `:suspend` stub, and `{:error, :not_stopped}` if the stop was
   requested but did not happen, in which case the app simply carries on.
 
-  Task lifecycle: cmd tasks are supervised by `Harlock.App.TaskSupervisor`,
-  itself a child of the app's supervisor positioned after `Runtime`. A
-  Runtime exit terminates the task supervisor and all in-flight tasks
-  (rest_for_one). A task crash is caught at the task body and delivered
-  as `{:cmd_error, reason}`; it never propagates to the runtime.
+  Task lifecycle: `from/1` tasks run under a task supervisor in the app's
+  supervision tree, started before the runtime. They end with the app: quitting
+  stops the tree, and so does a crash. A crash inside a task is caught at the
+  task body and delivered as `{:cmd_error, reason}`; it never propagates to the
+  runtime. `exec/3` and `suspend/0` are not tasks — the runtime carries them
+  out itself.
   """
 
   require Logger

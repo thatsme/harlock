@@ -28,6 +28,12 @@ defmodule Harlock.Element do
           | :statusbar
           | :keybar
           | :tabs
+          | :menu
+          | :select
+          | :tree
+          | :sparkline
+          | :button
+          | :checkbox
   @type t :: %__MODULE__{
           type: type(),
           opts: keyword(),

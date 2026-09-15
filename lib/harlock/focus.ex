@@ -4,12 +4,10 @@ defmodule Harlock.Focus do
 
   Focus state itself lives in the runtime; this module exposes it via the
   process dictionary, set by the runtime immediately before invoking app
-  callbacks. Don't try to call this from outside a Harlock callback —
-  there's no global state to read.
+  callbacks. Called from outside a Harlock callback it has no state to read.
 
-  Mutation (setting focus, advancing it manually) returns a `Cmd` to the
-  runtime. v0.1 ships `Cmd.focus/1`; richer programmatic control arrives
-  alongside the full Cmd executor.
+  Focus is read-only from an app: it moves with Tab / Shift-Tab, focus traps,
+  and mouse clicks.
   """
 
   @key :harlock_focus

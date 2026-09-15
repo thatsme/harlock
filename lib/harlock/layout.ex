@@ -25,8 +25,7 @@ defmodule Harlock.Layout do
   1. Compute each slot's *lower bound* (`:length` and `:percentage` get
      their full size; `:min(n)` gets `n`; `:fill` and `:max` get 0).
      If the lower bounds already exceed the available space, truncate
-     from the tail and log a warning — the over-constrained behavior is
-     identical to v0.2.
+     from the tail and log a warning rather than crash.
 
   2. Distribute the remainder across flexible slots. `:fill(weight)`,
      `:min`, and `:max` all participate; `:fill` carries its declared
