@@ -27,7 +27,7 @@ defmodule Harlock.Examples.EditorTest do
   end
 
   defp start(dir, opts \\ []) do
-    Harlock.Test.start_app(Editor, dir, [rows: 20, cols: 90, mouse: true] ++ opts)
+    Harlock.Test.start_app(Editor, dir, [rows: 20, cols: 90] ++ Editor.run_opts() ++ opts)
   end
 
   # 1-indexed {col, row} of the first occurrence of `needle` on screen, as a

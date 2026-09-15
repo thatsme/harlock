@@ -3,7 +3,8 @@ defmodule Harlock.Examples.ExplorerTest do
 
   Code.require_file(Path.join([__DIR__, "..", "..", "examples", "explorer.exs"]))
 
-  defp start, do: Harlock.Test.start_app(Explorer, nil, rows: 20, cols: 80, mouse: true)
+  defp start,
+    do: Harlock.Test.start_app(Explorer, nil, [rows: 20, cols: 80] ++ Explorer.run_opts())
 
   # 1-indexed {col, row} of the first occurrence of `needle` on screen, as a
   # terminal would report a click on it.

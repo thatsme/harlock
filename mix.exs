@@ -130,6 +130,7 @@ defmodule Harlock.MixProject do
           Harlock.Table,
           Harlock.Tabs,
           Harlock.Menu,
+          Harlock.RadioGroup,
           Harlock.Select,
           Harlock.Tree,
           Harlock.Viewport,

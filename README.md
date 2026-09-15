@@ -202,7 +202,7 @@ Anything `@moduledoc false` is internal and free to change.
 | Job control: Ctrl-Z / `fg` (`Cmd.suspend`) | ✓ (v0.8) |
 | Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ |
 | Focus traversal + focus_trap overlays | ✓ |
-| Focus-aware key routing (`viewport` / `tabs` / `text_input` / `textarea` / `menu` / `select` / `tree` / `table` / `button` / `checkbox`) | ✓ |
+| Focus-aware key routing (`viewport` / `tabs` / `text_input` / `textarea` / `menu` / `select` / `tree` / `table` / `button` / `checkbox` / `radio_group`) | ✓ |
 | Wide-grapheme width (CJK, emoji, ZWJ, flags) | ✓ |
 | Theme tokens (`:header`, `:focus`, `:selection`, `:border`, `:primary`, `:accent`, `:muted`, `:error`) | ✓ (full set in v0.4) |
 | Built-in themes (`:default` / `:dark` / `:high_contrast`) | ✓ (v0.4) |
@@ -213,6 +213,8 @@ Anything `@moduledoc false` is internal and free to change.
 | `text` / `vbox` / `hbox` / `box` / `spacer` / `overlay` / `table` / `list` / `text_input` | ✓ |
 | Styled runs, newlines, wrap and align in `text` (`Harlock.Text`) | ✓ (v0.8) |
 | `button` / `checkbox` | ✓ (v0.8) |
+| `radio_group`; `list` as a list box and, with `marker: :checkbox`, a check list | ✓ (v0.9) |
+| Focus changes delivered to `update/2` (`{:harlock_focus, from, to}`) | ✓ (v0.9) |
 | Readline editing in `text_input` / `textarea` (word motions, kills) | ✓ (v0.4.2) |
 | Yank (`Ctrl-Y`) in routed inputs, one kill ring per app | ✓ (v0.8) |
 | `progress` / `spinner` / `statusbar` / `keybar` / `tabs` | ✓ |
@@ -239,7 +241,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh counter    # simplest possible app — count up/down
 ./scripts/run.sh sysmon     # live BEAM process monitor
 ./scripts/run.sh contacts   # contact manager: search, list, dialog with buttons, mouse
-./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys and mouse events
+./scripts/run.sh showcase   # tabs, viewport, widgets, form inputs, key and mouse events
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
 ./scripts/run.sh explorer   # tree + select + menu: async-loaded nodes, focus changes, mouse
 ./scripts/run.sh dashboard  # telemetry + logger subscriptions into a sparkline
@@ -258,12 +260,13 @@ text_input fields, buttons and a checkbox, an overlay with focus_trap,
 async save via `Cmd.from`, styled text, a custom theme, a status bar with
 a current-focus indicator, and the mouse.
 
-`showcase` is a four-tab tour of the display widgets — a clickable tab
+`showcase` is a five-tab tour of the widgets — a clickable tab
 bar, a 200-row log viewer with `viewport` + scrollbar and styled levels, a
 long form that uses scroll-into-view to keep the focused field visible, a
 widget gallery with animated progress/spinner/statusbar/keybar and a
-button and checkbox driving them, and an event inspector for modified arrows
-(Ctrl-Up, Alt-Left, etc.) and the raw mouse events an app receives.
+button and checkbox driving them, an event inspector for modified arrows
+(Ctrl-Up, Alt-Left, etc.) and the raw mouse events an app receives, and an
+order form with radio groups, a check list, a list box and a textarea.
 
 `nodes` is a BEAM node explorer — `observer` for people on SSH — and the
 largest example: a process list, supervision trees, and memory over time. It

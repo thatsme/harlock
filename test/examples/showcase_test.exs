@@ -4,7 +4,7 @@ defmodule Harlock.Examples.ShowcaseTest do
   Code.require_file(Path.join([__DIR__, "..", "..", "examples", "showcase.exs"]))
 
   setup do
-    h = Harlock.Test.start_app(ShowcaseApp, nil, rows: 30, cols: 100, mouse: true)
+    h = Harlock.Test.start_app(ShowcaseApp, nil, [rows: 30, cols: 100] ++ ShowcaseApp.run_opts())
     on_exit(fn -> Harlock.Test.stop(h) end)
     {:ok, h: h}
   end
@@ -120,5 +120,52 @@ defmodule Harlock.Examples.ShowcaseTest do
     out = Harlock.Test.render(h)
     assert out =~ "mouse press right at #{col},#{row}"
     assert out =~ "mouse ctrl + wheel_up at #{col},#{row}"
+  end
+
+  describe "Inputs tab" do
+    defp inputs(h), do: Harlock.Test.model(h).inputs
+
+    test "clicks choose radio options, tick the check list and pick from the list box", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?5})
+
+      click(h, "( ) Large", 1)
+      click(h, "( ) Courier", 1)
+      click(h, "[ ] olives", 1)
+      click(h, "stuffed")
+
+      assert %{size: :large, delivery: :courier, crust: :stuffed} = inputs(h)
+      assert inputs(h).toppings == MapSet.new([:mozzarella, :olives])
+      assert Harlock.Test.render(h) =~ "[x] olives"
+    end
+
+    test "the keyboard drives every control, and Save and Reset act on the order", %{h: h} do
+      Harlock.Test.send_key(h, {:char, ?5})
+      # Tab bar → size → delivery → notes → toppings → crust → gift → save.
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, :down)
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, :right)
+      Harlock.Test.send_key(h, :tab)
+      for c <- ~c"no onions", do: Harlock.Test.send_key(h, {:char, c})
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, :down)
+      Harlock.Test.send_key(h, {:char, ?\s})
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, {:char, ?\s})
+      Harlock.Test.send_key(h, :tab)
+      assert Harlock.Test.focused(h) == :save_order
+      Harlock.Test.send_key(h, :enter)
+
+      assert %{size: :large, delivery: :courier, notes: "no onions", gift: true} = inputs(h)
+      assert inputs(h).toppings == MapSet.new([:mozzarella, :basil])
+
+      assert inputs(h).saved == "large classic, mozzarella, basil, courier, gift wrapped"
+      assert Harlock.Test.render(h) =~ "✓ Saved: large classic"
+
+      click(h, "[ Reset ]", 2)
+      assert inputs(h).saved == nil
+      assert inputs(h).size == :medium
+    end
   end
 end

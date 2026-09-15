@@ -7,7 +7,7 @@ Code.require_file("examples/contacts.exs")
 # {:harlock_edit, ...}, {:harlock_submit, ...} and {:harlock_select, ...} —
 # an example still matching raw keys for them would fail here.
 
-h = Harlock.Test.start_app(ContactsApp, nil, rows: 30, cols: 100)
+h = Harlock.Test.start_app(ContactsApp, nil, [rows: 30, cols: 100] ++ ContactsApp.run_opts())
 
 frame = Harlock.Test.render(h)
 

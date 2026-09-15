@@ -34,6 +34,7 @@ defmodule Harlock.Element do
           | :sparkline
           | :button
           | :checkbox
+          | :radio_group
   @type t :: %__MODULE__{
           type: type(),
           opts: keyword(),

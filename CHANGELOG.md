@@ -57,10 +57,28 @@ changes are called out in the relevant release notes.
   first focus, so the log scrolls on the arrows after a Tab into it. Two
   questions for the 1.0 freeze came out of it, recorded in the roadmap: an app
   cannot move focus, and the wheel does not reach a viewport enclosing the
-  element under the pointer.
+  element under the pointer. A fifth tab, Inputs, is an order form with two
+  radio groups, a check list, a list box, a checkbox, a `textarea` and Save /
+  Reset buttons.
+- **The examples' tests start each app with the options its `--run` uses.**
+  `showcase` was started without `mouse: true` while its tests passed it, so
+  every click test passed and no click worked in a terminal. `contacts`,
+  `editor`, `explorer` and `showcase` now define `run_opts/0`, which both
+  `--run` and their tests use.
 
 ### Added
 
+- **`radio_group/1`** — every option shown, one chosen, drawn as `(•) label` /
+  `( ) label`, one per row or side by side (`direction: :horizontal`). When
+  focused, the arrows move the choice itself, wrapping, with Home / End to the
+  ends; a click chooses. Delivers `{:harlock_select, id, value}`, as `tabs`
+  does. `Harlock.RadioGroup.apply_key/3` holds the key logic.
+- **Check lists.** Space on a focused `table` or `list` with enumerable rows
+  and `selection: {:multi, set}` delivers `{:harlock_toggle, id, row_id}`, the
+  tuple `tree` sends, for the app to flip in its set; before, it reached
+  `update/2` as a raw key. `list/2` takes `marker: :checkbox` to draw `[x]` or
+  `[ ]` before each item from that set, and a click on such an item focuses it
+  and toggles it. `list/2` is now documented as a list box.
 - **`{:harlock_focus, from, to}`: `update/2` is told when focus moves** — the
   first focus when the app starts (`from` is `nil`), Tab and Shift-Tab, a
   click, a `focus_trap` overlay opening or closing, the focused element

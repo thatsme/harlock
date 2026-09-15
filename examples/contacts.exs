@@ -487,6 +487,21 @@ defmodule ContactsApp do
     end
   end
 
+  @doc false
+  # The options `--run` starts the app with — the custom theme and the mouse.
+  # The tests start it with these too, so a test cannot pass on an option the
+  # real app never sets.
+  def run_opts do
+    theme = %Harlock.Theme{
+      header: %Style{bold: true, fg: :cyan},
+      focus: %Style{reverse: true, fg: :yellow},
+      selection: %Style{bg: :blue, fg: :white},
+      border: %Style{fg: :bright_black}
+    }
+
+    [theme: theme, mouse: true]
+  end
+
   defp modal_field_keys(:modal_name), do: {:name, :name_cursor}
   defp modal_field_keys(:modal_email), do: {:email, :email_cursor}
   defp modal_field_keys(:modal_phone), do: {:phone, :phone_cursor}
@@ -494,14 +509,7 @@ end
 
 # `--run` starts the app; without it the file only defines the module, which is
 # how the tests load it.
-theme = %Harlock.Theme{
-  header: %Harlock.Render.Style{bold: true, fg: :cyan},
-  focus: %Harlock.Render.Style{reverse: true, fg: :yellow},
-  selection: %Harlock.Render.Style{bg: :blue, fg: :white},
-  border: %Harlock.Render.Style{fg: :bright_black}
-}
-
 case System.argv() do
-  ["--run"] -> Harlock.run(ContactsApp, nil, theme: theme, mouse: true)
+  ["--run"] -> Harlock.run(ContactsApp, nil, ContactsApp.run_opts())
   _ -> :ok
 end

@@ -3,7 +3,8 @@ defmodule Harlock.Examples.ContactsTest do
 
   Code.require_file(Path.join([__DIR__, "..", "..", "examples", "contacts.exs"]))
 
-  defp start, do: Harlock.Test.start_app(ContactsApp, nil, rows: 24, cols: 80, mouse: true)
+  defp start,
+    do: Harlock.Test.start_app(ContactsApp, nil, [rows: 24, cols: 80] ++ ContactsApp.run_opts())
 
   # 1-indexed {col, row} of the first occurrence of `needle` on screen, as a
   # terminal would report a click on it.

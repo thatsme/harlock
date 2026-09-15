@@ -399,6 +399,28 @@ defmodule Harlock.Element.Renderer do
     render_text_lines(content, [], style, region, frame)
   end
 
+  # One option per row, or side by side. The chosen option carries the focus
+  # style while the group has focus: the choice is what the arrows move, so it
+  # is where the eye should be.
+  defp draw_element(%Element{type: :radio_group} = el, region, frame, focused) do
+    items = Keyword.fetch!(el.opts, :items)
+    value = Keyword.fetch!(el.opts, :value)
+    base = el.opts |> Keyword.get(:style, %Style{}) |> Style.from()
+    chosen_style = maybe_focus_style(base, el, focused)
+    owner = hit_id(el.opts)
+
+    options =
+      Enum.map(items, fn {id, label} ->
+        mark = if id == value, do: "(•) ", else: "( ) "
+        {id, mark <> label, if(id == value, do: chosen_style, else: base)}
+      end)
+
+    case Keyword.get(el.opts, :direction, :vertical) do
+      :vertical -> draw_radio_rows(options, region, frame, owner)
+      :horizontal -> draw_radio_line(options, region, frame, owner, Keyword.get(el.opts, :gap, 3))
+    end
+  end
+
   defp draw_element(%Element{type: :tree} = el, region, frame, focused) do
     nodes = Keyword.fetch!(el.opts, :nodes)
     expanded = Keyword.fetch!(el.opts, :expanded)
@@ -931,6 +953,34 @@ defmodule Harlock.Element.Renderer do
     value
     |> String.graphemes()
     |> Enum.map_join(fn _g -> "•" end)
+  end
+
+  defp draw_radio_rows(options, region, frame, owner) do
+    options
+    |> Enum.take(region.h)
+    |> Enum.with_index(region.row)
+    |> Enum.reduce(frame, fn {{id, text, style}, y}, acc ->
+      if owner, do: HitRegions.record(owner, Rect.new(y, region.col, region.w, 1), {:option, id})
+      render_cell(acc, y, region.col, region.w, text, :left, style)
+    end)
+  end
+
+  defp draw_radio_line(options, region, frame, owner, gap) do
+    right = region.col + region.w
+
+    {frame, _col} =
+      Enum.reduce_while(options, {frame, region.col}, fn {id, text, style}, {acc, col} ->
+        w = min(Width.string_width(text), right - col)
+
+        if w <= 0 do
+          {:halt, {acc, col}}
+        else
+          if owner, do: HitRegions.record(owner, Rect.new(region.row, col, w, 1), {:option, id})
+          {:cont, {render_cell(acc, region.row, col, w, text, :left, style), col + w + gap}}
+        end
+      end)
+
+    frame
   end
 
   defp render_cell(frame, y, x, width, text, align, style) when width > 0 do

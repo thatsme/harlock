@@ -954,9 +954,11 @@ provide it itself (principle 8). Each item says which applies.
    now arrive as `{:harlock_submit, id}` and `{:harlock_toggle, id, checked}` —
    no new message shapes.
 
-   A radio group is not on the list: `select` and `menu` already cover choosing
-   one of several. A checkbox *group* is `table` with `selection: {:multi, set}`,
-   which lacks only Space-to-toggle routing.
+   A radio group was left off the list, on the grounds that `select` and `menu`
+   already cover choosing one of several, and a checkbox *group* was left as
+   `table` with `selection: {:multi, set}`, lacking only Space-to-toggle
+   routing. Both calls were reversed in v0.9 — see the showcase entry under
+   "Build one real application first".
 
 4. **Handing the terminal to another program, and suspend** ✓ — `Cmd.exec/3`
    and `Cmd.suspend/0`. Opening `$EDITOR`
@@ -1186,7 +1188,7 @@ found one gap, closed with a new message:
 
 **`examples/showcase.exs`**, reworked — a clickable tab bar, log lines with
 styled levels and services, a pause button and a loop checkbox on the Widgets
-tab, and raw mouse events in the Keys tab. It found two questions:
+tab, and raw mouse events in the Keys tab. It found two questions and one gap:
 
 1. **An app cannot move focus.** Focus starts on the first focusable element in
    tree order and moves only by Tab, clicks and traps. Making the tab bar
@@ -1207,6 +1209,25 @@ tab, and raw mouse events in the Keys tab. It found two questions:
    and focusable. Passing an unhandled wheel up to the nearest scrollable
    ancestor would make every long form scroll; the viewport has no focus id to
    report the offset under, which is the part to decide.
+3. **The basic input widgets were not all there** ✓. A tour of the widgets had
+   no radio group, no check list and no list box to show, and those are what a
+   settings or order form is made of in any terminal UI library. v0.8 had ruled
+   the radio group out because `select` and `menu` cover choosing one of
+   several; that holds for the choice but not for the screen, where the options
+   are meant to be seen side by side and chosen with one key or click. Now:
+   - `radio_group/1`, with `Harlock.RadioGroup` — the arrows move the choice
+     itself, vertically or side by side, and a click chooses;
+     `{:harlock_select, id, value}`.
+   - A check list: Space on a focused `table` or `list` with
+     `selection: {:multi, set}` delivers `{:harlock_toggle, id, row_id}`, and
+     `list/2` with `marker: :checkbox` draws `[x]` / `[ ]` and toggles on a
+     click.
+   - A list box is `list/2` as it was, now documented as one.
+
+   No new message shapes: the radio group sends what `tabs` sends, and the
+   check list sends what `tree` sends. A fifth showcase tab, Inputs, puts them
+   in an order form with a checkbox, a `textarea` — which the tour had also
+   left out — and Save / Reset buttons.
 
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.

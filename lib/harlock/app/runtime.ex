@@ -295,46 +295,53 @@ defmodule Harlock.App.Runtime do
   defp focus_by_mouse(%{focused: id} = state, id), do: state
   defp focus_by_mouse(state, id), do: %{state | focused: id, goal_column: nil, dirty: true}
 
-  defp click_messages(state, id, part, col) do
-    case {Map.get(state.routed_widgets, id), part} do
-      {%Element{type: :button}, nil} ->
-        [{:harlock_submit, id}]
+  # One clause per widget and part; a part the widget does not act on is []:
+  # the press has already moved focus.
+  defp click_messages(state, id, part, col),
+    do: widget_click(Map.get(state.routed_widgets, id), part, id, state, col)
 
-      {%Element{type: :checkbox, opts: opts}, nil} ->
-        [{:harlock_toggle, id, not Keyword.fetch!(opts, :checked)}]
+  defp widget_click(%Element{type: :button}, nil, id, _state, _col), do: [{:harlock_submit, id}]
 
-      {%Element{type: :table}, {:row, row_id}} ->
-        [{:harlock_select, id, row_id}]
+  defp widget_click(%Element{type: :checkbox, opts: opts}, nil, id, _state, _col),
+    do: [{:harlock_toggle, id, not Keyword.fetch!(opts, :checked)}]
 
-      {%Element{type: :tabs}, {:tab, tab_id}} ->
-        [{:harlock_select, id, tab_id}]
-
-      # A click activates, as Enter does after the arrows moved there.
-      {%Element{type: :menu}, {:item, item_id}} ->
-        [{:harlock_select, id, item_id}, {:harlock_submit, id}]
-
-      # The marker expands or collapses; the rest of the row selects.
-      {%Element{type: :tree}, {:marker, node_id}} ->
-        [{:harlock_toggle, id, node_id}]
-
-      {%Element{type: :tree}, {:node, node_id}} ->
-        [{:harlock_select, id, node_id}]
-
-      # On the control, the action key: the app opens the list, or commits the
-      # highlight if it is already open. On a choice: highlight it, then commit.
-      {%Element{type: :select}, nil} ->
-        [{:harlock_submit, id}]
-
-      {%Element{type: :select}, {:choice, item_id}} ->
-        [{:harlock_select, id, item_id}, {:harlock_submit, id}]
-
-      {%Element{type: :text_input, opts: opts}, nil} ->
-        text_input_click(state, id, opts, col)
-
-      _ ->
-        []
-    end
+  # A row drawn with a checkbox marker is a checkbox: a click moves the focus
+  # there and toggles it, where a plain row only takes the focus.
+  defp widget_click(%Element{type: :table, opts: opts}, {:row, row_id}, id, _state, _col) do
+    if Keyword.get(opts, :marker) == :checkbox,
+      do: [{:harlock_select, id, row_id}, {:harlock_toggle, id, row_id}],
+      else: [{:harlock_select, id, row_id}]
   end
+
+  defp widget_click(%Element{type: :tabs}, {:tab, tab_id}, id, _state, _col),
+    do: [{:harlock_select, id, tab_id}]
+
+  defp widget_click(%Element{type: :radio_group, opts: opts}, {:option, value}, id, _state, _col) do
+    if value == Keyword.get(opts, :value), do: [], else: [{:harlock_select, id, value}]
+  end
+
+  # A click activates, as Enter does after the arrows moved there.
+  defp widget_click(%Element{type: :menu}, {:item, item_id}, id, _state, _col),
+    do: [{:harlock_select, id, item_id}, {:harlock_submit, id}]
+
+  # The marker expands or collapses; the rest of the row selects.
+  defp widget_click(%Element{type: :tree}, {:marker, node_id}, id, _state, _col),
+    do: [{:harlock_toggle, id, node_id}]
+
+  defp widget_click(%Element{type: :tree}, {:node, node_id}, id, _state, _col),
+    do: [{:harlock_select, id, node_id}]
+
+  # On the control, the action key: the app opens the list, or commits the
+  # highlight if it is already open. On a choice: highlight it, then commit.
+  defp widget_click(%Element{type: :select}, nil, id, _state, _col), do: [{:harlock_submit, id}]
+
+  defp widget_click(%Element{type: :select}, {:choice, item_id}, id, _state, _col),
+    do: [{:harlock_select, id, item_id}, {:harlock_submit, id}]
+
+  defp widget_click(%Element{type: :text_input, opts: opts}, nil, id, state, col),
+    do: text_input_click(state, id, opts, col)
+
+  defp widget_click(_element, _part, _id, _state, _col), do: []
 
   # Move the cursor to the clicked column. The input draws from its first
   # grapheme, so a column maps straight to the grapheme covering it; past the
@@ -704,6 +711,19 @@ defmodule Harlock.App.Runtime do
     end
   end
 
+  # A radio group moves its choice with the arrows, so a key is already the
+  # decision: {:harlock_select, …}, as tabs and menu send, with no Enter to
+  # follow.
+  defp route_to_widget(%Element{type: :radio_group} = el, event, focus_id, state) do
+    with {:ok, items} <- Keyword.fetch(el.opts, :items),
+         {:ok, value} <- Keyword.fetch(el.opts, :value),
+         {:select, new_value} <- Harlock.RadioGroup.apply_key(event, value, items) do
+      {:routed, {:harlock_select, focus_id, new_value}, state}
+    else
+      _ -> {:pass, state}
+    end
+  end
+
   defp route_to_widget(_el, _event, _focus_id, state), do: {:pass, state}
 
   defp route_windowed_table(el, event, focus_id, state, metrics) do
@@ -714,6 +734,22 @@ defmodule Harlock.App.Runtime do
     case Harlock.Table.scroll_key(event, offset, body_h, at_end?) do
       {:scroll, new_offset} -> {:routed, {:harlock_scroll, focus_id, new_offset}, state}
       :noop -> {:pass, state}
+    end
+  end
+
+  # Space on a table that allows several selections toggles the focused row, as
+  # it would a checkbox, with the toggle tuple tree already sends; the app flips
+  # membership in its set. Other keys move the focus as for any list.
+  # Space on a table that allows several selections toggles the focused row, as
+  # it would a checkbox, with the toggle tuple tree already sends: the app flips
+  # the row in its set. Without :multi, Space reaches update/2 as before.
+  defp route_list_table(el, {:key, {:char, ?\s}, _}, focus_id, state) do
+    case {Keyword.get(el.opts, :selection), Keyword.get(el.opts, :focused_row)} do
+      {{:multi, %MapSet{}}, row} when row != nil ->
+        {:routed, {:harlock_toggle, focus_id, row}, state}
+
+      _ ->
+        {:pass, state}
     end
   end
 

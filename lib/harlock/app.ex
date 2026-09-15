@@ -61,7 +61,8 @@ defmodule Harlock.App do
 
   Focus-aware widget routing. When a focusable widget
   (`viewport`, `tabs`, `text_input`, `textarea`, `menu`, `select`,
-  `tree`, `table`, `button`, `checkbox`) carries a `:focusable` id and is focused, the runtime
+  `tree`, `table`, `button`, `checkbox`, `radio_group`) carries a `:focusable` id and is
+  focused, the runtime
   translates relevant keys into widget-shaped messages **before**
   calling `update/2`. The raw `{:key, …}` is swallowed — apps see the
   routed message *or* the raw key, never both. Opt out per-element with
@@ -77,15 +78,17 @@ defmodule Harlock.App do
             do: %{m | log_offset: n}
 
     * `{:harlock_select, focus_id, new_id}` — a focused `tabs`, `menu`,
-      `select`, `tree`, or list-backed `table` moved its selection,
-      highlight, or focused row:
+      `select`, `tree`, `radio_group`, or list-backed `table` moved its
+      selection, highlight, choice, or focused row:
 
           def update({:harlock_select, :nav, id}, m), do: %{m | tab: id}
 
     * `{:harlock_toggle, focus_id, node_id}` — a focused `tree` expanded
       or collapsed a node. A focused `checkbox` sends the same tuple with
       its new boolean in the last slot:
-      `{:harlock_toggle, :notify, true}`. Distinct from `:harlock_select` because
+      `{:harlock_toggle, :notify, true}`. Space on a focused `table` or `list`
+      with `selection: {:multi, set}` sends it with the focused row's id, for
+      the app to flip in its set. Distinct from `:harlock_select` because
       expanding is not selecting, and because a node whose children are
       not loaded yet turns this into a side effect:
 
@@ -142,7 +145,10 @@ defmodule Harlock.App do
     * a left press focuses the element, and depending on where it landed:
       * `button` — `{:harlock_submit, id}`;
       * `checkbox` — `{:harlock_toggle, id, checked}`;
-      * a `table` row, a tab, a tree node — `{:harlock_select, id, item}`;
+      * a `table` row, a tab, a tree node, a `radio_group` option —
+        `{:harlock_select, id, item}`;
+      * a row of a `list` with `marker: :checkbox` — `{:harlock_select, id, item}`
+        then `{:harlock_toggle, id, item}`;
       * a tree node's expand marker — `{:harlock_toggle, id, node_id}`;
       * a `menu` item — `{:harlock_select, id, item}` then
         `{:harlock_submit, id}`: a click activates, as Enter does;

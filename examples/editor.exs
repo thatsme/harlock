@@ -209,6 +209,11 @@ defmodule Editor do
   end
 
   @doc false
+  # The options `--run` starts the app with. The tests start it with these too,
+  # so a test cannot pass on an option the real app never sets.
+  def run_opts, do: [mouse: true]
+
+  @doc false
   # $VISUAL, then $EDITOR, then vi — read when the file is opened, so a change
   # in the environment applies without restarting. A value can carry arguments
   # ("code --wait"), which are split the way a shell would.
@@ -281,7 +286,7 @@ end
 # `--run` starts the app; without it the file only defines the module, which is
 # how the tests load it.
 case System.argv() do
-  ["--run"] -> Harlock.run(Editor, Editor.demo_dir(), mouse: true)
-  ["--run", dir] -> Harlock.run(Editor, dir, mouse: true)
+  ["--run"] -> Harlock.run(Editor, Editor.demo_dir(), Editor.run_opts())
+  ["--run", dir] -> Harlock.run(Editor, dir, Editor.run_opts())
   _ -> :ok
 end

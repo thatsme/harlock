@@ -7,7 +7,7 @@
 # Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
 # would not receive keystrokes.
 #
-# A four-tab tour of the display widgets. Focused widgets have their keys routed
+# A five-tab tour of the widgets. Focused widgets have their keys routed
 # by the runtime, so update/2 holds no per-key dispatch for them:
 #
 #   * tabs          — the tab bar; Left / Right while it has focus, or a click
@@ -15,6 +15,10 @@
 #   * text_input    — 14 fields inside a viewport, kept in view as Tab moves
 #   * progress, spinner, statusbar, keybar — driven by a Sub.interval
 #   * button, checkbox — pause the progress bar, and choose whether it loops
+#   * radio_group   — one choice among options, vertical or side by side
+#   * list          — a list box that picks one, and a check list that picks
+#                     several with Space or a click
+#   * textarea      — multi-line notes, wrapped
 #   * styled text   — the header, and each log line's level and service
 #   * mouse         — clicks on tabs, fields and controls; the Keys tab shows
 #                     the raw mouse events nothing else takes
@@ -26,8 +30,10 @@
 #   2. Form    — Tab cycles fields; scroll-into-view keeps the focused one visible
 #   3. Widgets — Space or the button pauses; the checkbox stops it looping
 #   4. Keys    — the last 12 key and mouse events
+#   5. Inputs  — an order form: radio groups, check list, list box, checkbox,
+#                textarea, Save and Reset
 #
-# Shift-Left / Shift-Right, or 1-4 outside the Form tab, switch tabs from
+# Shift-Left / Shift-Right, or 1-5 outside the Form tab, switch tabs from
 # anywhere. Quit: Ctrl-C, or q whenever no form field has focus.
 
 defmodule ShowcaseApp do
@@ -73,7 +79,8 @@ defmodule ShowcaseApp do
         values: Map.new(@form_fields, &{&1, ""}),
         cursors: Map.new(@form_fields, &{&1, 0})
       },
-      widgets: %{progress: 0, working?: true, loop?: true}
+      widgets: %{progress: 0, working?: true, loop?: true},
+      inputs: inputs_defaults()
     }
   end
 
@@ -94,10 +101,10 @@ defmodule ShowcaseApp do
     }
   end
 
-  # Tab switching: 1-4 number keys (when not inside the Form tab where it
+  # Tab switching: 1-5 number keys (when not inside the Form tab where it
   # would be typed into a field), and Shift-Left / Shift-Right.
   def update({:key, {:char, c}, []}, model)
-      when c in [?1, ?2, ?3, ?4] and model.tab != :form do
+      when c in ?1..?5 and model.tab != :form do
     %{model | tab: tab_for_digit(c)}
   end
 
@@ -155,6 +162,34 @@ defmodule ShowcaseApp do
   def update({:harlock_toggle, :loop, loop?}, model),
     do: %{model | widgets: %{model.widgets | loop?: loop?}}
 
+  # Inputs tab: each control delivers its routed message, and each clause only
+  # writes the value back. The check list sends a toggle for the app to flip in
+  # its set.
+  def update({:harlock_select, id, value}, model) when id in [:size, :delivery, :crust],
+    do: put_input(model, id, value)
+
+  def update({:harlock_select, :toppings, id}, model), do: put_input(model, :topping, id)
+
+  def update({:harlock_toggle, :toppings, id}, model) do
+    set = model.inputs.toppings
+
+    put_input(
+      model,
+      :toppings,
+      if(id in set, do: MapSet.delete(set, id), else: MapSet.put(set, id))
+    )
+  end
+
+  def update({:harlock_toggle, :gift, gift?}, model), do: put_input(model, :gift, gift?)
+
+  def update({:harlock_edit, :notes, {value, cursor}}, model),
+    do: %{model | inputs: %{model.inputs | notes: value, notes_cursor: cursor}}
+
+  def update({:harlock_submit, :save_order}, model),
+    do: put_input(model, :saved, order_summary(model.inputs))
+
+  def update({:harlock_submit, :reset_order}, model), do: %{model | inputs: inputs_defaults()}
+
   def update(_ev, model), do: model
 
   # ----- view -----
@@ -189,7 +224,8 @@ defmodule ShowcaseApp do
         {:logs, "1. Logs"},
         {:form, "2. Form"},
         {:widgets, "3. Widgets"},
-        {:keys, "4. Keys"}
+        {:keys, "4. Keys"},
+        {:inputs, "5. Inputs"}
       ],
       active: model.tab,
       separator: "  "
@@ -210,6 +246,7 @@ defmodule ShowcaseApp do
   defp tab_body(%{tab: :form} = model), do: form_body(model)
   defp tab_body(%{tab: :widgets} = model), do: widgets_body(model)
   defp tab_body(%{tab: :keys} = model), do: keys_body(model)
+  defp tab_body(%{tab: :inputs} = model), do: inputs_body(model)
 
   # -- Logs tab --
 
@@ -405,6 +442,116 @@ defmodule ShowcaseApp do
     )
   end
 
+  # -- Inputs tab --
+
+  @sizes [small: "Small", medium: "Medium", large: "Large"]
+  @deliveries [pickup: "Pickup", courier: "Courier", post: "Post"]
+  @toppings [:mozzarella, :basil, :olives, :mushrooms, :chilli]
+  @crusts [:thin, :classic, :stuffed]
+
+  defp inputs_body(model) do
+    i = model.inputs
+
+    hbox(
+      constraints: [fill: 1, length: 1, fill: 1],
+      children: [
+        vbox(
+          constraints: [length: 5, length: 3, fill: 1],
+          children: [
+            pane(
+              "Size · radio_group",
+              :size,
+              radio_group(focusable: :size, items: @sizes, value: i.size)
+            ),
+            pane(
+              "Delivery · horizontal",
+              :delivery,
+              radio_group(
+                focusable: :delivery,
+                items: @deliveries,
+                value: i.delivery,
+                direction: :horizontal
+              )
+            ),
+            pane(
+              "Notes · textarea",
+              :notes,
+              textarea(
+                focusable: :notes,
+                value: i.notes,
+                cursor: i.notes_cursor,
+                wrap: true,
+                placeholder: "Anything the kitchen should know",
+                placeholder_style: [dim: true]
+              )
+            )
+          ]
+        ),
+        spacer(),
+        vbox(
+          constraints: [length: 7, length: 5, length: 1, length: 1, fill: 1],
+          children: [
+            pane(
+              "Toppings · check list",
+              :toppings,
+              list(@toppings,
+                focusable: :toppings,
+                focused_row: i.topping,
+                selection: {:multi, i.toppings},
+                marker: :checkbox
+              )
+            ),
+            pane(
+              "Crust · list box",
+              :crust,
+              list(@crusts, focusable: :crust, focused_row: i.crust)
+            ),
+            checkbox("Gift wrap", checked: i.gift, focusable: :gift),
+            hbox(
+              constraints: [length: 13, length: 12, fill: 1],
+              children: [
+                button([{"Save", bold: true}], focusable: :save_order),
+                button("Reset", focusable: :reset_order),
+                spacer()
+              ]
+            ),
+            text(saved_line(i.saved), wrap: true)
+          ]
+        )
+      ]
+    )
+  end
+
+  defp pane(title, id, child) do
+    box(title: " #{title} ", border: :rounded, focus_proxy: id, padding: {0, 1}, child: child)
+  end
+
+  defp saved_line(nil), do: [{"Nothing saved yet — Save shows the order here.", dim: true}]
+  defp saved_line(summary), do: [{"✓ Saved: ", fg: :green, bold: true}, summary]
+
+  defp inputs_defaults do
+    %{
+      size: :medium,
+      delivery: :pickup,
+      topping: :mozzarella,
+      toppings: MapSet.new([:mozzarella]),
+      crust: :classic,
+      gift: false,
+      notes: "",
+      notes_cursor: 0,
+      saved: nil
+    }
+  end
+
+  defp put_input(model, key, value), do: %{model | inputs: Map.put(model.inputs, key, value)}
+
+  defp order_summary(i) do
+    toppings = @toppings |> Enum.filter(&(&1 in i.toppings)) |> Enum.join(", ")
+
+    "#{i.size} #{i.crust}, #{if toppings == "", do: "no toppings", else: toppings}, " <>
+      "#{i.delivery}#{if i.gift, do: ", gift wrapped", else: ""}"
+  end
+
   # -- Keys tab --
 
   # The event list is focusable so that keys reach update/2 raw once it has
@@ -479,6 +626,7 @@ defmodule ShowcaseApp do
         :form -> "field: #{format_focus(Focus.current())}"
         :widgets -> if model.widgets.working?, do: "RUNNING", else: "PAUSED"
         :keys -> "captured: #{length(model.keys)}"
+        :inputs -> "focus: #{format_focus(Focus.current())}"
       end
 
     statusbar(
@@ -538,20 +686,34 @@ defmodule ShowcaseApp do
         separator: "  ·  "
       )
 
+  defp key_row(%{tab: :inputs}),
+    do:
+      keybar(
+        bindings: [
+          {"Tab", "next control"},
+          {"↑↓←→", "choose"},
+          {"Space", "tick"},
+          {"Ctrl-C", "quit"}
+        ],
+        separator: "  ·  "
+      )
+
   # -- helpers --
 
   defp tab_label(:logs), do: "Logs · 200 rows, scrollable, focus-aware"
   defp tab_label(:form), do: "Form · 14 fields, Tab cycles, scroll-into-view"
   defp tab_label(:widgets), do: "Widgets · progress, spinner, statusbar, keybar"
   defp tab_label(:keys), do: "Keys · press anything (try modified arrows)"
+  defp tab_label(:inputs), do: "Inputs · radio groups, check list, list box, textarea"
 
   defp tab_for_digit(?1), do: :logs
   defp tab_for_digit(?2), do: :form
   defp tab_for_digit(?3), do: :widgets
   defp tab_for_digit(?4), do: :keys
+  defp tab_for_digit(?5), do: :inputs
 
   defp cycle_tab(current, dir) do
-    order = [:logs, :form, :widgets, :keys]
+    order = [:logs, :form, :widgets, :keys, :inputs]
     idx = Enum.find_index(order, &(&1 == current))
     n = length(order)
     Enum.at(order, rem(idx + dir + n, n))
@@ -564,6 +726,7 @@ defmodule ShowcaseApp do
 
   defp format_focus({:form_field, f}), do: Atom.to_string(f)
   defp format_focus(nil), do: "—"
+  defp format_focus(id) when is_atom(id), do: Atom.to_string(id)
   defp format_focus(other), do: inspect(other)
 
   defp alert_rows do
@@ -579,10 +742,15 @@ defmodule ShowcaseApp do
     "#{pad2(h)}:#{pad2(m)}:#{pad2(s)}"
   end
 
+  @doc false
+  # The options `--run` starts the app with. The tests start it with these too,
+  # so a test cannot pass on an option the real app never sets.
+  def run_opts, do: [mouse: true]
+
   defp pad2(n), do: n |> Integer.to_string() |> String.pad_leading(2, "0")
 end
 
 case System.argv() do
-  ["--run"] -> Harlock.run(ShowcaseApp, nil)
+  ["--run"] -> Harlock.run(ShowcaseApp, nil, ShowcaseApp.run_opts())
   _ -> :ok
 end

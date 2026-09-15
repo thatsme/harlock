@@ -306,6 +306,11 @@ defmodule Explorer do
     end)
   end
 
+  @doc false
+  # The options `--run` starts the app with. The tests start it with these too,
+  # so a test cannot pass on an option the real app never sets.
+  def run_opts, do: [mouse: true]
+
   defp expandable_ids(nodes) do
     Enum.flat_map(nodes, fn node ->
       children = Tree.children(node)
@@ -319,6 +324,6 @@ end
 # `--run` starts the app; without it the file only defines the module, which is
 # how the tests load it.
 case System.argv() do
-  ["--run"] -> Harlock.run(Explorer, nil, mouse: true)
+  ["--run"] -> Harlock.run(Explorer, nil, Explorer.run_opts())
   _ -> :ok
 end

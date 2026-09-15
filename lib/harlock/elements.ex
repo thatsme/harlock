@@ -24,7 +24,8 @@ defmodule Harlock.Elements do
 
     * `text/2` — text content: styled runs, newlines, optional wrap and align
     * `table/1` / `list/2` — row-based primitives with selection and
-      focus highlighting; `column/1` specifies a table column
+      focus highlighting; `list/2` is a list box, or a check list with
+      `marker: :checkbox`; `column/1` specifies a table column
     * `tree/1` — expandable hierarchy with lazily loaded children
     * `progress/1`, `spinner/1`, `sparkline/1` — progress and trends
     * `statusbar/1`, `keybar/1` — single-line bars
@@ -32,6 +33,7 @@ defmodule Harlock.Elements do
   ## Input
 
     * `button/2` / `checkbox/2` — focusable controls
+    * `radio_group/1` — one choice among options shown side by side
     * `text_input/1` / `textarea/1` — single- and multi-line editable text
     * `tabs/1`, `menu/1`, `select/1` — choosing among items
 
@@ -261,6 +263,10 @@ defmodule Harlock.Elements do
       on, so arrows move `:offset` and deliver
       `{:harlock_scroll, focus_id, new_offset}`, exactly as `viewport` does.
 
+  With enumerable rows and `selection: {:multi, set}`, Space on the focused row
+  delivers `{:harlock_toggle, focus_id, row_id}` for the app to add to or remove
+  from its set; see `list/2` for a check list.
+
   Neither wraps: a table is read top-down and is often long. `Home` goes to the
   top in both modes; `End` only works for enumerable rows, since a window
   function is never asked where the last row is.
@@ -327,25 +333,72 @@ defmodule Harlock.Elements do
   end
 
   @doc """
-  Single-column table with chrome hidden. `:row_id` defaults to `& &1`
-  because lists are usually homogeneous; pass an explicit `:row_id` if
+  Single-column table with chrome hidden: a list box. `:row_id` defaults to
+  `& &1` because lists are usually homogeneous; pass an explicit `:row_id` if
   yours aren't.
+
+  Choosing one item is the table's focused row: a focused list moves it with
+  the arrows or a click and delivers `{:harlock_select, focus_id, item_id}`.
+
+  Choosing several is `selection: {:multi, set}`, and `marker: :checkbox` draws
+  it as a check list:
+
+      list(m.toppings,
+        focusable: :toppings,
+        focused_row: m.topping,
+        selection: {:multi, m.chosen},
+        marker: :checkbox
+      )
+
+      def update({:harlock_select, :toppings, id}, m), do: %{m | topping: id}
+
+      def update({:harlock_toggle, :toppings, id}, m) do
+        chosen = if id in m.chosen, do: MapSet.delete(m.chosen, id), else: MapSet.put(m.chosen, id)
+        %{m | chosen: chosen}
+      end
+
+  Space on the focused item delivers `{:harlock_toggle, focus_id, item_id}` —
+  as it does for any `table` with enumerable rows and `{:multi, set}` — and with
+  the marker, a click on an item moves the focus there and toggles it. The app
+  owns the set.
 
   Options:
     * `:render`  — `fn item -> string`; defaults to `to_string/1`
+    * `:marker`  — `:checkbox` draws `[x] ` or `[ ] ` before each item, from
+      whether its id is in the `{:multi, set}` selection, and makes a click
+      toggle. Requires `selection: {:multi, set}`.
     * any option accepted by `table/1`
   """
   @spec list(Enumerable.t(), keyword()) :: Element.t()
   def list(items, opts \\ []) do
+    row_id = Keyword.get(opts, :row_id, & &1)
+    render = list_render(Keyword.get(opts, :render), Keyword.get(opts, :marker), opts, row_id)
+
     base = [
-      columns: [column(width: {:fill, 1}, render: Keyword.get(opts, :render))],
+      columns: [column(width: {:fill, 1}, render: render)],
       rows: items,
-      row_id: Keyword.get(opts, :row_id, & &1),
+      row_id: row_id,
       show_header: false
     ]
 
     table(Keyword.merge(base, Keyword.drop(opts, [:render])))
   end
+
+  defp list_render(render, nil, _opts, _row_id), do: render
+
+  defp list_render(render, :checkbox, opts, row_id) do
+    case Keyword.get(opts, :selection) do
+      {:multi, %MapSet{} = set} ->
+        label = render || (&to_string/1)
+        fn item -> [if(row_id.(item) in set, do: "[x] ", else: "[ ] "), label.(item)] end
+
+      _ ->
+        raise ArgumentError, "list/2 marker: :checkbox requires selection: {:multi, set}"
+    end
+  end
+
+  defp list_render(_render, marker, _opts, _row_id),
+    do: raise(ArgumentError, "list/2 :marker must be :checkbox, got: #{inspect(marker)}")
 
   @doc """
   Scrollable container.
@@ -828,6 +881,60 @@ defmodule Harlock.Elements do
 
     if is_list(label), do: Harlock.Text.validate!(label)
     %Element{type: :checkbox, opts: [label: label] ++ opts, children: []}
+  end
+
+  @doc """
+  A radio group: every option shown, one chosen, drawn as `(•) label` and
+  `( ) label`.
+
+      radio_group(
+        focusable: :size,
+        items: [small: "Small", medium: "Medium", large: "Large"],
+        value: m.size
+      )
+
+      def update({:harlock_select, :size, size}, m), do: %{m | size: size}
+
+  The app owns the chosen value. When focused, the arrows move the choice
+  itself — Up / Left to the previous option, Down / Right to the next, wrapping,
+  Home / End to the ends — and deliver `{:harlock_select, focus_id, value}`. With
+  `mouse: true` a click on an option chooses it. See `Harlock.RadioGroup`.
+
+  Use it when the options are few and worth seeing side by side; `select/1`
+  when they are many or the space is tight.
+
+  Required:
+    * `:items` — list of `{value, label}` tuples
+    * `:value` — the chosen value, or `nil` for none yet
+    * `:focusable` — focus id. A group that cannot be focused cannot be changed.
+
+  Optional:
+    * `:direction` — `:vertical` (default), one option per row, or
+      `:horizontal`, options side by side on one row
+    * `:gap` — cells between options when horizontal (default `3`)
+    * `:style` — `%Style{}` or keyword list for the options
+    * `:focus_style` — style for the chosen option while the group has focus
+      (default `:style` merged with `Theme.get(:focus)`)
+    * `:handle_keys`, `:handle_mouse` — as for other focusable elements
+
+  Vertically, options past the region's height are clipped; horizontally,
+  options past its width.
+  """
+  @spec radio_group(keyword()) :: Element.t()
+  def radio_group(opts) when is_list(opts) do
+    for key <- [:items, :value, :focusable], not Keyword.has_key?(opts, key) do
+      raise ArgumentError, "radio_group/1 requires #{inspect(key)}"
+    end
+
+    if Keyword.get(opts, :focusable) == nil do
+      raise ArgumentError, "radio_group/1 requires :focusable"
+    end
+
+    unless Keyword.get(opts, :direction, :vertical) in [:vertical, :horizontal] do
+      raise ArgumentError, "radio_group/1 :direction must be :vertical or :horizontal"
+    end
+
+    %Element{type: :radio_group, opts: opts, children: []}
   end
 
   defp require_focusable!(type, opts) do
