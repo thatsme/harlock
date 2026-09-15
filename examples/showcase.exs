@@ -28,13 +28,16 @@
 #
 #   1. Logs    — Tab into the log, then arrows / PgUp / PgDn; [ and ] cycle alerts
 #   2. Form    — Tab cycles fields; scroll-into-view keeps the focused one visible
-#   3. Widgets — Space or the button pauses; the checkbox stops it looping
+#   3. Widgets — Space or the button pauses (unless the checkbox has focus, which
+#                takes Space itself); the checkbox stops it looping
 #   4. Keys    — the last 12 key and mouse events
 #   5. Inputs  — an order form: radio groups, check list, list box, checkbox,
 #                textarea, Save and Reset
 #
-# Shift-Left / Shift-Right, or 1-5 outside the Form tab, switch tabs from
-# anywhere. Quit: Ctrl-C, or q whenever no form field has focus.
+# Shift-Left / Shift-Right and 1-5 switch tabs whenever the focused widget does
+# not use those keys itself: a text field or the notes area types digits, and
+# the tab bar and radio groups move on arrows. Quit: Ctrl-C from anywhere, or q
+# while no text field or the notes area has focus.
 
 defmodule ShowcaseApp do
   use Harlock.App
@@ -119,9 +122,10 @@ defmodule ShowcaseApp do
     if input_focused?(model), do: model, else: :quit
   end
 
-  # Keys tab: every key and mouse event that reaches update/2, verbatim. Routed
-  # keys and clicks on focusable elements become widget messages instead, so
-  # what shows here is what the app itself would have to handle.
+  # Keys tab: every other key and mouse event that reaches update/2, verbatim —
+  # the tab-switching keys and q above keep their meaning. Routed keys and
+  # clicks on focusable elements become widget messages instead, so what shows
+  # here is what the app itself would have to handle.
   def update({tag, _, _} = ev, %{tab: :keys} = model)
       when tag in [:key, :key_repeat, :key_release],
       do: capture(model, ev)
@@ -153,9 +157,9 @@ defmodule ShowcaseApp do
     %{model | form: %{model.form | values: new_values, cursors: new_cursors}}
   end
 
-  # Widgets tab: Space anywhere on the tab, or the button, pauses and resumes.
-  # A focused button takes Space itself, so the raw-key clause only sees it
-  # when something else has focus.
+  # Widgets tab: Space on the tab, or the button, pauses and resumes. A focused
+  # button or checkbox takes Space itself — the button presses, the checkbox
+  # toggles — so the raw-key clause only sees it when neither has focus.
   def update({:key, {:char, ?\s}, []}, %{tab: :widgets} = model), do: toggle_working(model)
   def update({:harlock_submit, :pause}, model), do: toggle_working(model)
 
@@ -414,7 +418,8 @@ defmodule ShowcaseApp do
               {?1, "logs"},
               {?2, "form"},
               {?3, "widgets"},
-              {?4, "keys"}
+              {?4, "keys"},
+              {?5, "inputs"}
             ],
             separator: "  ·  ",
             right: " #{model.now} "

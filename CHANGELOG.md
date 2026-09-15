@@ -31,8 +31,8 @@ questions it left open are the agenda for v0.10, in the roadmap.
 - A `box` with `focus_proxy` takes clicks on its border and padding for the
   child it mirrors; `handle_mouse: false` on the box turns that off.
 - `view/1` can run twice for one frame, when settling focus moves it — a first
-  frame, a trap opening or closing. A view that only builds elements is
-  unaffected.
+  frame, a trap opening or closing, the focused element leaving the view. A
+  view that only builds elements is unaffected.
 - Ctrl-Z inside a program started by `Cmd.exec` stops the app with it under a
   job-control shell, instead of resuming the program at once.
 
@@ -59,7 +59,8 @@ questions it left open are the agenda for v0.10, in the roadmap.
   a view saw `nil`, and when a `focus_trap` overlay opened or closed it saw the
   focus from before. A status line or border that shows the focus was one frame
   behind until the next key. The runtime now runs `view/1` a second time when
-  settling moves the focus, which happens only on those transitions.
+  settling moves the focus: on those transitions, and when the focused element
+  leaves the view.
 
 ### Changed
 
@@ -137,9 +138,10 @@ questions it left open are the agenda for v0.10, in the roadmap.
   warning.
 - **The examples' tests start each app with the options its `--run` uses.**
   `showcase` was started without `mouse: true` while its tests passed it, so
-  every click test passed and no click worked in a terminal. `contacts`,
-  `dashboard`, `editor`, `explorer` and `showcase` now define `run_opts/0`, which both
-  `--run` and their tests use.
+  every click test passed and no click worked in a terminal. Every example but
+  `overview` now defines `run_opts/0`, which both `--run` and its tests use;
+  `overview`, quoted in the README, passes `mouse: true` inline and has its
+  tests check that it does.
 
 ### Added
 

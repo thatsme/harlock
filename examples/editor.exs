@@ -13,12 +13,15 @@
 #   * Cmd.exec     — Enter, or the "Open in editor" button, runs $VISUAL, then
 #                    $EDITOR, then vi, on the selected file. The app redraws and
 #                    reloads the preview when the editor exits.
-#   * Cmd.suspend  — Ctrl-Z drops to the shell; `fg` comes back.
+#   * Cmd.suspend  — Ctrl-Z drops to the shell; `fg` comes back. Ctrl-Z inside
+#                    the editor works too: the editor and the app stop together,
+#                    and `fg` brings back both.
 #   * mouse        — click a file to preview it, click the button, scroll the
 #                    preview with the wheel.
 #   * styled text  — the header and the status line mix styles in one line.
 #
-# Tab cycles focus between the file list, the button and the preview.
+# Tab cycles focus between the file list, the button and the preview; r reloads
+# the file list, q quits.
 
 defmodule Editor do
   use Harlock.App

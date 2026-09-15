@@ -19,7 +19,7 @@
 #   * styled text     — the detail labels
 #   * Cmd.from        — saving takes a moment, as it would against a server
 #   * mouse           — click anything: rows, fields, buttons, the checkbox
-#   * a custom theme  — focus, selection and header colours
+#   * a custom theme  — the focus colour: the focused row, pane borders, buttons
 #
 # Keys (also in the bottom bar):
 #
@@ -489,15 +489,12 @@ defmodule ContactsApp do
 
   @doc false
   # The options `--run` starts the app with — the custom theme and the mouse.
+  # The theme sets only the focus style, the one this screen draws with: every
+  # pane sets its own border style, and the list has no header or selection.
   # The tests start it with these too, so a test cannot pass on an option the
   # real app never sets.
   def run_opts do
-    theme = %Harlock.Theme{
-      header: %Style{bold: true, fg: :cyan},
-      focus: %Style{reverse: true, fg: :yellow},
-      selection: %Style{bg: :blue, fg: :white},
-      border: %Style{fg: :bright_black}
-    }
+    theme = %Harlock.Theme{focus: %Style{reverse: true, fg: :yellow}}
 
     [theme: theme, mouse: true]
   end

@@ -16,7 +16,8 @@
 #   * overlay      — help and quit confirmation, with buttons, trapping focus
 #
 # Keys:
-#   ↑/↓ or j/k   move cursor
+#   ↑/↓ or j/k   move cursor (with the table focused; on the sort options the
+#                arrows change the sort)
 #   Tab          sort / Live / table
 #   ?            help
 #   q            quit (with confirm)

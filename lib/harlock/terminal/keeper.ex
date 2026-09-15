@@ -140,7 +140,7 @@ defmodule Harlock.Terminal.Keeper do
           :stderr,
           "\nHarlock: cannot open /dev/tty (#{inspect(reason)}). " <>
             "This usually means the BEAM was started without a controlling " <>
-            "terminal (CI, piped stdin, etc.). Run interactively from a real shell.\n"
+            "terminal (CI, a detached BEAM, etc.). Run interactively from a real shell.\n"
         )
 
         {:stop, {:tty_open_failed, reason}}

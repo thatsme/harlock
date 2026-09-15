@@ -6,8 +6,10 @@
 // BEAM's controlling terminal. From inside the BEAM process itself we
 // retain access to /dev/tty, so termios calls work here.
 //
-// All NIFs are dirty (ERL_NIF_DIRTY_JOB_IO_BOUND) because tcsetattr can
-// block on some pty implementations.
+// The NIFs are dirty (ERL_NIF_DIRTY_JOB_IO_BOUND) because tcsetattr can block
+// on some pty implementations — all but arm_select and exec_arm, which must run
+// on a normal scheduler so enif_select_read targets the calling process (see
+// the table at the end).
 //
 // The exec_* NIFs hand the terminal to another program. Programs the BEAM
 // starts through ports get no controlling terminal (see above), so the

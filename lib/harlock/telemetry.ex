@@ -28,8 +28,13 @@ defmodule Harlock.Telemetry do
 
   ### `[:harlock, :input, :dispatch, :start]` / `[..., :stop]` / `[..., :exception]`
 
-  Wraps the path from event arrival in the runtime mailbox to the
-  return of `update/2`. Catches keystroke-to-model lag.
+  One span per call to `update/2`, from the event reaching it to the frame that
+  follows being drawn — so the frame's own render span sits inside it. Catches
+  keystroke-to-screen lag. `event` is the message `update/2` received, which
+  after routing is the widget message rather than the raw key. One input can
+  make several spans: a click that selects and activates a menu item calls
+  `update/2` twice, and a move of focus adds one for
+  `{:harlock_focus, from, to}`.
 
     * **measurements** (on `:stop`): `%{duration: native, monotonic_time: native}`
     * **metadata** (on `:stop`): `%{app: module, event: term, focused: term}`

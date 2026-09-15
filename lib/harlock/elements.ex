@@ -246,7 +246,9 @@ defmodule Harlock.Elements do
     * `:offset`      — first visible row, for a window function (default `0`)
     * `:header_style`, `:row_style`, `:alt_row_style`, `:selected_style`,
       `:focus_style` — styles for the header, rows, alternate rows, selected
-      rows, and the focused row; unset ones come from the theme
+      rows, and the focused row. Header, selected and focused rows default to
+      the theme's `:header`, `:selection` and `:focus`; rows are unstyled and
+      alternate rows off unless set
     * `:focusable`, `:focus_trap`, `:handle_keys`, `:handle_mouse` — same as
       other elements
 
@@ -502,9 +504,12 @@ defmodule Harlock.Elements do
 
   Like `text_input/1` this is a dumb renderer: the app's `update/2` owns the
   value and cursor, and `Harlock.TextArea.apply_key/3` maps key events onto
-  them. When the area is focused the runtime routes keys automatically and
-  delivers `{:harlock_edit, focus_id, {value, cursor}}` — the same message a
-  `text_input` produces, because both use the same `(value, cursor)` shape.
+  them — its longer arities add the kill ring, the wrap width and the goal
+  column, which is what the runtime calls. When the area is focused the runtime
+  routes keys automatically and delivers `{:harlock_edit, focus_id, {value,
+  cursor}}` — the same message a `text_input` produces, because both use the
+  same `(value, cursor)` shape. With `mouse: true` a click places the cursor
+  and arrives the same way.
 
   With `wrap: true` long lines break across display rows at word boundaries,
   and `↑` / `↓` / Home / End follow those rows rather than logical lines.
@@ -593,9 +598,9 @@ defmodule Harlock.Elements do
   Single-line bar showing key bindings as `[k] label  [k] label`.
 
   Required:
-    * `:bindings` — list of `{key, label}` tuples. `key` may be a char
-      like `?q` or any atom (`:tab`, `:enter`); it's rendered via
-      `to_string/1`.
+    * `:bindings` — list of `{key, label}` tuples. `key` may be a character
+      like `?q`, drawn as that character; an atom (`:tab`, `:enter`), drawn
+      as its name; or a string (`"Ctrl-C"`), drawn as it is.
 
   Optional:
     * `:style` — `%Style{}` (default `%Style{reverse: true}`)

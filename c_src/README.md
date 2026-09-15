@@ -56,7 +56,7 @@ API of its own.
 | `read_nonblock/2`            | `read(2)` with EAGAIN → `:wouldblock`, 0 → `:eof` |
 | *internal:*                  |                                                  |
 | `exec_start/3`               | run a program as the terminal's foreground process group (below) |
-| `exec_arm/1` / `exec_read/1` | `enif_select_read` on the helper's status pipe; the exit result |
+| `exec_arm/1` / `exec_read/1` | `enif_select_read` on the helper's status pipe; one status line per call: `{:stopped, signal}` (not final), the exit result, or `:wouldblock` |
 | `exec_kill/1`                | `SIGKILL` to the program's process group         |
 | `reclaim_foreground/1`       | `tcsetpgrp` back to the BEAM with `SIGTTOU` blocked |
 | `foreground?/1`              | `tcgetpgrp(fd) == getpgrp()`                     |
@@ -131,11 +131,8 @@ The two NIFs that read the fd, `arm_select` and `read_nonblock`, verify
 the calling process is the one that opened it:
 
 ```c
-ErlNifPid caller;
-enif_self(env, &caller);
-if (enif_compare_pids(&caller, &tty->owner) != 0) {
-    return {:error, :not_owner};
-}
+// owner_matches/2 compares enif_self() with the pid recorded at open.
+if (!owner_matches(env, tty)) return make_error(env, "not_owner");   // {:error, :not_owner}
 ```
 
 This isn't security — it's a footgun guard. Two Erlang processes
@@ -170,7 +167,7 @@ exec_start(tty_ref, argv, cd:, env:)
 harlock_exec
   → ignore SIGINT/SIGQUIT/SIGTSTP/SIGTTIN/SIGTTOU for itself
   → close descriptors inherited from the BEAM (Linux; macOS spawn flag does it)
-  → wait until its group is the foreground
+  → wait until its group is the foreground (up to about 2 s, then "failed foreground")
   → fork; the child restores those signals to default, chdir, execvp
   → waitpid(WUNTRACED); on a stop, write "stopped N" to fd 3 and keep waiting
   → write "exited N" / "signaled N" / "failed <stage> <errno>" to fd 3
@@ -201,9 +198,11 @@ the BEAM too, so the shell shows the job suspended exactly as it would have
 shown the program; on `fg` the shell resumes the BEAM, and Keeper hands the
 foreground to the program's group and sends it `SIGCONT` with
 `exec_continue/2`. Without such a shell nothing would resume a stopped BEAM, so
-Keeper continues the program at once. `exec_read/1` splits status lines itself,
-since a stop and the exit right after it can arrive in one read. `exec_kill/1` kills the whole group, helper included, and reading the
-result then gives `:killed`. A resource collected before its program finished
+Keeper continues the program at once. If the BEAM's own stop never takes effect,
+a watchdog continues the program after about 1.2 s rather than leaving it
+stopped. `exec_read/1` splits status lines itself, since a stop and the exit
+right after it can arrive in one read. `exec_kill/1` kills the whole group,
+helper included, and reading the result then gives `:killed`. A resource collected before its program finished
 kills the group from the destructor, so a crashed owner cannot leave a program
 holding the terminal.
 
@@ -238,14 +237,19 @@ under `mix run`.
 - **Single-reader constraint.** Only one Harlock app per BEAM can
   usefully own `/dev/tty`. `Harlock.run/3` does not detect a second one.
 - **Non-tty environments.** `Termios.open/0` returns
-  `{:error, :no_tty}` when `/dev/tty` is unavailable (CI, piped stdin).
-  Keeper surfaces this to stderr and halts the supervisor cleanly.
+  `{:error, :no_tty}` when the process has no controlling terminal (CI, a BEAM
+  started detached); other failures give `:no_device`, `:not_a_tty`,
+  `:permission_denied` and the like. Redirecting stdin does not cause it —
+  `/dev/tty` is the controlling terminal whatever stdin is. Keeper writes the
+  reason to stderr and refuses to start, so the supervisor never comes up and
+  `Harlock.run/3` returns `{:error, _}` before anything is drawn.
 - **EOF handling.** A `read(2)` returning 0 means the terminal was
   closed (ssh disconnect, tmux kill-window). The Reader surfaces this
   as `{:harlock_event, {:harlock_tty_lost, :eof}}` to the runtime and
   terminates. It is a permanent child and the supervisor allows no
   restarts, so the whole tree shuts down, and Keeper's `terminate/2`
-  restores termios before the BEAM exits.
+  restores termios — and then prints the log output it held back during the
+  session.
 
 ## Building
 
@@ -257,19 +261,27 @@ BEAM expects.
 The same Makefile builds `priv/harlock_exec` from `exec_helper.c` as a plain
 executable, without the shared-library flags.
 
-Both files are standard POSIX with no third-party dependencies. The termios
-calls are stable since the 1980s and behave the same on macOS, Linux, and BSD.
-The exec path has two platform branches: `POSIX_SPAWN_CLOEXEC_DEFAULT` is used
-where it exists (macOS), and the helper closes inherited descriptors itself on
-Linux, which has no such flag.
+Neither file has third-party dependencies. The termios calls are POSIX apart from
+`cfmakeraw`, a BSD function that glibc, musl and macOS all provide. The exec
+path has two platform branches: `POSIX_SPAWN_CLOEXEC_DEFAULT` is used where it
+exists (macOS), and the helper closes inherited descriptors itself on Linux,
+which has no such flag. Elsewhere — the other BSDs — neither applies, and a
+program started with `Cmd.exec` inherits the BEAM's open descriptors; only
+macOS and Linux are tested.
+
+Cross toolchains, Nerves among them, set `CROSSCOMPILE`; the Makefile then
+requires `ERTS_INCLUDE_DIR` rather than taking the build host's Erlang headers,
+and skips the macOS linker flags. `HARLOCK_SKIP_NIF=1` skips building both
+native pieces, as happens on Windows, where only the test backend is usable.
 
 ## Verifying hostile conditions
 
 The test suite covers the non-tty path (`Termios.open/0` returns
 `{:error, :no_tty}` cleanly). The smoke tests in `priv/`, run by
 `scripts/smoke.sh` in a real pty and in CI, cover resize, crash
-restoration, `Cmd.exec`, suspend under a job-control shell, and mouse
-reporting. What they cannot automate — killing the BEAM outright and
+restoration, `Cmd.exec` including typed input and Ctrl-Z inside the program,
+suspend under a job-control shell, mouse reporting, and log output held back
+while an app runs. What they cannot automate — killing the BEAM outright and
 closing the terminal window — is checked by hand after changes to the
 NIF, the Reader, or the Keeper:
 

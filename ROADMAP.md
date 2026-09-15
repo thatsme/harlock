@@ -59,7 +59,8 @@ What works:
   (truecolor → 256 → 16 → mono), and a table style cascade. `:default`-theme
   output is pinned byte-for-byte against v0.3.0 by a golden-frame test.
 - Primitives: `text` (styled runs, `\n`, wrap, align), `vbox`, `hbox`,
-  `spacer`, `box` (4 border styles + title + padding), `overlay` (5 anchors + focus trap), `table` / `list`
+  `spacer`, `box` (4 border styles + title + padding), `overlay` (5 anchors or
+  an absolute position, + focus trap), `table` / `list`
   (row-id identity, single/multi selection, header), `text_input`, `textarea`
   (multi-line, opt-in word wrap), `viewport`
   (render-then-clip + scroll-into-view + cursor remap), `progress`, `spinner`,
@@ -1085,11 +1086,12 @@ The entries below record each example's findings as they were found.
 
 The highest-value item here, and the one most likely to be skipped.
 
-`table`'s window function and `Sub.source/3` have no real-world use yet, and
-neither do most of v0.8's basics, and 1.0 commits to their shape permanently. Something substantial has to be
-built on this API before it is frozen — the node/distribution explorer is the
-obvious candidate, since `tree` with lazy children already fits a supervision
-tree and `Sub.telemetry` can feed it live numbers.
+`table`'s window function and `Sub.source/3` had no real-world use when this
+was written, and neither did most of v0.8's basics, and 1.0 commits to their
+shape permanently. Something substantial had to be built on this API before it
+is frozen — the node/distribution explorer was the obvious candidate, since
+`tree` with lazy children already fits a supervision tree and `Sub.telemetry`
+can feed it live numbers.
 
 The evidence for insisting: every single time a real consumer touched this code,
 it found something the tests did not. `examples/notes.exs` exposed that
@@ -1130,8 +1132,8 @@ a timer. It found two things, both now decisions rather than surprises:
    consumes navigation keys that previously reached `update/2`. Opt out with
    `handle_keys: false`.
 
-`nodes.exs` predates v0.8's basics. Reworking the examples onto them is the
-current pass of this item, and every awkward spot it finds is recorded here as a
+`nodes.exs` predated v0.8's basics. Reworking every example onto them was the
+next pass of this item, and each awkward spot it found is recorded below as a
 question for the freeze rather than worked around quietly.
 
 **`examples/editor.exs`** — a file list, a preview, `Cmd.exec` on `$VISUAL` /
@@ -1233,8 +1235,8 @@ tab, and raw mouse events in the Keys tab. It found two questions and one gap:
 2. **The wheel does not reach an enclosing viewport.** Over the Form tab the
    wheel lands on a `text_input`, which does not scroll, and the event goes to
    `update/2` raw; the viewport around the fields is never asked. A viewport
-   scrolls on the wheel only when it is itself the element under the pointer
-   and focusable. Passing an unhandled wheel up to the nearest scrollable
+   scrolls on the wheel only when it, or a `focus_proxy` box around it, is the
+   element under the pointer, and it is focusable. Passing an unhandled wheel up to the nearest scrollable
    ancestor would make every long form scroll; the viewport has no focus id to
    report the offset under, which is the part to decide.
 3. **The basic input widgets were not all there** ✓. A tour of the widgets had
@@ -1246,8 +1248,8 @@ tab, and raw mouse events in the Keys tab. It found two questions and one gap:
    - `radio_group/1`, with `Harlock.RadioGroup` — the arrows move the choice
      itself, vertically or side by side, and a click chooses;
      `{:harlock_select, id, value}`.
-   - A check list: Space on a focused `table` or `list` with
-     `selection: {:multi, set}` delivers `{:harlock_toggle, id, row_id}`, and
+   - A check list: Space on a focused `table` or `list` with enumerable rows
+     and `selection: {:multi, set}` delivers `{:harlock_toggle, id, row_id}`, and
      `list/2` with `marker: :checkbox` draws `[x]` / `[ ]` and toggles on a
      click.
    - A list box is `list/2` as it was, now documented as one.

@@ -9,8 +9,9 @@ defmodule Harlock.App do
     * `update/2` — given an event and the current model, returns the next
       model, optionally paired with a `Cmd`. Return `:quit` to exit the app,
       or `{:quit, cmd}` to dispatch a last `Cmd` on the way out.
-    * `view/1` — given the current model, returns an element tree.
-    * `subs/1` (optional) — given the current model, returns the
+    * `view/1` — given the current model, returns an element tree. It should
+      only build elements: the runtime may call it more than once for a frame
+      (see `Harlock.Focus.current/0`).    * `subs/1` (optional) — given the current model, returns the
       `Harlock.Sub` subscriptions that should be active.
 
   The simplest app:
@@ -87,8 +88,8 @@ defmodule Harlock.App do
       or collapsed a node. A focused `checkbox` sends the same tuple with
       its new boolean in the last slot:
       `{:harlock_toggle, :notify, true}`. Space on a focused `table` or `list`
-      with `selection: {:multi, set}` sends it with the focused row's id, for
-      the app to flip in its set. Distinct from `:harlock_select` because
+      with enumerable rows, `selection: {:multi, set}` and a `:focused_row`
+      sends it with that row's id, for the app to flip in its set. Distinct from `:harlock_select` because
       expanding is not selecting, and because a node whose children are
       not loaded yet turns this into a side effect:
 
@@ -158,9 +159,15 @@ defmodule Harlock.App do
       * a `text_input` or `textarea` — `{:harlock_edit, id, {value, cursor}}`
         with the cursor at the clicked column, and in a textarea the clicked
         line, counted in display rows when it wraps or scrolls;
+      * a `box` with `focus_proxy` — anywhere on its border, padding or blank
+        space, it focuses the child it mirrors and does nothing more: no
+        press, toggle or cursor move;
+    * a click that would change nothing — the radio option already chosen, a
+      cursor position the cursor is already at — focuses and sends no message;
     * the wheel over a `viewport` scrolls three lines as
       `{:harlock_scroll, id, offset}`, and over a `table` moves one row as
-      the arrow keys would, without moving focus.
+      the arrow keys would, without moving focus — over a `focus_proxy` box as
+      well as over the child.
 
   Everything else arrives as the raw event
   `{:mouse, action, button, col, row, mods}` — a press on nothing focusable,

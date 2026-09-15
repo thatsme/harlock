@@ -202,7 +202,7 @@ Anything `@moduledoc false` is internal and free to change.
 | OTP supervision + terminal restoration | ✓ |
 | Cmd executor (`Cmd.from`, `Cmd.batch`, `Cmd.map`) | ✓ |
 | Running another program with the terminal (`Cmd.exec`) | ✓ (v0.8) |
-| Job control: Ctrl-Z / `fg` (`Cmd.suspend`) | ✓ (v0.8) |
+| Job control: Ctrl-Z / `fg` (`Cmd.suspend`) | ✓ (v0.8; Ctrl-Z inside a `Cmd.exec` program v0.9) |
 | Layout constraints (`:length`, `:percentage`, `:fill`, `:min`, `:max`) | ✓ |
 | Focus traversal + focus_trap overlays | ✓ |
 | Focus-aware key routing (`viewport` / `tabs` / `text_input` / `textarea` / `menu` / `select` / `tree` / `table` / `button` / `checkbox` / `radio_group`) | ✓ |
@@ -225,7 +225,7 @@ Anything `@moduledoc false` is internal and free to change.
 | `viewport` (render-then-clip + scroll-into-view + cursor remap) | ✓ |
 | `:telemetry` events (frame render, input dispatch, cmd, reader) | ✓ |
 | Modified arrows / Home / End / F-keys (parser) | ✓ |
-| Mouse: clicks on elements and the items inside them, wheel scrolls (`mouse: true`) | ✓ (v0.8; `textarea`, radio and check-list clicks v0.9) |
+| Mouse: clicks on elements and the items inside them, wheel scrolls (`mouse: true`) | ✓ (v0.8; `textarea`, radio, check-list and `focus_proxy` border clicks v0.9) |
 | Kitty keyboard protocol (parser) | ✓ (parser only — runtime push deferred) |
 | `tree` / `menu` / `select` widgets | ✓ (v0.5) |
 | Multi-line `textarea` with opt-in word wrap | ✓ (v0.4.2) |
@@ -294,9 +294,10 @@ feeds job durations to a `sparkline`, `Sub.logger` turns log calls into
 telemetry because a standalone example has nothing else to listen to — but the
 work runs inside a `Cmd`, so the handler fires in a different process from the
 UI exactly as it would for a real query. Point the same subscription at
-`[:ecto, :repo, :query]` and nothing else changes. Pausing removes only the
-interval from `subs/1`, so you can watch the runtime stop one subscription and
-leave the others running. A radio group sets the workload's size, Pause and
+`[:ecto, :repo, :query]` and only the transform changes, to read Ecto's
+`:total_time` — in native time units — instead of `:duration`. Pausing removes only the interval from
+`subs/1`, so the runtime visibly stops one subscription and leaves the others
+running. A radio group sets the workload's size, Pause and
 Clear are buttons as well as keys, and the log keeps a scrollable history,
 newest first, whose view holds still while new lines arrive above it.
 
@@ -352,9 +353,10 @@ boundary is mocked.
 ## Smoke tests
 
 The scripts in `priv/*_smoke.exs` exercise the real runtime and termios NIF
-in a pty via `script(1)`: resize, crash restoration, `Cmd.exec` and typed
-input to the program it runs, suspend under a job-control shell, mouse
-reporting, and two examples. They run in CI.
+in a pty via `script(1)`: resize, crash restoration, `Cmd.exec` with typed
+input and Ctrl-Z inside the program it runs, suspend under a job-control shell,
+mouse reporting, log output held back while an app runs, and two examples. They
+run in CI.
 
 ```sh
 ./scripts/smoke.sh
@@ -365,7 +367,7 @@ Picks the right flag syntax for BSD vs util-linux `script` automatically.
 ## Contributing
 
 Issues and PRs welcome at <https://github.com/thatsme/harlock>. The
-codebase is about 10k lines of Elixir and under 1k lines of C. Start with `lib/harlock/app/runtime.ex` — everything
+codebase is about 11k lines of Elixir and 1k lines of C. Start with `lib/harlock/app/runtime.ex` — everything
 else is reachable from there.
 
 ## License

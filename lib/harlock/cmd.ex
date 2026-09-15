@@ -4,15 +4,20 @@ defmodule Harlock.Cmd do
 
   An app's `update/2` can return `{new_model, cmd}` to request side-effects.
   The runtime dispatches the cmd to a `Task.Supervisor` and re-enters the
-  TEA loop; results arrive later as ordinary `{:harlock_event, result}`
-  messages that `update/2` handles like any other event.
+  TEA loop; the result arrives later as a message to `update/2`, handled like
+  any other event. `map/2` tags it so the clause that receives it is easy to
+  write:
 
       def update(:fetch, model) do
-        cmd = Cmd.from(fn -> HTTPoison.get!("https://example.com") end)
+        cmd =
+          Cmd.from(fn -> File.read("notes.txt") end)
+          |> Cmd.map(&{:loaded, &1})
+
         {model, cmd}
       end
 
-      def update({:ok, %{body: body}}, model), do: {%{model | body: body}, Cmd.none()}
+      def update({:loaded, {:ok, body}}, model), do: %{model | body: body}
+      def update({:loaded, {:error, reason}}, model), do: %{model | error: reason}
 
   Constructors:
 
@@ -60,7 +65,8 @@ defmodule Harlock.Cmd do
 
   Ctrl-Z inside the program works as it would at a shell prompt. When the
   program stops, the app stops with it, so the shell shows the job suspended;
-  `fg` resumes both, the program first. That needs a job-control shell above
+  `fg` resumes the app, which gives the terminal back to the program and
+  resumes it. That needs a job-control shell above
   the app — the same condition as `suspend/0` — and without one the program is
   resumed straight away, so Ctrl-Z does nothing rather than leaving it stuck.
 

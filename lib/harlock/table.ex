@@ -16,6 +16,11 @@ defmodule Harlock.Table do
   `{:harlock_select, focus_id, row_id}` or `{:harlock_scroll, focus_id, offset}`
   respectively — both messages that already existed.
 
+  With enumerable rows and `selection: {:multi, set}`, the runtime also routes
+  Space on the focused row as `{:harlock_toggle, focus_id, row_id}`, for the app
+  to add to or remove from its set. There is no helper for it here: it is one
+  key, and the set belongs to the app.
+
   Neither wraps. A table is read top-down and is often long, so jumping from the
   last row to the first reads as a glitch. `menu` wraps because its lists are
   short and cyclic movement is the convention there; this is a deliberate

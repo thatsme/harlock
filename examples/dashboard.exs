@@ -24,7 +24,8 @@
 # events. That is not a shortcut: the work runs inside a Cmd, which means the
 # telemetry handler fires in a *different process* from the UI, exactly as it
 # would when the emitter is a real query or job. Point the same subscription at
-# [:ecto, :repo, :query] and nothing else here has to change.
+# [:ecto, :repo, :query] and only its transform changes, to read Ecto's
+# :total_time (native time units) instead of :duration.
 
 defmodule Dashboard do
   use Harlock.App

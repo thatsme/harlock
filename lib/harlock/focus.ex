@@ -6,8 +6,9 @@ defmodule Harlock.Focus do
   process dictionary, set by the runtime immediately before invoking app
   callbacks. Called from outside a Harlock callback it has no state to read.
 
-  Focus is read-only from an app: it moves with Tab / Shift-Tab, focus traps,
-  and mouse clicks. Each move is delivered to `update/2` as
+  Focus is read-only from an app. It starts on the first focusable element and
+  moves with Tab / Shift-Tab, mouse clicks, a focus trap opening or closing, and
+  the focused element leaving the view. Each move is delivered to `update/2` as
   `{:harlock_focus, from, to}` — see "Focus changes" in `Harlock.App`.
   """
 
@@ -16,6 +17,11 @@ defmodule Harlock.Focus do
   @doc """
   The id of the currently focused element, or `nil` if no focusable element
   exists. Call this from inside `update/2` or `view/1`.
+
+  In `view/1` it is the focus the frame is drawn with. Focus is settled from
+  the tree the view returns, so when settling moves it — the first frame, a
+  trap opening or closing, the focused element going away — the runtime calls
+  `view/1` a second time with the settled focus, and draws that tree.
   """
   @spec current() :: any()
   def current, do: Process.get(@key)

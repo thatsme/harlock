@@ -763,11 +763,9 @@ defmodule Harlock.App.Runtime do
   end
 
   # Space on a table that allows several selections toggles the focused row, as
-  # it would a checkbox, with the toggle tuple tree already sends; the app flips
-  # membership in its set. Other keys move the focus as for any list.
-  # Space on a table that allows several selections toggles the focused row, as
   # it would a checkbox, with the toggle tuple tree already sends: the app flips
-  # the row in its set. Without :multi, Space reaches update/2 as before.
+  # the row in its set. Without :multi, Space reaches update/2 as before. Other
+  # keys move the focus as for any list.
   defp route_list_table(el, {:key, {:char, ?\s}, _}, focus_id, state) do
     case {Keyword.get(el.opts, :selection), Keyword.get(el.opts, :focused_row)} do
       {{:multi, %MapSet{}}, row} when row != nil ->

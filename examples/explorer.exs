@@ -7,7 +7,7 @@
 # Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
 # would not receive keystrokes.
 #
-# The three choosing widgets, in one app:
+# Three of the widgets for choosing among items, in one app:
 #
 #   * tree     — collapsible, with one node (`deps`) whose children load
 #                asynchronously through a Cmd rather than being known up front

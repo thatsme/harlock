@@ -45,9 +45,10 @@ defmodule Harlock.Terminal.Termios do
   end
 
   @doc """
-  Open /dev/tty for termios control. Returns `{:error, :no_tty}` in
-  environments without a controlling terminal (CI, piped stdin) so callers
-  can detect non-interactive contexts cleanly.
+  Open /dev/tty for termios control. Returns `{:error, :no_tty}` when the
+  process has no controlling terminal (CI, a BEAM started detached) so callers
+  can detect non-interactive contexts cleanly. Redirected stdin does not cause
+  it: `/dev/tty` is the controlling terminal whatever stdin is.
   """
   @spec open() :: {:ok, ref()} | {:error, atom() | {atom(), term()}}
   def open, do: open_nif()
