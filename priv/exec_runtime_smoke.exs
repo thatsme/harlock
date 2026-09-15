@@ -176,6 +176,21 @@ S.check(
   not :sys.get_state(:"Elixir.Harlock.App.Supervisor.Reader").paused
 )
 
+# 3b. A program that stops itself — Ctrl-Z in vim, in effect. Under script(1)
+#     there is no job-control shell above this BEAM to suspend to, so Keeper
+#     resumes the program in place and it runs to completion.
+exec.(:stops, ["sh", "-c", "kill -TSTP $$; exit 7"], [])
+
+S.check(
+  "a stopped program with no job shell is resumed in place",
+  result_for.(:stops) == {:ok, 7}
+)
+
+S.check(
+  "  ...and the BEAM holds the foreground after",
+  S.eventually(fn -> Termios.foreground?(probe) end)
+)
+
 # 4. A program that cannot start leaves the app as it was.
 exec.(:missing, ["harlock-no-such-program"], [])
 

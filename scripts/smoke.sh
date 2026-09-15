@@ -21,6 +21,7 @@ smokes=(
   priv/exec_input_smoke.exs
   priv/crash_smoke.exs
   priv/suspend_smoke.exs
+  priv/exec_stop_smoke.exs
   priv/mouse_smoke.exs
   priv/sysmon_smoke.exs
   priv/contacts_smoke.exs

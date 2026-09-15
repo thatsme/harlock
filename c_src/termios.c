@@ -39,6 +39,10 @@ typedef struct {
     int status_fd;
     pid_t pgid;
     int finished;
+    // Status lines arrive whole, but a read can return more than one — a stop
+    // and the exit right after it — so they are split here, one per call.
+    char buf[256];
+    int len;
 } exec_t;
 
 typedef struct {
@@ -563,6 +567,7 @@ static ERL_NIF_TERM exec_start_nif(ErlNifEnv *env, int argc,
     ex->status_fd = status_pipe[0];
     ex->pgid = pid;
     ex->finished = 0;
+    ex->len = 0;
     ERL_NIF_TERM ref = enif_make_resource(env, ex);
     enif_release_resource(ex);
     result = enif_make_tuple3(env, enif_make_atom(env, "ok"), ref, enif_make_int(env, pid));
@@ -609,11 +614,13 @@ static void exec_finish(ErlNifEnv *env, exec_t *ex) {
 }
 
 // exec_read(exec_ref) ->
-//     {:exited, code} | {:signaled, signal} | {:failed, stage, errno} |
-//     :killed | :wouldblock | {:error, reason}
+//     {:stopped, signal} | {:exited, code} | {:signaled, signal} |
+//     {:failed, stage, errno} | :killed | :wouldblock | {:error, reason}
 //
+// One status line per call. {:stopped, signal} is not final: the program is
+// stopped and the pipe stays open, so the caller re-arms and reads again.
 // :killed means the helper died without reporting — its process group was
-// killed. Any result other than :wouldblock is final and closes the pipe.
+// killed. Any other result is final and closes the pipe.
 static ERL_NIF_TERM exec_read_nif(ErlNifEnv *env, int argc,
                                   const ERL_NIF_TERM argv[]) {
     (void)argc;
@@ -623,25 +630,51 @@ static ERL_NIF_TERM exec_read_nif(ErlNifEnv *env, int argc,
     }
     if (ex->status_fd < 0) return make_error(env, "closed");
 
-    char line[96];
-    ssize_t n;
-    do {
-        n = read(ex->status_fd, line, sizeof(line) - 1);
-    } while (n < 0 && errno == EINTR);
+    char *newline = memchr(ex->buf, '\n', ex->len);
+    int eof = 0;
 
-    if (n < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) return enif_make_atom(env, "wouldblock");
-        int err = errno;
-        exec_finish(env, ex);
-        return make_error_errno(env, err);
+    // Read only when no whole line is already buffered: a line read earlier
+    // would otherwise sit unreported with nothing left in the pipe to wake the
+    // caller.
+    if (!newline) {
+        ssize_t n;
+        do {
+            n = read(ex->status_fd, ex->buf + ex->len, sizeof(ex->buf) - 1 - ex->len);
+        } while (n < 0 && errno == EINTR);
+
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return enif_make_atom(env, "wouldblock");
+            int err = errno;
+            exec_finish(env, ex);
+            return make_error_errno(env, err);
+        }
+        if (n == 0) eof = 1;
+        ex->len += (int)n;
+        newline = memchr(ex->buf, '\n', ex->len);
     }
-    exec_finish(env, ex);
-    if (n == 0) return enif_make_atom(env, "killed");
 
-    // The helper writes one line well under PIPE_BUF, so it arrives whole.
-    line[n] = '\0';
+    if (!newline) {
+        if (eof) {
+            exec_finish(env, ex);
+            return ex->len == 0 ? enif_make_atom(env, "killed") : make_error(env, "bad_status");
+        }
+        return enif_make_atom(env, "wouldblock");
+    }
+
+    char line[256];
+    int line_len = (int)(newline - ex->buf);
+    memcpy(line, ex->buf, line_len);
+    line[line_len] = '\0';
+    ex->len -= line_len + 1;
+    memmove(ex->buf, newline + 1, ex->len);
+
     int value, err;
     char stage[24];
+    if (sscanf(line, "stopped %d", &value) == 1) {
+        return enif_make_tuple2(env, enif_make_atom(env, "stopped"), enif_make_int(env, value));
+    }
+
+    exec_finish(env, ex);
     if (sscanf(line, "exited %d", &value) == 1) {
         return enif_make_tuple2(env, enif_make_atom(env, "exited"), enif_make_int(env, value));
     }
@@ -653,6 +686,36 @@ static ERL_NIF_TERM exec_read_nif(ErlNifEnv *env, int argc,
                                 enif_make_atom(env, stage), errno_term(env, err));
     }
     return make_error(env, "bad_status");
+}
+
+// exec_continue(tty_ref, exec_ref) -> :ok | {:error, reason}
+//
+// Give the terminal's foreground back to a stopped program's process group and
+// send it SIGCONT. The caller holds the foreground (after its own resume, the
+// shell gives it to this BEAM); SIGTTOU is blocked anyway, as in reclaim.
+static ERL_NIF_TERM exec_continue_nif(ErlNifEnv *env, int argc,
+                                      const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    tty_fd_t *tty;
+    exec_t *ex;
+    if (!enif_get_resource(env, argv[0], TTY_FD_TYPE, (void **)&tty) ||
+        !enif_get_resource(env, argv[1], EXEC_TYPE, (void **)&ex)) {
+        return enif_make_badarg(env);
+    }
+    if (tty->fd < 0) return make_error(env, "closed");
+    if (ex->finished) return make_error(env, "finished");
+
+    sigset_t block, saved;
+    sigemptyset(&block);
+    sigaddset(&block, SIGTTOU);
+    pthread_sigmask(SIG_BLOCK, &block, &saved);
+    int rc = tcsetpgrp(tty->fd, ex->pgid);
+    int err = errno;
+    pthread_sigmask(SIG_SETMASK, &saved, NULL);
+
+    if (rc != 0 && err != EPERM) return make_error_errno(env, err);
+    if (kill(-ex->pgid, SIGCONT) != 0 && errno != ESRCH) return make_error_errno(env, errno);
+    return enif_make_atom(env, "ok");
 }
 
 // exec_kill(exec_ref) -> :ok | {:error, :finished}
@@ -702,8 +765,12 @@ static ERL_NIF_TERM reclaim_nif(ErlNifEnv *env, int argc,
 // resume it. The kernel discards SIGTSTP sent to an orphaned process group —
 // one with no member whose parent is in another group of the same session —
 // and nothing would ever send the SIGCONT. So: this BEAM holds the foreground,
-// and its parent is in the same session but a different process group, as an
-// interactive shell running it as a job is.
+// and job_shell/0 holds.
+static int parent_is_job_shell(void) {
+    pid_t parent = getppid();
+    return getsid(parent) == getsid(0) && getpgid(parent) != getpgrp();
+}
+
 static ERL_NIF_TERM job_control_nif(ErlNifEnv *env, int argc,
                                     const ERL_NIF_TERM argv[]) {
     (void)argc;
@@ -713,11 +780,21 @@ static ERL_NIF_TERM job_control_nif(ErlNifEnv *env, int argc,
     }
     if (tty->fd < 0) return make_error(env, "closed");
 
-    pid_t parent = getppid();
-    int ok = tcgetpgrp(tty->fd) == getpgrp() &&
-             getsid(parent) == getsid(0) &&
-             getpgid(parent) != getpgrp();
+    int ok = tcgetpgrp(tty->fd) == getpgrp() && parent_is_job_shell();
     return enif_make_atom(env, ok ? "true" : "false");
+}
+
+// job_shell() -> boolean
+//
+// The parent half of job_control/1 alone: this BEAM's parent is in the same
+// session under a different process group, as an interactive shell running it
+// as a job is. For when the BEAM does not hold the foreground — a program
+// started by exec_start does.
+static ERL_NIF_TERM job_shell_nif(ErlNifEnv *env, int argc,
+                                  const ERL_NIF_TERM argv[]) {
+    (void)argc;
+    (void)argv;
+    return enif_make_atom(env, parent_is_job_shell() ? "true" : "false");
 }
 
 // suspend() -> :ok | {:error, reason}
@@ -762,7 +839,9 @@ static ErlNifFunc nif_funcs[] = {
     {"reclaim_nif",       1, reclaim_nif,       ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"foreground_nif",    1, foreground_nif,    ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"job_control_nif",   1, job_control_nif,   ERL_NIF_DIRTY_JOB_IO_BOUND},
-    {"suspend_nif",       0, suspend_nif,       ERL_NIF_DIRTY_JOB_IO_BOUND}};
+    {"suspend_nif",       0, suspend_nif,       ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"exec_continue_nif", 2, exec_continue_nif, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"job_shell_nif",     0, job_shell_nif,     ERL_NIF_DIRTY_JOB_IO_BOUND}};
 
 ERL_NIF_INIT(Elixir.Harlock.Terminal.Termios, nif_funcs, on_load, NULL, NULL,
              NULL);

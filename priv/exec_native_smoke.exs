@@ -25,7 +25,7 @@ defmodule ExecSmoke do
       end
 
     during.({exec, pgid})
-    result = await(exec)
+    result = await(exec, tty)
 
     unless Termios.reclaim_foreground(tty) == :ok and Termios.foreground?(tty) == true,
       do: fail("foreground not reclaimed after #{inspect(argv)}")
@@ -33,14 +33,24 @@ defmodule ExecSmoke do
     result
   end
 
-  defp await(exec) do
+  # A stop is reported, not final: note it for the caller, resume the program,
+  # and keep waiting for how it ends.
+  defp await(exec, tty) do
     :ok = Termios.exec_arm(exec)
 
     receive do
       {:exec_ready, ^exec} ->
         case Termios.exec_read(exec) do
-          :wouldblock -> await(exec)
-          result -> result
+          :wouldblock ->
+            await(exec, tty)
+
+          {:stopped, signal} ->
+            send(self(), {:saw_stop, signal})
+            :ok = Termios.exec_continue(tty, exec)
+            await(exec, tty)
+
+          result ->
+            result
         end
     after
       10_000 -> fail("no result within 10s")
@@ -137,12 +147,22 @@ ExecSmoke.expect(
 )
 
 ExecSmoke.expect(
-  "a stopped program is resumed rather than left stopped",
+  "a stopped program is reported, and runs on once continued",
   ExecSmoke.run(tty, ["sh", "-c", ~S(kill -STOP $$; echo resumed > "$OUT")], env: env_with_out),
   {:exited, 0}
 )
 
-ExecSmoke.expect("  ...and ran to completion", read_out.(), "resumed")
+ExecSmoke.expect(
+  "  ...the stop was reported with its signal",
+  receive do
+    {:saw_stop, signal} -> signal in [17, 19]
+  after
+    0 -> :no_stop_reported
+  end,
+  true
+)
+
+ExecSmoke.expect("  ...and it ran to completion", read_out.(), "resumed")
 
 ExecSmoke.expect(
   "exec_kill ends the whole group",

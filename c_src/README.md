@@ -62,6 +62,8 @@ API of its own.
 | `foreground?/1`              | `tcgetpgrp(fd) == getpgrp()`                     |
 | `job_control?/1`             | foreground, and parent in the same session but another process group |
 | `suspend/0`                  | `kill(0, SIGTSTP)` — stop this BEAM's process group |
+| `job_shell?/0`               | parent in the same session but another process group, whoever holds the foreground |
+| `exec_continue/2`            | foreground back to a stopped program's group, then `SIGCONT` |
 
 All NIFs run on dirty I/O schedulers except `arm_select` and `exec_arm`,
 which must run on a normal scheduler so `enif_select_read` correctly
@@ -170,7 +172,7 @@ harlock_exec
   → close descriptors inherited from the BEAM (Linux; macOS spawn flag does it)
   → wait until its group is the foreground
   → fork; the child restores those signals to default, chdir, execvp
-  → waitpid(WUNTRACED); a stopped child is sent SIGCONT
+  → waitpid(WUNTRACED); on a stop, write "stopped N" to fd 3 and keep waiting
   → write "exited N" / "signaled N" / "failed <stage> <errno>" to fd 3
 
 reclaim_foreground(tty_ref)
@@ -192,8 +194,15 @@ Three parts of that are load-bearing, each found by it failing:
   `POSIX_SPAWN_CLOEXEC_DEFAULT` on macOS, or the helper's close loop on Linux,
   the program inherits dozens of the BEAM's descriptors.
 
-A program stopped by Ctrl-Z is resumed, because there is no job table to hand it
-back to. `exec_kill/1` kills the whole group, helper included, and reading the
+A program stopped by Ctrl-Z is left stopped and reported: `exec_read/1` returns
+`{:stopped, signal}`, which is not final, and the caller decides. The runtime's
+Keeper checks `job_shell?/0`. With a job-control shell above the BEAM, it stops
+the BEAM too, so the shell shows the job suspended exactly as it would have
+shown the program; on `fg` the shell resumes the BEAM, and Keeper hands the
+foreground to the program's group and sends it `SIGCONT` with
+`exec_continue/2`. Without such a shell nothing would resume a stopped BEAM, so
+Keeper continues the program at once. `exec_read/1` splits status lines itself,
+since a stop and the exit right after it can arrive in one read. `exec_kill/1` kills the whole group, helper included, and reading the
 result then gives `:killed`. A resource collected before its program finished
 kills the group from the destructor, so a crashed owner cannot leave a program
 holding the terminal.

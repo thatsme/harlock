@@ -12,11 +12,17 @@
 //
 //   harlock_exec <dir or ""> <program> [args...]
 //
-// Writes exactly one line to fd 3, then exits 0:
+// Writes a line to fd 3 each time the program stops, and one final line when
+// it ends, then exits 0:
 //
+//   stopped <signal>            (not final: the program is stopped, the helper waits on)
 //   exited <code>
 //   signaled <signal>
 //   failed <stage> <errno>      (stage: foreground | chdir | exec | fork | pipe | wait)
+//
+// A stopped program is left stopped. Whoever reads the status pipe decides
+// what happens next: resume it in place, or stop the app too and resume both
+// when the user's shell does.
 
 #include <errno.h>
 #include <fcntl.h>
@@ -146,10 +152,11 @@ int main(int argc, char **argv) {
             if (errno == EINTR) continue;
             return report_failure("wait", errno);
         }
-        // Stopped by Ctrl-Z (or any stop signal). There is no job table to hand
-        // it back to, so it resumes in the foreground.
+        // Stopped by Ctrl-Z or any stop signal: report it and keep waiting.
         if (WIFSTOPPED(status)) {
-            kill(child, SIGCONT);
+            char line[32];
+            snprintf(line, sizeof(line), "stopped %d\n", WSTOPSIG(status));
+            report(line);
             continue;
         }
         break;

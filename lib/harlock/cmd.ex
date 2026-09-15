@@ -58,6 +58,12 @@ defmodule Harlock.Cmd do
     * `{:error, :no_terminal}` — the app is not attached to a terminal, as under
       the test backend without an `:exec` stub (see `Harlock.Test.start_app/3`).
 
+  Ctrl-Z inside the program works as it would at a shell prompt. When the
+  program stops, the app stops with it, so the shell shows the job suspended;
+  `fg` resumes both, the program first. That needs a job-control shell above
+  the app — the same condition as `suspend/0` — and without one the program is
+  resumed straight away, so Ctrl-Z does nothing rather than leaving it stuck.
+
   `exec/3` needs the app to own its terminal: run it with `mix run`, not from an
   IEx prompt, whose own terminal driver competes for input.
 

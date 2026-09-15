@@ -112,7 +112,8 @@ defmodule Harlock.Terminal.Termios do
 
   @typedoc false
   @type exec_result ::
-          {:exited, non_neg_integer()}
+          {:stopped, pos_integer()}
+          | {:exited, non_neg_integer()}
           | {:signaled, pos_integer()}
           | {:failed, atom(), atom() | {:errno, integer()}}
           | :killed
@@ -142,7 +143,8 @@ defmodule Harlock.Terminal.Termios do
   def exec_arm(exec), do: exec_arm_nif(exec)
 
   @doc false
-  # Any result other than :wouldblock is final.
+  # Any result other than :wouldblock and {:stopped, signal} is final. After
+  # {:stopped, _} the program stays stopped until exec_continue/2.
   @spec exec_read(exec_ref()) :: exec_result() | :wouldblock | {:error, term()}
   def exec_read(exec), do: exec_read_nif(exec)
 
@@ -161,6 +163,17 @@ defmodule Harlock.Terminal.Termios do
   @doc false
   @spec foreground?(ref()) :: boolean() | {:error, term()}
   def foreground?(ref), do: foreground_nif(ref)
+
+  @doc false
+  # Give the terminal back to a stopped program and resume it.
+  @spec exec_continue(ref(), exec_ref()) :: :ok | {:error, term()}
+  def exec_continue(ref, exec), do: exec_continue_nif(ref, exec)
+
+  @doc false
+  # Whether this BEAM's parent is a job-control shell, regardless of who holds
+  # the foreground. See job_shell_nif in c_src/termios.c.
+  @spec job_shell?() :: boolean()
+  def job_shell?, do: job_shell_nif()
 
   @doc false
   # Whether suspending would be resumed: the BEAM holds the foreground and a
@@ -197,4 +210,6 @@ defmodule Harlock.Terminal.Termios do
   defp foreground_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
   defp job_control_nif(_ref), do: :erlang.nif_error(:nif_not_loaded)
   defp suspend_nif, do: :erlang.nif_error(:nif_not_loaded)
+  defp exec_continue_nif(_ref, _exec), do: :erlang.nif_error(:nif_not_loaded)
+  defp job_shell_nif, do: :erlang.nif_error(:nif_not_loaded)
 end

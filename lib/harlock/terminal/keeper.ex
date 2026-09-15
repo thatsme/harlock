@@ -39,6 +39,13 @@ defmodule Harlock.Terminal.Keeper do
   # {:harlock_exec_done, :resumed}. If no stop happened — a check can pass and
   # the kernel still discard the signal — a watchdog reclaims the terminal
   # instead of leaving it released forever, reporting :not_stopped.
+  #
+  # A program started by exec/3 can be stopped too: Ctrl-Z in vim. The helper
+  # reports it and leaves it stopped. With a job-control shell above this BEAM,
+  # Keeper stops the BEAM as well, so the shell shows the job suspended as it
+  # would have shown vim; on `fg` the SIGCONT arrives here, and Keeper gives the
+  # terminal back to the program and resumes it. Without such a shell nothing
+  # would resume a stopped BEAM, so the program is resumed at once, in place.
 
   use GenServer
   require Logger
@@ -102,7 +109,14 @@ defmodule Harlock.Terminal.Keeper do
                 install_signals()
 
                 {:ok,
-                 %{ctl: ctl, snapshot: snapshot, runtime: runtime, exec: nil, suspended: false}}
+                 %{
+                   ctl: ctl,
+                   snapshot: snapshot,
+                   runtime: runtime,
+                   exec: nil,
+                   suspended: false,
+                   exec_stopped: false
+                 }}
 
               {:error, reason} ->
                 Termios.close(ctl)
@@ -198,8 +212,36 @@ defmodule Harlock.Terminal.Keeper do
     {:noreply, resume_from_suspend(state, result)}
   end
 
+  # The program started by exec/3 stopped, and so did this BEAM, for the shell.
+  def handle_info(:stop_with_program, %{exec_stopped: true} = state) do
+    case Termios.suspend() do
+      :ok ->
+        Process.send_after(self(), :exec_stop_watchdog, 1_000)
+        {:noreply, state}
+
+      {:error, _} ->
+        {:noreply, continue_program(state)}
+    end
+  end
+
+  def handle_info({:signal, :sigcont}, %{exec_stopped: true} = state),
+    do: {:noreply, continue_program(state)}
+
+  # As for :suspend_watchdog: after a real stop this can arrive before SIGCONT.
+  # Resuming the program is the right move either way.
+  def handle_info(:exec_stop_watchdog, %{exec_stopped: true} = state) do
+    receive do
+      {:signal, :sigcont} -> :ok
+    after
+      200 -> :ok
+    end
+
+    {:noreply, continue_program(state)}
+  end
+
   def handle_info({:signal, :sigcont}, state), do: {:noreply, state}
   def handle_info(:suspend_watchdog, state), do: {:noreply, state}
+  def handle_info(:exec_stop_watchdog, state), do: {:noreply, state}
 
   def handle_info({:signal, :sigwinch}, %{ctl: nil} = state) do
     {:noreply, state}
@@ -222,6 +264,14 @@ defmodule Harlock.Terminal.Keeper do
       :wouldblock ->
         _ = Termios.exec_arm(exec)
         {:noreply, state}
+
+      {:stopped, _signal} ->
+        if Termios.job_shell?() do
+          send(self(), :stop_with_program)
+          {:noreply, %{state | exec_stopped: true}}
+        else
+          {:noreply, continue_program(%{state | exec_stopped: true})}
+        end
 
       result ->
         reclaim_terminal(ctl)
@@ -258,6 +308,18 @@ defmodule Harlock.Terminal.Keeper do
     end
 
     :ok
+  end
+
+  # Hand the terminal back to the stopped program, resume it, and wait for its
+  # next report.
+  defp continue_program(%{ctl: ctl, exec: exec} = state) do
+    case Termios.exec_continue(ctl, exec) do
+      :ok -> :ok
+      {:error, reason} -> Logger.error("Harlock could not resume the program: #{inspect(reason)}")
+    end
+
+    _ = Termios.exec_arm(exec)
+    %{state | exec_stopped: false}
   end
 
   defp resume_from_suspend(%{ctl: ctl} = state, result) do

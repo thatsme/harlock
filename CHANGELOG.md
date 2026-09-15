@@ -10,6 +10,18 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Changed
+
+- **Ctrl-Z inside a program started by `Cmd.exec` suspends to the shell.** In
+  0.8.0 the exec helper resumed a stopped program immediately, so Ctrl-Z in vim
+  did nothing. Now the helper reports the stop, and when a job-control shell
+  runs the app, the app stops with the program: the shell shows the job
+  suspended, and `fg` resumes the app and then the program, which redraws
+  itself. Without such a shell the program is still resumed in place.
+  `priv/exec_stop_smoke.exs` checks it as a job under an interactive bash, and
+  it was checked with vim under zsh; removing the shell check makes the smoke
+  test fail.
+
 ### Added
 
 - **`examples/editor.exs`** — a file browser that opens the selected file in

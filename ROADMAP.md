@@ -991,8 +991,10 @@ provide it itself (principle 8). Each item says which applies.
      `priv/harlock_exec`, that waits for the program and reports its status,
      leaving the VM's disposition alone.
    - **A child stopped by Ctrl-Z.** A program that does not handle SIGTSTP stops,
-     and there is no job table to return to. Resuming it in the foreground is the
-     simplest defined behaviour, and what the helper does.
+     and there is no job table to return to. v0.8.0 resumed it in the
+     foreground; since the editor example showed that surprises people, it is
+     reported instead, and with a job-control shell the app stops with it (see
+     v0.9).
 
    While the program runs, `update/2` keeps processing subscriptions and `Cmd`
    results but nothing is drawn, and one full redraw follows. A second exec while
@@ -1121,12 +1123,14 @@ things:
    the selected row" needs a raw `{:key, :enter, []}` clause guarded by
    `Focus.current()`. A routed `{:harlock_submit, id}` on Enter would be
    additive and consistent with the other list widgets.
-3. **Ctrl-Z inside a program started by `Cmd.exec` did nothing.** The helper
+3. **Ctrl-Z inside a program started by `Cmd.exec` did nothing** ✓. The helper
    resumed a stopped program, since there is no job table to hand it to — so
-   Ctrl-Z in vim neither suspended vim nor returned to the shell, which is not
-   what anyone used to a terminal expects. Being addressed: when the program
-   stops and a job-control shell is available, Harlock stops too, and `fg`
-   resumes both.
+   Ctrl-Z in vim neither suspended vim nor returned to the shell. Now the helper
+   reports the stop, and with a job-control shell above the app, the app stops
+   too: the shell shows the job suspended, and `fg` resumes the app and then the
+   program. Without such a shell the program is resumed in place.
+   `priv/exec_stop_smoke.exs` checks it as a job under bash; it was also
+   checked with vim under zsh.
 
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
