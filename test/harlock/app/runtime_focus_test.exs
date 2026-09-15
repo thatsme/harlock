@@ -199,4 +199,61 @@ defmodule Harlock.App.RuntimeFocusTest do
       Harlock.Test.stop(h)
     end
   end
+
+  # A view that shows the focus, the way a status line or a highlighted border
+  # does, reads Harlock.Focus.current/0.
+  defmodule FocusLabelApp do
+    use Harlock.App
+
+    def init(_), do: %{modal?: false}
+
+    def update({:key, {:char, ?o}, []}, m), do: %{m | modal?: true}
+    def update({:key, {:char, ?c}, []}, m), do: %{m | modal?: false}
+    def update(_, m), do: m
+
+    def view(m) do
+      base =
+        vbox(
+          children: [
+            text("focus: #{inspect(Harlock.Focus.current())}"),
+            text("outer1", focusable: :outer1),
+            text("outer2", focusable: :outer2)
+          ]
+        )
+
+      if m.modal?,
+        do:
+          overlay(
+            child: base,
+            over: text("inner", focusable: :inner),
+            height: 1,
+            focus_trap: true
+          ),
+        else: base
+    end
+  end
+
+  describe "Focus.current/0 in view/1" do
+    defp first_line(h), do: h |> Harlock.Test.render() |> String.split("\n") |> hd()
+
+    test "reports the focus the frame is drawn with on the first frame" do
+      h = Harlock.Test.start_app(FocusLabelApp, nil, rows: 5, cols: 30)
+      assert first_line(h) =~ "focus: :outer1"
+      Harlock.Test.stop(h)
+    end
+
+    test "follows focus into a trap as it opens, and back as it closes" do
+      h = Harlock.Test.start_app(FocusLabelApp, nil, rows: 5, cols: 30)
+      Harlock.Test.send_key(h, :tab)
+
+      Harlock.Test.send_key(h, {:char, ?o})
+      assert Harlock.Test.focused(h) == :inner
+      assert first_line(h) =~ "focus: :inner"
+
+      Harlock.Test.send_key(h, {:char, ?c})
+      assert Harlock.Test.focused(h) == :outer2
+      assert first_line(h) =~ "focus: :outer2"
+      Harlock.Test.stop(h)
+    end
+  end
 end

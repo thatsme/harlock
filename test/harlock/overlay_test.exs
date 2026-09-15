@@ -1,6 +1,9 @@
 defmodule Harlock.OverlayTest do
   use ExUnit.Case, async: true
 
+  alias Harlock.Element.Renderer
+  alias Harlock.Render.Buffer
+
   defmodule App do
     use Harlock.App
 
@@ -83,6 +86,37 @@ defmodule Harlock.OverlayTest do
     assert Harlock.Test.focused(h) == :help_1
 
     Harlock.Test.stop(h)
+  end
+
+  test "the panel hides the background under its whole region" do
+    import Harlock.Elements
+
+    view =
+      overlay(
+        child: text(String.duplicate(String.duplicate("#", 20) <> "\n", 8)),
+        over: text("hi"),
+        width: 10,
+        height: 4
+      )
+
+    frame = Renderer.render(view, 8, 20)
+
+    row = fn r ->
+      for c <- 0..19, into: "" do
+        case Buffer.get(frame.buffer, r, c).char do
+          nil -> " "
+          cp when is_integer(cp) -> <<cp::utf8>>
+          bin -> bin
+        end
+      end
+    end
+
+    # The panel is rows 2–5, columns 5–14: "hi" in its top-left corner and
+    # blank space in the rest of it, where the background used to show through.
+    assert row.(1) == String.duplicate("#", 20)
+    assert row.(2) == "#####hi        #####"
+    assert row.(5) == "#####          #####"
+    assert row.(6) == String.duplicate("#", 20)
   end
 
   test "closing dialog restores prior focus" do

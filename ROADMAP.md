@@ -1105,7 +1105,7 @@ current pass of this item, and every awkward spot it finds is recorded here as a
 question for the freeze rather than worked around quietly.
 
 **`examples/editor.exs`** — a file list, a preview, `Cmd.exec` on `$VISUAL` /
-`$EDITOR` / `vi`, `Cmd.suspend`, the mouse, styled status lines. It found two
+`$EDITOR` / `vi`, `Cmd.suspend`, the mouse, styled status lines. It found three
 things:
 
 1. **An app is never told the terminal's size.** Resize is handled entirely
@@ -1131,6 +1131,37 @@ things:
    program. Without such a shell the program is resumed in place.
    `priv/exec_stop_smoke.exs` checks it as a job under bash; it was also
    checked with vim under zsh.
+
+**`examples/contacts.exs`**, reworked — Add / Edit / Delete buttons, a
+dialog with a favourite checkbox and Save / Cancel buttons, styled detail
+labels, pane borders through `focus_proxy`, the mouse throughout. It found two
+defects and two questions:
+
+1. **An `overlay` let the background show through its blank cells** ✓. The
+   panel was drawn over the background without clearing its region, so a
+   dialog's empty rows showed the text beneath — in `contacts` the details
+   pane, in `sysmon` the process table behind the help panel. Now the region is
+   cleared first.
+2. **`Focus.current/0` in `view/1` reported the focus from before the frame**
+   ✓. Focus is settled from the tree `view/1` returns, so a view that shows the
+   focus — a status line, a highlighted border — was one frame behind whenever
+   focus moved without a key: `nil` on the first frame, and the old id when a
+   dialog opened or closed. The runtime now runs `view/1` once more when
+   settling moved the focus.
+3. **Table cells are plain strings.** A column's `:render` returns a binary,
+   so the favourite marker in the list cannot be coloured the way the same
+   marker is in the details pane. Accepting styled runs, as `text/2`, `button/2`
+   and `checkbox/2` do, would be additive; whether per-cell styles belong in
+   `table` at 1.0 or next to `:row_style` later is the question. The Enter
+   question above came up again: Enter on the list opens the dialog through
+   the same raw-key clause.
+4. **`focus_proxy` names one id.** A box with `focus_proxy` lights its border
+   while that widget has focus and, with the mouse, takes clicks for it. The
+   details pane holds three buttons, so it can do neither: its border stays
+   dark while one of them has focus, and a click on its blank space focuses
+   nothing. Accepting a list — lit while any is focused, a click focusing the
+   first — would be additive and covers any pane of several controls, a form
+   or a button bar. Left as it is in the example until the freeze decides.
 
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.

@@ -238,7 +238,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ```sh
 ./scripts/run.sh counter    # simplest possible app — count up/down
 ./scripts/run.sh sysmon     # live BEAM process monitor
-./scripts/run.sh contacts   # contact manager: search, list, modal forms, async save
+./scripts/run.sh contacts   # contact manager: search, list, dialog with buttons, mouse
 ./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
 ./scripts/run.sh explorer   # tree + select + menu, with async-loaded nodes
@@ -254,8 +254,9 @@ on `:harlock` and build their own runtime entry point (see the Counter
 snippet above).
 
 `contacts` exercises most of the core primitives: tab focus traversal,
-text_input fields, an overlay with focus_trap, async save via
-`Cmd.from`, custom theme, status bar with current-focus indicator.
+text_input fields, buttons and a checkbox, an overlay with focus_trap,
+async save via `Cmd.from`, styled text, a custom theme, a status bar with
+a current-focus indicator, and the mouse.
 
 `showcase` is a four-tab tour of the display widgets — a
 200-row scrollable log viewer with `viewport` + scrollbar, a long form

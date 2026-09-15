@@ -785,9 +785,26 @@ defmodule Harlock.App.Runtime do
   end
 
   defp render_unsafe(state) do
+    seen_focus = state.focused
     tree = state.app.view(state.model)
     {focusables, traps, routed_widgets} = Focusables.collect(tree)
     state = update_focus_state(state, focusables, traps)
+
+    # Focus is settled from the tree the view returns: the first frame, a trap
+    # opening or closing, the focused element going away. A view that read
+    # Focus.current/0 saw the focus from before that, so it runs once more with
+    # the settled focus. Only once — the tree it returns is the frame, and any
+    # further change settles on the next render.
+    {tree, routed_widgets} =
+      if state.focused == seen_focus do
+        {tree, routed_widgets}
+      else
+        Focus.__set__(state.focused)
+        tree = state.app.view(state.model)
+        {_focusables, _traps, routed_widgets} = Focusables.collect(tree)
+        {tree, routed_widgets}
+      end
+
     state = %{state | routed_widgets: routed_widgets}
     state = update_subs(state)
 

@@ -1,28 +1,36 @@
-# Contacts — a multi-pane TUI:
-#
-#   - vbox / hbox / box layout with titled borders
-#   - table (used as a list) with row selection and focus highlighting
-#   - text_input for search and form fields
-#   - overlay + focus_trap for a modal "add / edit" dialog
-#   - focus traversal via Tab / Shift-Tab between widgets
-#   - Cmd executor for a fake async "save" with a delay
-#   - custom theme overriding focus / selection / header colors
-#
-# Run from the project root:
-#
+# Run with:
 #   ./scripts/run.sh contacts
 #
-# Shortcuts (also shown in the bottom bar):
+# or directly:
+#   mix run examples/contacts.exs --run
 #
-#   Tab / Shift-Tab — cycle focus between widgets
-#   typing          — filters the list while the search box is focused
-#   Up / Down       — when the list is focused, move the selection
-#   a               — open the "new contact" modal (when list is focused)
-#   e               — open the "edit contact" modal (when list is focused)
-#   d               — delete the selected contact (when list is focused)
-#   Enter (modal)   — save the contact (with a brief simulated delay)
-#   Esc (modal)     — close the modal without saving
-#   q               — quit (when list is focused)
+# Not from an IEx prompt: IEx's terminal driver reads the same tty, and the app
+# would not receive keystrokes.
+#
+# A contact manager on a search box, a list, a detail pane and a dialog:
+#
+#   * text_input      — the search box filters as you type; the dialog's fields
+#   * table           — the list; arrows or a click select a contact
+#   * button          — Add / Edit / Delete under the details, Save / Cancel in
+#                       the dialog
+#   * checkbox        — "Favourite", shown as ★ in the list
+#   * overlay         — the dialog, with focus_trap so Tab stays inside it
+#   * box focus_proxy — a pane's border lights up while its widget has focus
+#   * styled text     — the detail labels
+#   * Cmd.from        — saving takes a moment, as it would against a server
+#   * mouse           — click anything: rows, fields, buttons, the checkbox
+#   * a custom theme  — focus, selection and header colours
+#
+# Keys (also in the bottom bar):
+#
+#   Tab / Shift-Tab   cycle focus
+#   typing            filters the list while the search box has focus
+#   Up / Down         move through the list while it has focus
+#   Enter             edit the selected contact (list focused); in the
+#                     dialog, save from any field
+#   a / e / d         add, edit, delete (outside the search box and the dialog)
+#   Esc               close the dialog without saving
+#   q / Ctrl-C        quit (q outside the search box and the dialog)
 
 defmodule ContactsApp do
   use Harlock.App
@@ -30,12 +38,44 @@ defmodule ContactsApp do
   alias Harlock.Focus
 
   @initial_contacts [
-    %{id: 1, name: "Alice Wong", email: "alice@example.com", phone: "+1 555 0100"},
-    %{id: 2, name: "Bob Martin", email: "bob@example.com", phone: "+1 555 0101"},
-    %{id: 3, name: "Charlie Kim", email: "charlie@example.com", phone: "+1 555 0102"},
-    %{id: 4, name: "Diana Patel", email: "diana@example.com", phone: "+1 555 0103"},
-    %{id: 5, name: "Erik Hansen", email: "erik@example.com", phone: "+1 555 0104"}
+    %{
+      id: 1,
+      name: "Alice Wong",
+      email: "alice@example.com",
+      phone: "+1 555 0100",
+      favourite: true
+    },
+    %{
+      id: 2,
+      name: "Bob Martin",
+      email: "bob@example.com",
+      phone: "+1 555 0101",
+      favourite: false
+    },
+    %{
+      id: 3,
+      name: "Charlie Kim",
+      email: "charlie@example.com",
+      phone: "+1 555 0102",
+      favourite: false
+    },
+    %{
+      id: 4,
+      name: "Diana Patel",
+      email: "diana@example.com",
+      phone: "+1 555 0103",
+      favourite: true
+    },
+    %{
+      id: 5,
+      name: "Erik Hansen",
+      email: "erik@example.com",
+      phone: "+1 555 0104",
+      favourite: false
+    }
   ]
+
+  @modal_fields [:modal_name, :modal_email, :modal_phone]
 
   def init(_) do
     %{
@@ -52,17 +92,14 @@ defmodule ContactsApp do
 
   # ----- update -----
 
-  # Ctrl+C: unconditional quit. Always available regardless of focus, so
-  # you can never get stuck inside an input field.
+  # Ctrl-C quits from anywhere, so no widget can trap you.
   def update({:key, {:char, ?c}, [:ctrl]}, _model), do: :quit
 
   # The save Cmd finishes.
   def update({:contact_saved, contact}, model) do
-    contacts = upsert(model.contacts, contact)
-
     %{
       model
-      | contacts: contacts,
+      | contacts: upsert(model.contacts, contact),
         modal: nil,
         saving?: false,
         status: "Saved #{contact.name}",
@@ -70,39 +107,59 @@ defmodule ContactsApp do
     }
   end
 
-  # Modal: cancel.
-  def update({:key, :escape, []}, %{modal: m} = model) when not is_nil(m) do
-    %{model | modal: nil, status: "Cancelled"}
-  end
+  # -- the dialog --
+  #
+  # Every widget here is routed: edits arrive as {:harlock_edit, id, …}, Enter
+  # and button presses as {:harlock_submit, id}, and the checkbox as
+  # {:harlock_toggle, id, checked}. The clauses only say where values live.
+  # While a save is in flight the dialog ignores further submits and Esc.
 
-  # Every text_input here is routed: edits arrive as {:harlock_edit, id, …} and
-  # Enter as {:harlock_submit, id}, so the clauses only say where the value lives.
+  def update(_event, %{saving?: true} = model) when model.modal != nil, do: model
 
-  # Modal: submit on Enter from any field.
-  def update({:harlock_submit, field}, %{modal: m} = model)
-      when not is_nil(m) and field in [:modal_name, :modal_email, :modal_phone] do
-    start_save(model, m)
-  end
+  def update({:key, :escape, []}, %{modal: m} = model) when m != nil, do: cancel(model)
+
+  def update({:harlock_submit, :modal_cancel}, %{modal: m} = model) when m != nil,
+    do: cancel(model)
+
+  def update({:harlock_submit, id}, %{modal: m} = model)
+      when m != nil and id in [:modal_save | @modal_fields],
+      do: start_save(model, m)
 
   def update({:harlock_edit, field, {value, cursor}}, %{modal: m} = model)
-      when not is_nil(m) and field in [:modal_name, :modal_email, :modal_phone] do
+      when m != nil and field in @modal_fields do
     {value_key, cursor_key} = modal_field_keys(field)
     %{model | modal: m |> Map.put(value_key, value) |> Map.put(cursor_key, cursor)}
   end
 
-  # Search box.
+  def update({:harlock_toggle, :modal_favourite, checked}, %{modal: m} = model) when m != nil,
+    do: %{model | modal: %{m | favourite: checked}}
+
+  # -- the main screen --
+
   def update({:harlock_edit, :search, {value, cursor}}, model),
     do: %{model | filter: value, filter_cursor: cursor}
 
-  # Shortcuts — keys typed into a focused input are routed to it as edits, so
-  # these only see raw keys when the list has focus.
-  def update({:key, {:char, ?q}, []}, model), do: on_list(model, fn -> :quit end)
-  def update({:key, {:char, ?a}, []}, model), do: on_list(model, fn -> open_new_modal(model) end)
-  def update({:key, {:char, ?e}, []}, model), do: on_list(model, fn -> open_edit_modal(model) end)
-  def update({:key, {:char, ?d}, []}, model), do: on_list(model, fn -> delete_focused(model) end)
-
-  # List navigation: the focused table routes Up / Down itself.
+  # The focused table routes Up / Down, and a click on a row, as a selection.
   def update({:harlock_select, :contact_list, id}, model), do: %{model | focused_id: id}
+
+  def update({:harlock_submit, :add}, model), do: open_new_modal(model)
+  def update({:harlock_submit, :edit}, model), do: open_edit_modal(model)
+  def update({:harlock_submit, :delete}, model), do: delete_focused(model)
+
+  # A table routes the arrows but not Enter, so Enter on the list is a raw key.
+  def update({:key, :enter, []}, model) do
+    if model.modal == nil and Focus.current() == :contact_list,
+      do: open_edit_modal(model),
+      else: model
+  end
+
+  # Shortcuts. Letters typed while a text input has focus are routed to it as
+  # edits, so these clauses see them only when something else has focus; the
+  # dialog's checkbox and buttons are the rest, hence the modal check.
+  def update({:key, {:char, ?q}, []}, %{modal: nil}), do: :quit
+  def update({:key, {:char, ?a}, []}, %{modal: nil} = model), do: open_new_modal(model)
+  def update({:key, {:char, ?e}, []}, %{modal: nil} = model), do: open_edit_modal(model)
+  def update({:key, {:char, ?d}, []}, %{modal: nil} = model), do: delete_focused(model)
 
   def update(_event, model), do: model
 
@@ -112,11 +169,7 @@ defmodule ContactsApp do
     background =
       vbox(
         constraints: [length: 3, fill: 1, length: 1],
-        children: [
-          search_bar(model),
-          main_pane(model),
-          status_bar(model)
-        ]
+        children: [search_bar(model), main_pane(model), status_bar(model)]
       )
 
     case model.modal do
@@ -126,31 +179,21 @@ defmodule ContactsApp do
       modal ->
         overlay(
           child: background,
-          over: modal_form(modal),
+          over: modal_form(modal, model.saving?),
           width: 50,
-          height: 9,
+          height: 13,
           focus_trap: true
         )
     end
   end
 
   defp search_bar(model) do
-    focused? = Focus.current() == :search
-
-    box(
-      title: if(focused?, do: "● Search", else: "  Search"),
-      border: if(focused?, do: :double, else: :rounded),
-      border_style:
-        if(focused?,
-          do: %Style{fg: :yellow},
-          else: %Style{fg: :bright_black}
-        ),
-      padding: {0, 1},
+    pane("Search", :search,
       child:
         text_input(
           value: model.filter,
           cursor: model.filter_cursor,
-          placeholder: "Tab to leave, type to filter…",
+          placeholder: "type to filter, Tab to leave",
           focusable: :search
         )
     )
@@ -165,21 +208,8 @@ defmodule ContactsApp do
 
   defp list_pane(model) do
     visible = visible_contacts(model)
-    focused? = Focus.current() == :contact_list
 
-    box(
-      title:
-        if(focused?,
-          do: "● Contacts (#{length(visible)})",
-          else: "  Contacts (#{length(visible)})"
-        ),
-      border: if(focused?, do: :double, else: :rounded),
-      border_style:
-        if(focused?,
-          do: %Style{fg: :yellow},
-          else: %Style{fg: :bright_black}
-        ),
-      padding: {0, 1},
+    pane("Contacts (#{length(visible)})", :contact_list,
       child:
         table(
           columns: [column(width: {:fill, 1}, render: &row_label(&1, model.focused_id))],
@@ -192,69 +222,88 @@ defmodule ContactsApp do
     )
   end
 
+  # A bordered pane drawn in the theme's focus style while `id` has focus.
+  defp pane(title, id, opts) do
+    box(
+      [
+        title: title,
+        border: :rounded,
+        border_style: %Style{fg: :bright_black},
+        focus_proxy: id,
+        padding: {0, 1}
+      ] ++ opts
+    )
+  end
+
+  # Table cells are plain strings, so the favourite marker is a character
+  # rather than a styled run.
   defp row_label(contact, focused_id) do
-    if contact.id == focused_id, do: "▶ " <> contact.name, else: "  " <> contact.name
+    marker = if contact.id == focused_id, do: "▶ ", else: "  "
+    star = if contact.favourite, do: " ★", else: ""
+    marker <> contact.name <> star
   end
 
   defp detail_pane(model) do
-    case Enum.find(model.contacts, &(&1.id == model.focused_id)) do
-      nil ->
-        box(
-          title: "Details",
-          border: :rounded,
-          border_style: %Style{fg: :bright_black},
-          padding: 1,
-          child: text("No contact selected.")
-        )
+    contact = Enum.find(model.contacts, &(&1.id == model.focused_id))
 
-      contact ->
-        box(
-          title: "Details — #{contact.name}",
-          border: :rounded,
-          border_style: %Style{fg: :bright_black},
-          padding: 1,
-          child:
-            vbox(
-              constraints: [length: 1, length: 1, length: 1, length: 1, fill: 1],
-              children: [
-                text("Name:  #{contact.name}"),
-                text("Email: #{contact.email}"),
-                text("Phone: #{contact.phone}"),
-                spacer(),
-                text("[a] add  [e] edit  [d] delete", style: %Style{dim: true})
-              ]
-            )
+    box(
+      title: if(contact, do: "Details — #{contact.name}", else: "Details"),
+      border: :rounded,
+      border_style: %Style{fg: :bright_black},
+      padding: {1, 2},
+      child:
+        vbox(
+          constraints: [fill: 1, length: 1],
+          children: [details(contact), action_buttons()]
         )
-    end
+    )
+  end
+
+  defp details(nil), do: text("No contact selected.", style: %Style{dim: true})
+
+  defp details(contact) do
+    label = &{String.pad_trailing(&1, 7), fg: :cyan}
+
+    text([
+      label.("Name"),
+      {contact.name, bold: true},
+      "\n",
+      label.("Email"),
+      contact.email,
+      "\n",
+      label.("Phone"),
+      contact.phone,
+      "\n\n"
+      | if(contact.favourite, do: [{"★ Favourite", fg: :yellow}], else: [])
+    ])
+  end
+
+  defp action_buttons do
+    hbox(
+      constraints: [length: 8, length: 9, length: 11, fill: 1],
+      children: [
+        button("Add", focusable: :add),
+        button("Edit", focusable: :edit),
+        button("Delete", focusable: :delete),
+        spacer()
+      ]
+    )
   end
 
   defp status_bar(model) do
-    focus_label =
-      case Focus.current() do
-        :search -> "search"
-        :contact_list -> "list"
-        :modal_name -> "modal: name"
-        :modal_email -> "modal: email"
-        :modal_phone -> "modal: phone"
-        nil -> "—"
-        other -> to_string(other)
-      end
+    left = if model.saving?, do: "Saving…", else: model.status
 
-    left = if model.saving?, do: "saving…", else: model.status
-    middle = "focus: #{focus_label}"
-    right = "Tab cycle • ↑↓ nav • a/e/d • q quit"
-    text(" #{pad_three(left, middle, right)}", style: %Style{reverse: true})
+    statusbar(
+      left: " #{left} · focus: #{focus_label(Focus.current())}",
+      right: "Tab focus · a/e/d · q quit "
+    )
   end
 
-  defp pad_three(left, middle, right) do
-    total = 78
-    used = String.length(left) + String.length(middle) + String.length(right)
-    gap = max(1, div(total - used, 2))
-    spaces = String.duplicate(" ", gap)
-    left <> spaces <> middle <> spaces <> right
-  end
+  defp focus_label(nil), do: "—"
+  defp focus_label(:contact_list), do: "list"
+  defp focus_label(id), do: id |> Atom.to_string() |> String.replace_prefix("modal_", "dialog: ")
 
-  defp modal_form(m) do
+  defp modal_form(m, saving?) do
     title =
       case m.mode do
         :new -> "New Contact"
@@ -265,19 +314,38 @@ defmodule ContactsApp do
       title: title,
       border: :double,
       border_style: %Style{fg: :yellow},
-      padding: 1,
+      padding: {1, 2},
       child:
         vbox(
-          constraints: [length: 1, length: 1, length: 1, length: 1, fill: 1, length: 1],
+          constraints: [
+            length: 1,
+            length: 1,
+            length: 1,
+            length: 1,
+            length: 1,
+            fill: 1,
+            length: 1,
+            length: 1
+          ],
           children: [
-            field_row("Name ", :name, m),
+            field_row("Name", :name, m),
             field_row("Email", :email, m),
             field_row("Phone", :phone, m),
             spacer(),
+            checkbox([{"★ ", fg: :yellow}, "Favourite"],
+              checked: m.favourite,
+              focusable: :modal_favourite
+            ),
             spacer(),
-            text("[Enter] save   [Esc] cancel   [Tab] next field",
-              style: %Style{dim: true}
-            )
+            hbox(
+              constraints: [length: 13, length: 11, fill: 1],
+              children: [
+                button(if(saving?, do: "Saving…", else: "Save"), focusable: :modal_save),
+                button("Cancel", focusable: :modal_cancel),
+                spacer()
+              ]
+            ),
+            text("Enter saves from a field · Esc cancels", style: %Style{dim: true})
           ]
         )
     )
@@ -289,12 +357,11 @@ defmodule ContactsApp do
     hbox(
       constraints: [length: 7, fill: 1],
       children: [
-        text(label <> ":"),
+        text(label, style: %Style{fg: :cyan}),
         text_input(
           value: Map.fetch!(m, value_key),
           cursor: Map.fetch!(m, cursor_key),
-          focusable: :"modal_#{key}",
-          placeholder: ""
+          focusable: :"modal_#{key}"
         )
       ]
     )
@@ -323,9 +390,10 @@ defmodule ContactsApp do
           email: "",
           email_cursor: 0,
           phone: "",
-          phone_cursor: 0
+          phone_cursor: 0,
+          favourite: false
         },
-        status: "Adding new contact"
+        status: "Adding a contact"
     }
   end
 
@@ -344,12 +412,15 @@ defmodule ContactsApp do
               email: c.email,
               email_cursor: String.length(c.email),
               phone: c.phone,
-              phone_cursor: String.length(c.phone)
+              phone_cursor: String.length(c.phone),
+              favourite: c.favourite
             },
             status: "Editing #{c.name}"
         }
     end
   end
+
+  defp cancel(model), do: %{model | modal: nil, status: "Cancelled"}
 
   defp delete_focused(%{contacts: [_one_left]} = model) do
     %{model | status: "Can't delete the last contact"}
@@ -383,7 +454,7 @@ defmodule ContactsApp do
       end)
       |> Cmd.map(fn c -> {:contact_saved, c} end)
 
-    {%{model | saving?: true, next_id: next_id, status: "Saving…"}, cmd}
+    {%{model | saving?: true, next_id: next_id}, cmd}
   end
 
   defp build_contact_from_modal(modal, next_id) do
@@ -397,7 +468,8 @@ defmodule ContactsApp do
       id: id,
       name: trim_or(modal.name, "(no name)"),
       email: trim_or(modal.email, "(no email)"),
-      phone: trim_or(modal.phone, "(no phone)")
+      phone: trim_or(modal.phone, "(no phone)"),
+      favourite: modal.favourite
     }
   end
 
@@ -415,15 +487,13 @@ defmodule ContactsApp do
     end
   end
 
-  defp on_list(model, action) do
-    if Focus.current() == :contact_list and model.modal == nil, do: action.(), else: model
-  end
-
   defp modal_field_keys(:modal_name), do: {:name, :name_cursor}
   defp modal_field_keys(:modal_email), do: {:email, :email_cursor}
   defp modal_field_keys(:modal_phone), do: {:phone, :phone_cursor}
 end
 
+# `--run` starts the app; without it the file only defines the module, which is
+# how the tests load it.
 theme = %Harlock.Theme{
   header: %Harlock.Render.Style{bold: true, fg: :cyan},
   focus: %Harlock.Render.Style{reverse: true, fg: :yellow},
@@ -432,6 +502,6 @@ theme = %Harlock.Theme{
 }
 
 case System.argv() do
-  ["--run"] -> Harlock.run(ContactsApp, nil, theme: theme)
+  ["--run"] -> Harlock.run(ContactsApp, nil, theme: theme, mouse: true)
   _ -> :ok
 end

@@ -120,7 +120,9 @@ defmodule Harlock.Elements do
     * `:padding` — non-negative integer (uniform), `{v, h}`, or `{top, right, bottom, left}`
     * `:focusable`, `:focus_style` — when focused, the focus style replaces
       the border style (the child is left alone)
-    * `:focus_proxy` — mirror another element's focus for styling only
+    * `:focus_proxy` — mirror another element's focus in the border, and take
+      clicks for it
+    * `:handle_mouse` — `false` keeps a proxy box from taking clicks
 
   For multiple children, wrap them in `vbox/1` or `hbox/1` and pass the
   result as `:child`. The box reserves one cell on each side for the border
@@ -147,6 +149,12 @@ defmodule Harlock.Elements do
   alone, so a proxy is invisible to Tab by construction rather than by being
   filtered out afterwards — and `Harlock.Focus.current/0` still reports the child.
 
+  With `mouse: true`, a click anywhere on the box — border, padding, blank
+  space — focuses the child, since the box is what the click was aimed at, and
+  the wheel over it scrolls the child. Such a click only focuses: the border of
+  a button's box does not press the button. Clicks on the child itself behave
+  as they always do. `handle_mouse: false` on the box turns this off.
+
   Setting both `:focusable` and `:focus_proxy` on one element is not useful;
   `:focusable` wins.
   """
@@ -169,6 +177,9 @@ defmodule Harlock.Elements do
       `:bottom_left`, `:bottom_right`, or `{row, col}` for absolute placement
     * `:width`  — width of the over region in cells (default: full parent)
     * `:height` — height of the over region in cells (default: full parent)
+
+  The over region is cleared before `over` is drawn, so the background does
+  not show through cells the foreground leaves blank.
 
   Focus:
     * `:focus_trap` — when true, focus traversal wraps within the `over`

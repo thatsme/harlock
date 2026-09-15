@@ -166,6 +166,73 @@ defmodule Harlock.App.RuntimeMouseTest do
     Harlock.Test.stop(h)
   end
 
+  defmodule PaneApp do
+    use Harlock.App
+
+    def init(_), do: %{saves: 0, raw: [], offset: 0}
+
+    def update({:harlock_submit, :save}, m), do: %{m | saves: m.saves + 1}
+    def update({:harlock_scroll, :log, offset}, m), do: %{m | offset: offset}
+    def update({:mouse, _, _, _, _, _} = ev, m), do: %{m | raw: m.raw ++ [ev]}
+    def update(_, m), do: m
+
+    # Rows 1–3: a button in a padded box. Rows 4–8: a viewport in a box.
+    # Row 9: a box that opts out of mouse.
+    def view(m) do
+      vbox(
+        constraints: [length: 3, length: 5, length: 3],
+        children: [
+          box(focus_proxy: :save, padding: {0, 2}, child: button("Save", focusable: :save)),
+          box(
+            focus_proxy: :log,
+            child:
+              viewport(
+                focusable: :log,
+                offset: m.offset,
+                content_height: 20,
+                child: text(Enum.map_join(1..20, "\n", &"line #{&1}"))
+              )
+          ),
+          box(focus_proxy: :other, handle_mouse: false, child: text("x", focusable: :other))
+        ]
+      )
+    end
+  end
+
+  describe "a box with focus_proxy" do
+    setup do
+      h = Harlock.Test.start_app(PaneApp, nil, rows: 11, cols: 30, mouse: true)
+      on_exit(fn -> Harlock.Test.stop(h) end)
+      {:ok, h: h}
+    end
+
+    test "a click on its border or padding focuses the child, and only focuses", %{h: h} do
+      Harlock.Test.send_mouse(h, :press, :left, 1, 4)
+      assert Harlock.Test.focused(h) == :log
+
+      # Padding beside the button: focus moves, the button is not pressed.
+      Harlock.Test.send_mouse(h, :press, :left, 2, 2)
+      assert Harlock.Test.focused(h) == :save
+      assert model(h).saves == 0
+
+      # The button itself still presses.
+      Harlock.Test.send_mouse(h, :press, :left, 5, 2)
+      assert model(h).saves == 1
+      assert model(h).raw == []
+    end
+
+    test "the wheel over its border scrolls the child", %{h: h} do
+      Harlock.Test.send_mouse(h, :wheel_down, nil, 1, 6)
+      assert model(h).offset == 3
+    end
+
+    test "handle_mouse: false on the box leaves its border to the app", %{h: h} do
+      Harlock.Test.send_mouse(h, :press, :left, 1, 9)
+      assert Harlock.Test.focused(h) == :save
+      assert [{:mouse, :press, :left, 1, 9, []}] = model(h).raw
+    end
+  end
+
   defmodule ItemsApp do
     use Harlock.App
 

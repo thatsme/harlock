@@ -10,6 +10,19 @@ changes are called out in the relevant release notes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An `overlay` hides the background under its whole region.** The panel was
+  drawn without clearing the cells beneath it, so a dialog's blank space showed
+  whatever was behind it — the details pane in `examples/contacts.exs`, the
+  process table behind `examples/sysmon.exs`'s help panel.
+- **`Harlock.Focus.current/0` in `view/1` reports the focus the frame is drawn
+  with.** Focus is settled from the tree `view/1` returns, so on the first frame
+  a view saw `nil`, and when a `focus_trap` overlay opened or closed it saw the
+  focus from before. A status line or border that shows the focus was one frame
+  behind until the next key. The runtime now runs `view/1` a second time when
+  settling moves the focus, which happens only on those transitions.
+
 ### Changed
 
 - **Ctrl-Z inside a program started by `Cmd.exec` suspends to the shell.** In
@@ -21,9 +34,25 @@ changes are called out in the relevant release notes.
   `priv/exec_stop_smoke.exs` checks it as a job under an interactive bash, and
   it was checked with vim under zsh; removing the shell check makes the smoke
   test fail.
+- **`examples/contacts.exs` is rebuilt on v0.8's basics**: Add / Edit / Delete
+  buttons, a dialog with a favourite checkbox and Save / Cancel buttons, styled
+  detail labels, pane borders through `focus_proxy`, Enter on the list to edit,
+  and the mouse throughout. A second submit while a save is in flight is
+  ignored, where it used to add the contact twice.
+  `test/examples/contacts_test.exs` covers it under the test backend. The two
+  fixes above and clicks on `focus_proxy` boxes below came out of it, along with
+  two questions for the 1.0 freeze recorded in the roadmap: table cells take
+  plain strings only, and `focus_proxy` names a single id.
 
 ### Added
 
+- **A `box` with `focus_proxy` takes clicks for the child it mirrors.** With
+  `mouse: true`, a click on the box's border, padding or blank space focuses the
+  child, and the wheel over it scrolls the child. Only the child's own cells
+  were clickable before, so a click on a pane's border, or beside a one-row
+  input in a padded box, did nothing. A click on the box only focuses; it does
+  not press a button or toggle a checkbox inside. `handle_mouse: false` on the
+  box turns it off.
 - **`examples/editor.exs`** — a file browser that opens the selected file in
   `$VISUAL`, then `$EDITOR`, then `vi` with `Cmd.exec`, reloads the preview when
   the editor exits, suspends to the shell on Ctrl-Z, and takes the mouse. The

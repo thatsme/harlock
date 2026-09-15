@@ -115,6 +115,20 @@ defmodule Harlock.Element.Renderer do
     draw_element(el, region, frame, focused)
   end
 
+  # A box that mirrors a child's focus looks like that child's pane, so a click
+  # anywhere on it — border, padding, blank space — is a click for the child.
+  # Recorded before the child draws, so the child's own regions stay on top and
+  # keep their meaning. The :frame part only focuses: a click on the border of a
+  # button's box does not press the button.
+  defp record_proxy_frame(opts, region) do
+    proxy = Keyword.get(opts, :focus_proxy)
+
+    if proxy != nil and Keyword.get(opts, :focusable) == nil and
+         Keyword.get(opts, :handle_mouse, true) do
+      HitRegions.record(proxy, region, :frame)
+    end
+  end
+
   # The id whose parts a widget records, or nil when it takes no clicks — not
   # focusable, or opted out with handle_mouse: false. A select's dropdown menu
   # is not focusable itself; it records its choices for the select that owns it.
@@ -474,6 +488,7 @@ defmodule Harlock.Element.Renderer do
   defp draw_element(%Element{type: :spacer}, _region, frame, _focused), do: frame
 
   defp draw_element(%Element{type: :box, children: [child]} = el, region, frame, focused) do
+    record_proxy_frame(el.opts, region)
     border_kind = Keyword.get(el.opts, :border, :single)
     {pt, pr, pb, pl} = normalize_padding(Keyword.get(el.opts, :padding, 0))
 
@@ -523,6 +538,10 @@ defmodule Harlock.Element.Renderer do
     h = min(Keyword.get(el.opts, :height) || region.h, region.h)
     anchor = Keyword.get(el.opts, :anchor, :center)
     over_region = anchor_region(region, anchor, w, h)
+
+    # The panel hides the background under all of its region, not only under
+    # the cells its content writes: blank space in a dialog is part of it.
+    frame = Frame.fill(frame, over_region.row, over_region.col, w, h, ?\s)
 
     # The panel covers the background for clicks as it does visually, even
     # where it has nothing focusable of its own.
