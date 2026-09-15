@@ -7,7 +7,8 @@ defmodule Harlock.Focus do
   callbacks. Called from outside a Harlock callback it has no state to read.
 
   Focus is read-only from an app: it moves with Tab / Shift-Tab, focus traps,
-  and mouse clicks.
+  and mouse clicks. Each move is delivered to `update/2` as
+  `{:harlock_focus, from, to}` — see "Focus changes" in `Harlock.App`.
   """
 
   @key :harlock_focus

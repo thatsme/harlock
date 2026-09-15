@@ -241,7 +241,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh contacts   # contact manager: search, list, dialog with buttons, mouse
 ./scripts/run.sh showcase   # tabs, viewport, widgets, modified keys
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
-./scripts/run.sh explorer   # tree + select + menu, with async-loaded nodes
+./scripts/run.sh explorer   # tree + select + menu: async-loaded nodes, focus changes, mouse
 ./scripts/run.sh dashboard  # telemetry + logger subscriptions into a sparkline
 ./scripts/run.sh nodes      # BEAM node explorer: windowed table, lazy supervision tree
 ./scripts/run.sh overview   # the README's second snippet
@@ -295,9 +295,11 @@ directory argument it works on a scratch directory of sample files.
 starts with nothing loaded: expanding it marks the node in flight, returns
 a `Cmd`, and the fetched children arrive as an ordinary message — the
 pattern any tree over a filesystem or a remote node needs. The filter
-dropdown opens over the tree, and the filtered node list is rebuilt in
-`update/2` rather than handed to the widget, because the model owns what
-is displayed.
+dropdown opens over the actions and closes when focus leaves it, by Tab or
+by a click elsewhere, through `{:harlock_focus, from, to}`. The filtered node
+list is rebuilt from the model in `view/1` rather than handed to the widget,
+because the model owns what is displayed. The mouse works throughout: node
+markers, rows, filter choices, actions, and pane borders.
 
 ## Testing your app
 

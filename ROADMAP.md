@@ -1163,6 +1163,27 @@ defects and two questions:
    first — would be additive and covers any pane of several controls, a form
    or a button bar. Left as it is in the example until the freeze decides.
 
+**`examples/explorer.exs`**, reworked — the mouse on the tree, the filter and
+the actions; the right column split into Filter and Actions panes so each
+border follows its widget; a details pane and a status line in styled text. It
+found one gap, closed with a new message:
+
+1. **An app was never told that focus moved** ✓. The filter's `open` state
+   belongs to the app, as `Harlock.Select` documents, but Tab and clicks move
+   focus inside the runtime. An open dropdown stayed drawn after focus left
+   it — over the Actions menu, which then moved an invisible highlight on Down
+   — and no clause could close it, since a click on a pane's border produces
+   no message at all. Now every move is delivered as
+   `{:harlock_focus, from, to}`: the first focus, Tab, a click (before the
+   click's own messages), a trap opening or closing, the focused element
+   leaving the view. This is a new message shape in the 1.0 vocabulary, the
+   first since routing, and it is the general form of what the dropdown
+   needed: any state that only holds while something has focus — an edit to
+   commit when a field is left, a search mode — closes on it. The alternatives
+   were drawing the list closed from `Focus.current/0` in `view/1`, which
+   leaves the model saying open, or moving `open` into the widget, which
+   reverses a documented decision and helps no other widget.
+
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
 

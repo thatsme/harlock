@@ -43,9 +43,24 @@ changes are called out in the relevant release notes.
   fixes above and clicks on `focus_proxy` boxes below came out of it, along with
   two questions for the 1.0 freeze recorded in the roadmap: table cells take
   plain strings only, and `focus_proxy` names a single id.
+- **`examples/explorer.exs` is rebuilt on v0.8's basics**: the mouse on tree
+  markers and rows, filter choices and actions; Filter and Actions in their own
+  panes with `focus_proxy`; a details pane and a status line in styled text.
+  The filter closes when focus leaves it, through the new focus message above,
+  which is what building it found missing. `test/examples/explorer_test.exs`
+  covers it.
 
 ### Added
 
+- **`{:harlock_focus, from, to}`: `update/2` is told when focus moves** — the
+  first focus when the app starts (`from` is `nil`), Tab and Shift-Tab, a
+  click, a `focus_trap` overlay opening or closing, the focused element
+  leaving the view. A click delivers it before the messages the click
+  produces. It is for state that only holds while something has focus: an
+  open `select` list now has a clause to close on when Tab or a click moves
+  focus away, where before it stayed drawn over whatever had focus next.
+  Apps with a catch-all `update/2` clause, as every example has, need no
+  change; an app without one receives a message it has no clause for.
 - **A `box` with `focus_proxy` takes clicks for the child it mirrors.** With
   `mouse: true`, a click on the box's border, padding or blank space focuses the
   child, and the wheel over it scrolls the child. Only the child's own cells

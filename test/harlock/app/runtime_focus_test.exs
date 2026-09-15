@@ -256,4 +256,129 @@ defmodule Harlock.App.RuntimeFocusTest do
       Harlock.Test.stop(h)
     end
   end
+
+  # Records every {:harlock_focus, from, to} and every routed selection, in the
+  # order update/2 receives them.
+  defmodule FocusLogApp do
+    use Harlock.App
+
+    def init(_), do: %{log: [], modal?: false, show_b?: true}
+
+    def update({:harlock_focus, _, _} = msg, m), do: %{m | log: m.log ++ [msg]}
+    def update({:harlock_select, _, _} = msg, m), do: %{m | log: m.log ++ [msg]}
+    def update({:key, {:char, ?o}, []}, m), do: %{m | modal?: true}
+    def update({:key, {:char, ?c}, []}, m), do: %{m | modal?: false}
+    def update({:key, {:char, ?h}, []}, m), do: %{m | show_b?: false}
+    def update(_, m), do: m
+
+    def view(m) do
+      base =
+        vbox(
+          constraints: [length: 1, length: 2],
+          children: [
+            text("a", focusable: :a),
+            if(m.show_b?,
+              do:
+                table(
+                  focusable: :b,
+                  columns: [column(width: {:fill, 1}, render: &to_string/1)],
+                  rows: [:one, :two],
+                  row_id: & &1,
+                  focused_row: :one,
+                  show_header: false
+                ),
+              else: spacer()
+            )
+          ]
+        )
+
+      if m.modal?,
+        do:
+          overlay(child: base, over: text("in", focusable: :inner), height: 1, focus_trap: true),
+        else: base
+    end
+  end
+
+  defmodule CurrentApp do
+    use Harlock.App
+
+    def init(pid), do: pid
+
+    def update({:harlock_focus, _, to}, pid) do
+      send(pid, {:current, to, Harlock.Focus.current()})
+      pid
+    end
+
+    def update(_, pid), do: pid
+
+    def view(_), do: vbox(children: [text("a", focusable: :a), text("b", focusable: :b)])
+  end
+
+  describe "{:harlock_focus, from, to}" do
+    defp focus_log(h), do: Harlock.Test.model(h).log
+
+    test "announces the first focus, then each Tab" do
+      h = Harlock.Test.start_app(FocusLogApp, nil, rows: 5, cols: 20)
+      assert focus_log(h) == [{:harlock_focus, nil, :a}]
+
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, :tab)
+
+      assert focus_log(h) == [
+               {:harlock_focus, nil, :a},
+               {:harlock_focus, :a, :b},
+               {:harlock_focus, :b, :a}
+             ]
+
+      Harlock.Test.stop(h)
+    end
+
+    test "a click announces the focus before the selection it makes" do
+      h = Harlock.Test.start_app(FocusLogApp, nil, rows: 5, cols: 20, mouse: true)
+      Harlock.Test.send_mouse(h, :press, :left, 1, 3)
+
+      assert focus_log(h) == [
+               {:harlock_focus, nil, :a},
+               {:harlock_focus, :a, :b},
+               {:harlock_select, :b, :two}
+             ]
+
+      # A click on what already has focus announces nothing.
+      Harlock.Test.send_mouse(h, :press, :left, 1, 2)
+      assert List.last(focus_log(h)) == {:harlock_select, :b, :one}
+      Harlock.Test.stop(h)
+    end
+
+    test "a trap opening and closing announces both moves" do
+      h = Harlock.Test.start_app(FocusLogApp, nil, rows: 5, cols: 20)
+      Harlock.Test.send_key(h, {:char, ?o})
+      Harlock.Test.send_key(h, {:char, ?c})
+
+      assert focus_log(h) == [
+               {:harlock_focus, nil, :a},
+               {:harlock_focus, :a, :inner},
+               {:harlock_focus, :inner, :a}
+             ]
+
+      Harlock.Test.stop(h)
+    end
+
+    test "the focused element going away announces where focus went" do
+      h = Harlock.Test.start_app(FocusLogApp, nil, rows: 5, cols: 20)
+      Harlock.Test.send_key(h, :tab)
+      Harlock.Test.send_key(h, {:char, ?h})
+
+      assert List.last(focus_log(h)) == {:harlock_focus, :b, :a}
+      Harlock.Test.stop(h)
+    end
+
+    test "Focus.current/0 in the clause is the new focus" do
+      h = Harlock.Test.start_app(CurrentApp, self(), rows: 5, cols: 20)
+      Harlock.Test.send_key(h, :tab)
+
+      assert_receive {:current, :a, :a}
+      assert_receive {:current, :b, :b}
+      Harlock.Test.stop(h)
+    end
+  end
 end

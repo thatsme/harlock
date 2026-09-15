@@ -46,6 +46,16 @@ defmodule Harlock.Select do
   Order that clause before any global `Escape` handler, or an open dropdown
   will quit the app.
 
+  ## Focus leaving an open list
+
+  Tab, or a click elsewhere, moves focus away from an open dropdown without a
+  key the dropdown sees. The runtime tells the app with
+  `{:harlock_focus, from, to}`; close on it, or the list stays drawn over
+  whatever now has focus:
+
+      def update({:harlock_focus, :country, _to}, %{open: true} = m),
+        do: %{m | open: false, highlight: m.value}
+
   ## Auto-routing
 
   With a `:focusable` id the runtime calls `apply_key/4` for you and delivers

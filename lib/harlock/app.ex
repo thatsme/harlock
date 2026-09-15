@@ -114,6 +114,24 @@ defmodule Harlock.App do
   modifier-only press in a text input) fall through to `update/2` as
   raw `{:key, …}` events so apps can still react if they want.
 
+  ## Focus changes
+
+  `{:harlock_focus, from, to}` arrives whenever focus moves: the first focus
+  when the app starts (`from` is `nil`), Tab and Shift-Tab, a click, a
+  `focus_trap` overlay opening or closing, the focused element leaving the
+  view. `to` is `nil` when nothing focusable is left. During the clause
+  `Harlock.Focus.current/0` already returns `to`.
+
+  It is for state that only makes sense while something has focus — an open
+  `select` list, an edit to commit when its field is left:
+
+      def update({:harlock_focus, :country, _to}, %{open: true} = m),
+        do: %{m | open: false, highlight: m.value}
+
+  A click delivers it before the messages the click itself produces, so the
+  app sees focus leave the dropdown before the selection made in the tree.
+  Apps that do not care need nothing more than their catch-all clause.
+
   ## Mouse
 
   With `mouse: true` passed to `Harlock.run/3`, mouse events are routed to

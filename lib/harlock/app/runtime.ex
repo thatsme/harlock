@@ -83,6 +83,8 @@ defmodule Harlock.App.Runtime do
         rows: rows,
         cols: cols,
         focused: nil,
+        # The focus update/2 was last told about; see announce_focus/1.
+        announced_focus: nil,
         focusables: [],
         traps: [],
         focus_stack: [],
@@ -113,14 +115,16 @@ defmodule Harlock.App.Runtime do
   def handle_continue(:start, state) do
     state = render(state)
     Cmd.dispatch(state.pending_cmd, self(), state.task_sup)
-    {:noreply, %{state | pending_cmd: nil}}
+    announce_focus({:noreply, %{state | pending_cmd: nil}})
   end
 
   @impl true
-  def handle_info({:harlock_event, {:mouse, _, _, _, _, _} = event}, %{mouse: true} = state),
+  def handle_info(msg, state), do: msg |> handle_message(state) |> announce_focus()
+
+  defp handle_message({:harlock_event, {:mouse, _, _, _, _, _} = event}, %{mouse: true} = state),
     do: handle_mouse(event, state)
 
-  def handle_info({:harlock_event, event}, state) do
+  defp handle_message({:harlock_event, event}, state) do
     case maybe_handle_focus(event, state) do
       {:handled, state} ->
         {:noreply, render(state)}
@@ -135,7 +139,7 @@ defmodule Harlock.App.Runtime do
     end
   end
 
-  def handle_info({:harlock_resize, rows, cols}, state) when rows > 0 and cols > 0 do
+  defp handle_message({:harlock_resize, rows, cols}, state) when rows > 0 and cols > 0 do
     # prev_frame is kept, not discarded. Diff sees the dimensions differ and
     # clears the screen before a full redraw. A nil prev_frame means "the
     # screen is blank", which after a resize it is not: the terminal still
@@ -148,13 +152,13 @@ defmodule Harlock.App.Runtime do
   # Same reasoning as detect_size/1: TIOCGWINSZ succeeds while reporting 0x0 on a
   # tty that was never told its geometry. Keeping the previous dimensions is
   # strictly better than resizing to a frame that cannot draw anything.
-  def handle_info({:harlock_resize, _rows, _cols}, state), do: {:noreply, state}
+  defp handle_message({:harlock_resize, _rows, _cols}, state), do: {:noreply, state}
 
-  def handle_info({:harlock_exec, _program, _args, _opts, reply}, %{exec: exec} = state)
-      when exec != nil,
-      do: apply_update(state, reply.({:error, :busy}))
+  defp handle_message({:harlock_exec, _program, _args, _opts, reply}, %{exec: exec} = state)
+       when exec != nil,
+       do: apply_update(state, reply.({:error, :busy}))
 
-  def handle_info({:harlock_exec, program, args, opts, reply}, %{keeper: nil} = state) do
+  defp handle_message({:harlock_exec, program, args, opts, reply}, %{keeper: nil} = state) do
     result =
       case state.exec_stub do
         nil -> {:error, :no_terminal}
@@ -164,7 +168,7 @@ defmodule Harlock.App.Runtime do
     apply_update(state, reply.(result))
   end
 
-  def handle_info({:harlock_exec, program, args, opts, reply}, state) do
+  defp handle_message({:harlock_exec, program, args, opts, reply}, state) do
     :ok = Reader.pause(state.reader)
     _ = Writer.leave(state.writer)
 
@@ -178,10 +182,10 @@ defmodule Harlock.App.Runtime do
     end
   end
 
-  def handle_info({:harlock_suspend, reply}, %{exec: exec} = state) when exec != nil,
+  defp handle_message({:harlock_suspend, reply}, %{exec: exec} = state) when exec != nil,
     do: apply_update(state, reply.({:error, :busy}))
 
-  def handle_info({:harlock_suspend, reply}, %{keeper: nil} = state) do
+  defp handle_message({:harlock_suspend, reply}, %{keeper: nil} = state) do
     result =
       case state.suspend_stub do
         nil -> {:error, :no_terminal}
@@ -191,7 +195,7 @@ defmodule Harlock.App.Runtime do
     apply_update(state, reply.(result))
   end
 
-  def handle_info({:harlock_suspend, reply}, state) do
+  defp handle_message({:harlock_suspend, reply}, state) do
     if Keeper.can_suspend?(state.keeper) do
       :ok = Reader.pause(state.reader)
       _ = Writer.leave(state.writer)
@@ -209,12 +213,12 @@ defmodule Harlock.App.Runtime do
     end
   end
 
-  def handle_info({:harlock_exec_done, result}, %{exec: %{reply: reply}} = state) do
+  defp handle_message({:harlock_exec_done, result}, %{exec: %{reply: reply}} = state) do
     state = return_from_exec(state)
     apply_update(state, reply.(exec_result(result)))
   end
 
-  def handle_info(_msg, state), do: {:noreply, state}
+  defp handle_message(_msg, state), do: {:noreply, state}
 
   # Mouse routing. The renderer records where each focusable element landed,
   # and where each clickable part of it was drawn (HitRegions); the topmost
@@ -239,12 +243,17 @@ defmodule Harlock.App.Runtime do
       {_, _, nil} ->
         apply_update(state, event)
 
+      # Focus is announced before the click acts: the press moved it first, and
+      # an app closing something on focus-out should see that before the
+      # selection the same press makes.
       {:press, :left, {id, part}} ->
         state = focus_by_mouse(state, id)
 
-        case click_messages(state, id, part, col - 1) do
-          [] -> {:noreply, render(state)}
-          messages -> apply_updates(state, messages)
+        with {:noreply, state} <- announce_focus({:noreply, render(state)}) do
+          case click_messages(state, id, part, col - 1) do
+            [] -> {:noreply, state}
+            messages -> apply_updates(state, messages)
+          end
         end
 
       {wheel, _, {id, _part}} when wheel in [:wheel_up, :wheel_down] ->
@@ -266,6 +275,22 @@ defmodule Harlock.App.Runtime do
       stop -> stop
     end
   end
+
+  # Whenever focus has moved since update/2 was last told — Tab, a click, a trap
+  # opening or closing, the focused element going away — the app receives
+  # {:harlock_focus, from, to}. Checked after each message is handled rather
+  # than at each place focus can change, since render settles focus too. The
+  # update this delivers can move focus again (by opening a dialog), so it
+  # repeats until focus holds still.
+  defp announce_focus({:noreply, %{focused: focused, announced_focus: announced} = state})
+       when focused != announced do
+    state
+    |> Map.put(:announced_focus, focused)
+    |> apply_update({:harlock_focus, announced, focused})
+    |> announce_focus()
+  end
+
+  defp announce_focus(result), do: result
 
   defp focus_by_mouse(%{focused: id} = state, id), do: state
   defp focus_by_mouse(state, id), do: %{state | focused: id, goal_column: nil, dirty: true}
