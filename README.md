@@ -37,6 +37,8 @@ Harlock.run(Counter)
 
 Run it with `mix run`. Not from an IEx prompt: IEx's own terminal driver reads
 the same tty, and the app would not receive keystrokes.
+Log output is held back while the app runs and printed after it exits, so a
+`Logger` call does not draw over the screen.
 
 A more realistic app wires focus traversal, a selectable table, a
 scrollable viewport, and a side-effect via `Cmd` — all together. Tab
@@ -244,7 +246,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 ./scripts/run.sh showcase   # tabs, viewport, widgets, form inputs, key and mouse events
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing
 ./scripts/run.sh explorer   # tree + select + menu: async-loaded nodes, focus changes, mouse
-./scripts/run.sh dashboard  # telemetry + logger subscriptions into a sparkline
+./scripts/run.sh dashboard  # telemetry + logger subscriptions: sparkline, scrollable log, controls
 ./scripts/run.sh nodes      # BEAM node explorer: windowed table, lazy supervision tree
 ./scripts/run.sh overview   # the README's second snippet
 ./scripts/run.sh editor     # file browser: open files in $VISUAL/$EDITOR, Ctrl-Z, mouse
@@ -285,7 +287,9 @@ work runs inside a `Cmd`, so the handler fires in a different process from the
 UI exactly as it would for a real query. Point the same subscription at
 `[:ecto, :repo, :query]` and nothing else changes. Pausing removes only the
 interval from `subs/1`, so you can watch the runtime stop one subscription and
-leave the others running.
+leave the others running. A radio group sets the workload's size, Pause and
+Clear are buttons as well as keys, and the log keeps a scrollable history,
+newest first, whose view holds still while new lines arrive above it.
 
 `editor` is a file browser that hands the terminal to your editor. Enter, or
 the "Open in editor" button, runs `$VISUAL`, then `$EDITOR`, then `vi` on the

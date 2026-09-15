@@ -12,6 +12,9 @@ defmodule Harlock do
   IEx prompt: IEx's own terminal driver reads the same tty, and the app does
   not receive keystrokes.
 
+  While an app runs, log output is held back and printed after it exits, so it
+  does not draw over the screen; see `run/3`.
+
   `smoke/0` and `smoke_crash/0` are diagnostics for the terminal layer.
   """
 
@@ -39,6 +42,13 @@ defmodule Harlock do
   it was before returning, and an abnormal exit from any *other* process linked
   to the caller still ends it, after stopping the app, as it would have without
   `run/3` in between.
+
+  Log output is held back while the app runs. The console logger writes to the
+  same terminal the app draws on, so for the length of the session its handlers
+  are muted, and what they would have written — the most recent 500 events —
+  is printed, formatted as usual, after the terminal is restored. That includes
+  the report of a crash that ended the app. To see log events inside the app
+  instead, subscribe with `Harlock.Sub.logger/1`.
 
   Options:
 

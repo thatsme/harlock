@@ -1229,6 +1229,18 @@ tab, and raw mouse events in the Keys tab. It found two questions and one gap:
    in an order form with a checkbox, a `textarea` — which the tour had also
    left out — and Save / Reset buttons.
 
+**`examples/dashboard.exs`**, reworked — a radio group for the workload, Pause and
+Clear buttons, a scrollable log history with coloured levels, styled stats. Every
+widget it needed was already there, but running it found a defect no test had:
+
+1. **Log output drew over the app** ✓. The console logger writes to the same
+   terminal, and nothing muted it, so every `Logger` call — the example logs
+   every few jobs — landed mid-frame and stayed. Muting alone would lose the
+   runtime's own report of a render crash, so the console handlers are muted
+   and mirrored for the session, and the last 500 events are printed after the
+   terminal is restored. No option for it yet; printing live or dropping
+   instead are possible additions if an app needs them.
+
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
 

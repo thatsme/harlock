@@ -50,7 +50,7 @@ defmodule Harlock.Terminal.Keeper do
   use GenServer
   require Logger
 
-  alias Harlock.Terminal.{SignalForwarder, Termios}
+  alias Harlock.Terminal.{LogBuffer, SignalForwarder, Termios}
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -112,6 +112,9 @@ defmodule Harlock.Terminal.Keeper do
                  %{
                    ctl: ctl,
                    snapshot: snapshot,
+                   # Console logging would draw over the app; see LogBuffer.
+                   log_capture: LogBuffer.capture(self()),
+                   logs: LogBuffer.new(),
                    runtime: runtime,
                    exec: nil,
                    suspended: false,
@@ -286,6 +289,9 @@ defmodule Harlock.Terminal.Keeper do
     end
   end
 
+  def handle_info({:harlock_log, formatter, event}, state),
+    do: {:noreply, %{state | logs: LogBuffer.push(state.logs, {formatter, event})}}
+
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl true
@@ -305,6 +311,13 @@ defmodule Harlock.Terminal.Keeper do
 
     if state.ctl do
       _ = Termios.close(state.ctl)
+    end
+
+    # Last, on a terminal that is itself again: what was logged during the
+    # session, including why it ended if it crashed.
+    if state[:log_capture] do
+      :ok = LogBuffer.release(state.log_capture)
+      :ok = LogBuffer.replay(state.logs)
     end
 
     :ok

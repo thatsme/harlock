@@ -12,6 +12,18 @@ changes are called out in the relevant release notes.
 
 ### Fixed
 
+- **Log output no longer draws over a running app.** The console logger writes
+  to the terminal the app is drawing on, and nothing stopped it: every `Logger`
+  call — the app's, a dependency's, or the runtime's own report of a render
+  crash — landed in the middle of the screen and stayed there, since only cells
+  the renderer believes changed are redrawn. `examples/dashboard.exs`, which
+  logs every few jobs, showed it plainly. Now, while an app owns the terminal,
+  the console handlers are muted and mirrored: the last 500 events are kept
+  and printed in the console's own format once the terminal is restored,
+  including a crash report. Levels and filters are the console handler's, and
+  its configuration is put back on every way out. `priv/log_smoke.exs` checks
+  it in a pty, crash included, and fails with the mirror disabled.
+
 - **An `overlay` hides the background under its whole region.** The panel was
   drawn without clearing the cells beneath it, so a dialog's blank space showed
   whatever was behind it — the details pane in `examples/contacts.exs`, the
@@ -60,10 +72,23 @@ changes are called out in the relevant release notes.
   element under the pointer. A fifth tab, Inputs, is an order form with two
   radio groups, a check list, a list box, a checkbox, a `textarea` and Save /
   Reset buttons.
+- **`examples/dashboard.exs` is rebuilt on the new basics**: a radio group for
+  the workload's size, Pause / Resume and Clear buttons next to the keys, the
+  log as a scrollable history of 200 lines, newest first, with the level of
+  each line coloured and the view held still while new lines arrive above a
+  scrolled position, and styled numbers in the stats line. It starts with the
+  mouse on, and takes `running: false` to start paused.
+  `test/examples/dashboard_test.exs` covers it. Trying it in a terminal found
+  the log output fixed above.
+- **The examples are checked for compile warnings.** They are scripts, so
+  `mix compile --warnings-as-errors` never saw them, and a warning in
+  `examples/dashboard.exs` reached a user.
+  `test/examples/compile_warnings_test.exs` compiles each one and fails on any
+  warning.
 - **The examples' tests start each app with the options its `--run` uses.**
   `showcase` was started without `mouse: true` while its tests passed it, so
   every click test passed and no click worked in a terminal. `contacts`,
-  `editor`, `explorer` and `showcase` now define `run_opts/0`, which both
+  `dashboard`, `editor`, `explorer` and `showcase` now define `run_opts/0`, which both
   `--run` and their tests use.
 
 ### Added
