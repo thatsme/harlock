@@ -4,7 +4,7 @@ Code.require_file("examples/sysmon.exs")
 # containing the title bar, responds to ? (help overlay) and Esc, and
 # responds to q (quit confirm) with y for confirm.
 
-h = Harlock.Test.start_app(Sysmon, nil, rows: 20, cols: 100)
+h = Harlock.Test.start_app(Sysmon, nil, [rows: 20, cols: 100] ++ Sysmon.run_opts())
 
 frame = Harlock.Test.render(h)
 

@@ -1254,6 +1254,19 @@ stats. It found one question:
    in the routing, at the cost of a second meaning for the arrows. The tab bar
    taking the first focus came up again too: see "An app cannot move focus".
 
+**`examples/sysmon.exs`**, reworked — a sort radio group and a Live checkbox
+under the table, help and quit dialogs with borders and buttons, clicks and
+the wheel on the table. It found one question:
+
+1. **A table header does not take clicks.** Sorting by clicking a column title,
+   as `htop` and most process monitors do, would be the natural control here;
+   the example uses a radio group instead. Header cells are drawn without hit
+   regions of their own, so a click on one only focuses the table, with no
+   column attached. Recording
+   a `{:column, index}` part and delivering it as a message would be additive,
+   but it would be a new message shape, and table cells taking only plain
+   strings means a sort arrow in the title is not styled either.
+
 Still wanted before the freeze: an application built by someone other than the
 author of the framework, which is the only test of whether the docs say enough.
 

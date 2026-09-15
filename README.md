@@ -241,7 +241,7 @@ See [`ROADMAP.md`](ROADMAP.md) for the full plan through v1.0.
 
 ```sh
 ./scripts/run.sh counter    # simplest possible app — count up/down
-./scripts/run.sh sysmon     # live BEAM process monitor
+./scripts/run.sh sysmon     # live BEAM process monitor: sort, pause, dialogs with buttons, mouse
 ./scripts/run.sh contacts   # contact manager: search, list, dialog with buttons, mouse
 ./scripts/run.sh showcase   # tabs, viewport, widgets, form inputs, key and mouse events
 ./scripts/run.sh notes      # multi-line textarea: wrap toggle, readline editing

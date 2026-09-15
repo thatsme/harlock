@@ -88,6 +88,14 @@ changes are called out in the relevant release notes.
   `test/examples/nodes_test.exs` covers it — the example had no tests. It
   raised a question for the 1.0 freeze, recorded in the roadmap: a windowed
   table cannot be moved through row by row from the keyboard.
+- **`examples/sysmon.exs` is rebuilt on the new basics**: a radio group for the
+  sort order and a Live checkbox that stops the refresh, below the table so the
+  table keeps the first focus; help and quit dialogs with borders and buttons,
+  trapping focus, with y / n / Esc still working; clicks and the wheel on the
+  table; a styled summary line and a keybar with the uptime.
+  `test/examples/sysmon_test.exs` covers it. It raised a question for the 1.0
+  freeze, recorded in the roadmap: a table header does not take clicks, so
+  sorting by column title is not possible.
 - **The examples are checked for compile warnings.** They are scripts, so
   `mix compile --warnings-as-errors` never saw them, and a warning in
   `examples/dashboard.exs` reached a user.
